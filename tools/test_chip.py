@@ -305,6 +305,58 @@ check("todo_list through tool_call updates the chip's task list",
       (st_todo.get("todo") or {}).get("states") == "dapx", st_todo.get("todo"))
 plugin._on_session_end(session_id="s-todo", turn_id=None, interrupted=True)
 
+print("reply text hygiene: stale commentary, background work, thinking blocks, cap, early pop")
+# Pre-tool commentary must be cleared when a tool step starts and never leak as a failed turn's error body.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-stale", turn_id="s-stale:1", user_message="run it")
+plugin._on_stream_end(final_text="Let me check that file first.", session_id="s-stale", turn_id="s-stale:1", finished=False)
+plugin._on_pre_tool_call(tool_name="terminal", args={"command": "ls"}, session_id="s-stale", turn_id="s-stale:1")
+check("pre_tool_call clears pre-tool commentary from _last_text", "s-stale" not in plugin._last_text, plugin._last_text.get("s-stale"))
+plugin._on_post_llm_call(session_id="s-stale", turn_id="s-stale:1", assistant_response="Earlier step commentary.")
+plugin._on_session_end(session_id="s-stale", turn_id="s-stale:1", failed=True, platform="mobile",
+                       turn_exit_reason="pending_tool_result")
+er_stale = [x for x in sent if x["kind"] == "error"][-1]
+check("failed turn prefers plain words over stored text",
+      er_stale.get("body") == "Stopped before finishing a tool step", er_stale)
+
+# _is_review checks _write_origin() even when turn_id is missing, and pre_llm_call skips review / /btw without wiping _last_text.
+orig_wo = plugin._write_origin
+try:
+    plugin._write_origin = lambda: "side_question"
+    check("_is_review detects side_question even when turn_id is None",
+          plugin._is_review(None, "s-main") is True)
+    plugin._last_text["s-main"] = "Main turn reply"
+    plugin._on_pre_llm_call(session_id="s-main", turn_id=None, user_message="quick side question")
+    check("pre_llm_call for /btw (even without turn_id) does not wipe main turn _last_text",
+          plugin._last_text.get("s-main") == "Main turn reply", plugin._last_text.get("s-main"))
+    plugin._write_origin = lambda: "background_review"
+    check("_is_review detects background_review even when turn_id is None",
+          plugin._is_review(None, "s-main") is True)
+    plugin._on_pre_llm_call(session_id="s-main", turn_id="rev-turn", user_message="something else")
+    check("pre_llm_call for background_review does not wipe main turn _last_text",
+          plugin._last_text.get("s-main") == "Main turn reply", plugin._last_text.get("s-main"))
+finally:
+    plugin._write_origin = orig_wo
+plugin._clear_status("s-main")
+
+# _on_session_end with turn_id=None still pops _last_text so nothing leaks.
+plugin._on_session_end(session_id="s-main", turn_id=None, interrupted=True)
+check("on_session_end with turn_id=None pops _last_text", "s-main" not in plugin._last_text)
+
+# _reply_text skips thinking/reasoning blocks and caps at MAX_REPLY_TEXT.
+mixed_blocks = [
+    {"type": "thinking", "text": "secret chain of thought"},
+    {"type": "reasoning", "text": "private reasoning"},
+    {"type": "text", "text": "Hello "},
+    {"type": "output_text", "text": "world"},
+    {"text": "!"},
+]
+check("_reply_text keeps only text/output_text/untyped blocks, never thinking or reasoning",
+      plugin._reply_text(mixed_blocks) == "Hello world!", plugin._reply_text(mixed_blocks))
+huge = "a" * (plugin.MAX_REPLY_TEXT + 5000)
+check("_reply_text caps stored reply text at MAX_REPLY_TEXT",
+      len(plugin._reply_text(huge)) == plugin.MAX_REPLY_TEXT, len(plugin._reply_text(huge)))
+
 
 # ── /stop: finds the live runtime of the stored chat and interrupts it ──
 print("/stop")

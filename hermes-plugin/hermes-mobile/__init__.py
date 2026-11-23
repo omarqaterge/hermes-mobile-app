@@ -917,26 +917,28 @@ def _remember(turns: set, turn_id) -> None:
 def _is_review(turn_id, session_id=None) -> bool:
     """True for Hermes's background work on a chat: the self-review after a reply and /btw side questions.
     Both are forks on the SAME session id that skip pre_llm_call and never send session_end. Known by the
-    turn's write origin; on a Hermes without it, by the task id being a UUID (app turns use the session id)."""
-    if not turn_id:
-        return False
-    if turn_id in _review_turns or turn_id in _btw_turns:
+    turn's write origin (checked even when turn_id is absent); on a Hermes without it, by the task id being
+    a UUID (app turns use the session id)."""
+    if turn_id and (turn_id in _review_turns or turn_id in _btw_turns):
         return True
-    if not session_id:
-        return False
     origin = _write_origin()
     if origin == "side_question":
-        _remember(_btw_turns, turn_id)
-    elif origin == "background_review":
-        _remember(_review_turns, turn_id)
-    elif origin:
+        if turn_id:
+            _remember(_btw_turns, turn_id)
+        _dbg(f"background-detected {session_id} {turn_id} origin={origin}")
+        return True
+    if origin == "background_review":
+        if turn_id:
+            _remember(_review_turns, turn_id)
+        _dbg(f"background-detected {session_id} {turn_id} origin={origin}")
+        return True
+    if origin or not turn_id or not session_id:
         return False
-    else:
-        parts = str(turn_id).split(":")
-        if not (len(parts) == 3 and parts[1] != session_id and _UUID_RE.match(parts[1])):
-            return False
-        _remember(_review_turns, turn_id)
-    _dbg(f"background-detected {session_id} {turn_id} origin={origin or '?'}")
+    parts = str(turn_id).split(":")
+    if not (len(parts) == 3 and parts[1] != session_id and _UUID_RE.match(parts[1])):
+        return False
+    _remember(_review_turns, turn_id)
+    _dbg(f"background-detected {session_id} {turn_id} origin=?")
     return True
 
 
@@ -956,17 +958,30 @@ def _bg_clear(session_id) -> None:
     _clear_status(session_id, only_review=True)
 
 
+MAX_REPLY_TEXT = 65536
+_TEXT_BLOCK_TYPES = (None, "", "text", "output_text")
+
+
 def _reply_text(val) -> str:
-    """Plain reply text from a hook value (string or list of content parts), trimmed; empty if none."""
+    """Plain reply text from a hook value (string or list of text content parts), trimmed and capped at
+    MAX_REPLY_TEXT. Skips non-text blocks such as thinking or reasoning."""
     if isinstance(val, str):
-        return val.strip()
+        return val[:MAX_REPLY_TEXT].strip()
     if isinstance(val, list):
         parts = []
+        total = 0
         for item in val:
+            if total >= MAX_REPLY_TEXT:
+                break
+            chunk = None
             if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and isinstance(item.get("text"), str):
-                parts.append(item["text"])
+                chunk = item
+            elif isinstance(item, dict) and item.get("type") in _TEXT_BLOCK_TYPES and isinstance(item.get("text"), str):
+                chunk = item["text"]
+            if chunk:
+                take = chunk[: MAX_REPLY_TEXT - total]
+                parts.append(take)
+                total += len(take)
         return "".join(parts).strip()
     return ""
 
@@ -1015,8 +1030,12 @@ def _plain_exit_reason(reason, *, failed: bool = False, cron: bool = False) -> s
 
 
 def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
-    # Hermes runs a background self-review (memory / skills) after a turn, on the same session id.
-    # It fires our hooks but never a session_end, so label it and let it expire on its own.
+    # Hermes runs a background self-review (memory / skills) or /btw side question on the same session id.
+    # Never wipe a running turn's reply text or start record for background work.
+    if _is_review(turn_id, session_id):
+        _dbg(f"review-start {session_id} {turn_id}")
+        _bg_status(session_id, turn_id)
+        return None
     if turn_id and isinstance(user_message, str) and user_message.lstrip().startswith(REVIEW_PREFIX):
         _remember(_review_turns, turn_id)
         _dbg(f"review-start {session_id} {turn_id}")
@@ -1084,6 +1103,9 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     if _is_review(turn_id, session_id):
         _bg_status(session_id, turn_id, _tool_label(tool_name or "tool", args).removeprefix("Using "))
         return None
+    if session_id and session_id not in _subagents:
+        with _lock:
+            _last_text.pop(session_id, None)  # any text streamed before a tool call was intermediate commentary, not the final reply
     _set_status(session_id, _tool_label(tool_name or "tool", args), _tool_short(tool_name or "tool", args),
                 tool=tool_name != "clarify", step=True, turn_id=turn_id)  # a question waits on the user: no reason to keep the phone awake
     if tool_name == "clarify":
@@ -1380,6 +1402,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     _end_phone_app(session_id)
     with _lock:
         turn = (_active.get(session_id) or {}).get("turn") or {}
+        text = _last_text.pop(session_id, "")
     _clear_status(session_id)  # always, even without a turn id, or the chip sticks on "Thinking"
     if turn_id is None:
         return
@@ -1387,8 +1410,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
         _checkpoints().maybe_maintain_async()  # daily gc of the checkpoint store, in a thread
     except Exception:
         pass
-    with _lock:
-        text = _last_text.pop(session_id, "")
+    text = text[:MAX_REPLY_TEXT]
     try:
         text = _openui().strip_ui(text)  # notifications and read-aloud say [card], not openui-lang code
     except Exception:
@@ -1398,12 +1420,11 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     name = _profile()
     title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
     if platform == "cron":
-        body = text or _plain_exit_reason(turn_exit_reason, failed=bool(failed), cron=True)
+        body = _plain_exit_reason(turn_exit_reason, failed=True, cron=True) if failed else (text or _plain_exit_reason(turn_exit_reason, failed=False, cron=True))
         _send("cron", "Scheduled job finished" if not failed else "Scheduled job failed",
               body, session_id, id=session_id)
     elif failed:
-        body = text or _plain_exit_reason(turn_exit_reason, failed=True)
-        _send("error", f"{title} · failed", body, session_id)
+        _send("error", f"{title} · failed", _plain_exit_reason(turn_exit_reason, failed=True), session_id)
     elif completed or text:
         # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
         _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])

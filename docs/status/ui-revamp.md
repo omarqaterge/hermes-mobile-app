@@ -461,15 +461,22 @@ here but not installed on a phone, and going back has not been tried on one.
 
 - **Reply text, notifications, badge and read-aloud fixes (`fix-reply-text-notifications`, PR against `redesign`).**
   Captured reply text from Hermes's synchronous `post_llm_call` hook (`assistant_response`) in `hermes-plugin/hermes-mobile/__init__.py`
-  (keeping `on_stream_end` as fallback and clearing stale text on turn start and final API errors) so Codex Responses and
-  non-streaming turns deliver reply text to the Done chip, reply cards, island Done state, background read-aloud
-  (`speak_text`), and scheduled-job cards; mapped internal `turn_exit_reason` values to plain words (`_plain_exit_reason`).
+  (keeping `on_stream_end` as fallback, filtering to text blocks only, capping at 64 KiB, clearing stale text on turn
+  start, tool calls and final API errors, skipping `/btw` and background reviews even without a `turn_id`, and popping
+  `_last_text` before early `on_session_end` returns) so Codex Responses and non-streaming turns deliver reply text to
+  the Done chip, reply cards, island Done state, background read-aloud (`speak_text`), and scheduled-job cards; mapped
+  internal `turn_exit_reason` values to plain words (`_plain_exit_reason`) and preferred them on failed turns.
   Added `source: 'mobile'` to `session.resume` in `web/src/gateway.ts` so resumed chats keep `platform: 'mobile'` for
-  background read-aloud. Added `BadgePlan.java` and updated `HermesService.java` so per-card reply badge counts sum to
-  unseen chats instead of multiplying across cards, non-badging cards (`Learning`, `Scheduled jobs`) and the group summary
-  explicitly set count `0` and `BADGE_ICON_NONE`, and `RemoteInput` answers dismiss cleanly via `dismissAnsweredCard`.
-  Needs a phone: verify Done chip/card/island reply text, background read-aloud, scheduled-job cards, HyperOS badge
-  behaviour on `Learning`/`Scheduled jobs` cards, and `RemoteInput` dismissal on a real phone.
+  background read-aloud. Added `NotifyPrivacy.java` and `BadgePlan.java` and updated `HermesService.java` so chats that
+  have read phone data (`PhoneDataRoute.chats`) redact reply/error/cron bodies, Done chip, island Done state and
+  momentary flashes to generic words and skip background read-aloud; every reply, error, Done and cron notification sets
+  `VISIBILITY_PRIVATE` with a generic `setPublicVersion`; failed-turn error cards use `error:<chat>` outside the badge
+  plan; per-card reply badge counts sum to unseen chats with `BADGE_ICON_LARGE` above 0 and `BADGE_ICON_NONE` at 0; and
+  `RemoteInput` answers dismiss cleanly via `dismissAnsweredCard` without reposting after `clear`, counting dismissing
+  cards in `updateBadge`, or cancelling the summary under a newly arrived card.
+  Needs a phone: verify Done chip/card/island reply text, phone-data redaction, lock-screen private versions, background
+  read-aloud, scheduled-job cards, HyperOS badge behaviour on `Learning`/`Scheduled jobs`/`error` cards, and
+  `RemoteInput` dismissal on a real phone.
 
 **Links:** [decision: the redesign stays on its branch](../decisions/redesign-branch-until-tried.md),
 [decision: no UI-coverage project before the revamp](../decisions/no-ui-test-work-before-revamp.md) (held until it
