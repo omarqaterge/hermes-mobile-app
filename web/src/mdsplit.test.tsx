@@ -50,13 +50,26 @@ test('the parts always join to the text, and a finished part never changes', () 
   expect(end.parts.length).toBeGreaterThan(10)
 })
 
+// Finished parts never change and parser.parse is pure; memoising them per stream avoids re-parsing the same
+// finished parts on every single character while checking the exact same AST equality at every step.
+function memoPartBlocks() {
+  const done = new Map<string, unknown[]>()
+  return (p: string, i: number, arr: string[]): unknown[] => {
+    if (i === arr.length - 1) return blocks(p)
+    let b = done.get(p)
+    if (!b) done.set(p, (b = blocks(p)))
+    return b
+  }
+}
+
 test('the parts read one by one give the same blocks as the whole text, at every step of a stream', () => {
   for (const step of [1, 7]) {
+    const partBlocks = memoPartBlocks()
     stream(PLAIN, step, (s, sofar) => {
-      expect(s.parts.flatMap(blocks)).toEqual(blocks(sofar))
+      expect(s.parts.flatMap(partBlocks)).toEqual(blocks(sofar))
     })
   }
-})
+}, 30_000)
 
 // Blocks of every kind in a random order, joined with or without a blank line: the places a hand-written text misses.
 const PIECES = [
@@ -73,9 +86,10 @@ test('random texts: the parts give the same blocks as the whole text at every st
   for (let doc = 0; doc < Number(process.env.HM_SPLIT_DOCS || 60); doc++) {
     let text = ''
     for (let i = 0, n = 4 + rnd(10); i < n; i++) text += PIECES[rnd(PIECES.length)] + (rnd(3) ? '\n\n' : '\n')
+    const partBlocks = memoPartBlocks()
     stream(text, 1 + rnd(4), (s, sofar) => {
       expect(s.parts.join('')).toBe(sofar)
-      expect(s.parts.flatMap(blocks), JSON.stringify(sofar)).toEqual(blocks(sofar))
+      expect(s.parts.flatMap(partBlocks), JSON.stringify(sofar)).toEqual(blocks(sofar))
     })
   }
 }, 600_000) // HM_SPLIT_DOCS=4000 takes about three minutes
