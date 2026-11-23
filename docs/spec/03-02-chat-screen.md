@@ -88,11 +88,13 @@ Shown when there is no open chat and none is opening (`Empty`).
 
 | State | Button | aria-label starts with | What Hermes does |
 |---|---|---|---|
-| Off | Grey "Auto" | "Auto is off" | Asks before risky commands (the approval sheet, 3.6). |
+| Off | Grey "Auto" (or "Auto · smart" / "Approvals off" when Hermes's own `approvals.mode` is `smart` or `off`) | "Auto is off" (or "Auto is off. Hermes approves low-risk commands by itself" / "Auto is off. Hermes approves every command without asking") | Asks before risky commands in `manual` mode (the approval sheet, 3.6); in `smart` mode Hermes approves low-risk commands by itself; in `off` mode Hermes approves every command without asking. |
 | Auto access | Green "Auto" | "Auto access is on" | Runs everything without asking, except commands on Hermes's dangerous list (recursive deletes, overwriting system or config files, force-killing processes, piping downloads into a shell…). Those are blocked by the plugin's `auto_mode.py`. |
 | Full access | Red "⚡ Full access" | "Full access is on" | Runs every command without asking. Only Hermes's catastrophic list (wipe the disk, shut down) stays blocked. |
 
 Every label ends with ". Change how much Hermux may do without asking". While another chat opens the button shows Off and is disabled (`viewSettled`, see "While a chat opens").
+
+- **Hermes's own `approvals.mode`.** `web/src/approvals-mode.ts` (`useApprovalsMode`, `recheckApprovalsMode`) reads `approvals.mode` (`manual`, `smart` or `off`) from `GET /api/config?profile=` once per bot while connected and no chat is opening, and refreshes it when the Auto picker opens (no polling; never changes the mode itself). While it is `smart` or `off` and the chat's Auto is Off, the chip reads "Auto · smart" or "Approvals off", the Off option's line in the picker says that Hermes approves low-risk commands by itself (`smart`) or every command without asking (`off`), the Auto-off toast (`doneOffToast`) says the same, and a calm row at the end of the picker ("Hermes approvals mode · Smart" / "Hermes approvals mode · Off") opens Settings → Advanced settings directly on `approvals.mode` (`openSettingsOn('config', 'close', 'approvals.mode')`; Back returns to the chat).
 
 - **Which state it shows.** With a chat open: `accessOf(active)` = off when `info.yolo` is false, Auto access when it is true and `autoAccess` is set, else Full. While a chat is opening: off. On the empty screen: `defaultAccess()`, the mode a new chat will start in (Settings, row Auto for all chats, key `hm.defaultAccess.v1`).
 - **Tap** opens the picker "Auto: run without asking" with the three options (Off, Auto access, Full access) and a check on the current one. Choosing the current mode does nothing.

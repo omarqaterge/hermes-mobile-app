@@ -2640,6 +2640,7 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .picker-opt.on { background: color-mix(in srgb, var(--accent) 13%, transparent); }
 .picker-opt.on .set-title { color: var(--accent); font-weight: 650; }
 .picker-check { width: 22px; text-align: center; color: var(--accent); font-weight: 800; }
+.approvals-note { margin-top: 10px; }
 
 /* slider (replaces the native range) */
 .slider-row { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -3173,6 +3174,16 @@ button.set-row:active, .set-row[role='presentation']:active { background: var(--
 .auto-btn.full {
   border-color: var(--err-border);
   background: color-mix(in srgb, var(--err) 18%, transparent);
+  color: var(--err);
+}
+.auto-btn.hermes-smart {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.auto-btn.hermes-off {
+  border-color: var(--err-border);
+  background: color-mix(in srgb, var(--err) 14%, transparent);
   color: var(--err);
 }
 .auto-btn:active {

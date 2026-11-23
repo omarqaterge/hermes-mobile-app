@@ -76,7 +76,8 @@ The files behind sections 3.1 to 3.6, and what each one is for (the core files a
 | `main.tsx` | Page entry. Imports `secure-bridge` first (it takes the native bridge key), then `share.ts` and `notif-answer.ts` (they register the `window.hermes*` globals), applies the saved theme, calls `openFirstRun`, and renders `App`. |
 | `App.tsx` | Root: `Header`, banners, `Chat`, `FindBar`, the layer stack, `window.hermesBack`, `hermesResume`, `hermesPause`, `hermesOpenSession`. |
 | `Title.tsx` | Chat titles; a branched chat is stored as "⎇ <title>" (Hermes keeps only plain text) and drawn with a branch icon (`BranchIcon`); `plainTitle` and `keepBranch` keep the mark when renaming. |
-| `AutoAccess.tsx` | `AutoButton` (composer's model row) and `DefaultAccessRow` (Settings). |
+| `AutoAccess.tsx` | `AutoButton` (composer's model row), `DefaultAccessRow` (Settings), and `ApprovalsModePickerNote` (note inside the Auto picker when Hermes's `approvals.mode` is `smart` or `off`). |
+| `approvals-mode.ts` | Reads Hermes's own `approvals.mode` (`manual`, `smart`, `off`) from `GET /api/config?profile=` (`parseApprovalsMode`, `useApprovalsMode`, `recheckApprovalsMode`, `resetApprovalsModeForTest`, `isLooseApprovals`, `autoButtonText`, `autoButtonLabel`, `offOptionSub`, `doneOffToast`, `accessSummary`, `defaultAccessSub`, `approvalsModeNote`). No polling or timer; asked once per bot while connected and no chat is opening, refreshed when opening the Auto picker or Settings, and cleared on disconnect. |
 | `ChatItems.tsx` | `ItemView`, `ToolCard`, `ToolRunHead`, user and assistant messages, message actions. |
 | `SubAgentsCore.tsx`, `SubAgents.tsx` | The sub-agent group's line and the loader; the rows and sheet (3.3) and the nested rows of the chat list (3.13) in their lazy bundle. `AskedBy` in `RequestSheet.tsx` says which sub-agent asks: see below. |
 | `Markdown.tsx` | Markdown renderer, code blocks, Mermaid, task lists, tables, link handling, sanitiser. |

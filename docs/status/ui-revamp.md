@@ -380,6 +380,12 @@ task opens its PR against `redesign`, and nothing reaches `main` until the owner
     that start on Send. Needs a phone: `docs/manual-tests.md`, "Agent motion",
     including ten minutes of work for the battery.
 
+- **Approvals you can read (PR against `redesign`).**
+  - **Landscape approval sheet:** `.sheet.request-sheet` wraps its content in `.request-sheet-body` and, on short viewports (`max-height: 540px`), scrolls the body from the top while keeping `.sheet::before` fixed behind it, prevents `.sheet-scroll` from collapsing to zero height, bounds `.sheet-desc` and `.sheet-code` with their own scroll areas, and arranges `.sheet-actions.col` in two columns from 480 px wide. Approve, fingerprint, unlock and input-pause logic is untouched.
+  - **Hermes `approvals.mode` (`smart` / `off`):** `web/src/approvals-mode.ts` reads `approvals.mode` from `GET /api/config?profile=` (read-only, no polling, never changes the mode itself). When `smart` or `off`, the chat's Auto chip and picker, the Settings main page's Access & privacy value, and Access & privacy's Approvals section say plainly what Hermes approves on its own and link straight to `approvals.mode` in Advanced settings (`openSettingsOn('config', 'close', 'approvals.mode')` or `openConfig('approvals.mode', 'access')`).
+  - **Single sub-agent generic wording (`Asked by a sub-agent`):** checked against spec 3.6, `subagents.ts` `askerOf`, `RequestSheet.tsx` `AskedBy`, and Hermes's `summarize_shell_command` (`agent/display.py`): a compound command (`A && B`) is summarised by Hermes in `subagent.tool` (`tool_preview`), so it does not match the raw `approval` command verbatim; falling back to "Asked by a sub-agent" is the intended result of the strict naming rule. No code changed for it.
+  - **Checks:** `web/src/approvals-mode.test.ts` and the end of `05-questions-and-approvals.cjs` (landscape 740 × 360 at 1× and phone font scale 2.0 with a long command and four choices; `approvals.mode` in `smart`, `off` and `manual`). Needs a phone: visual check on the phone in landscape and with `approvals.mode` on `smart`.
+
 **Next:** the new look of the chat screen, the side panel, the
 chat list, the chat menu and Settings, one task and one PR at a time (they share `web/src/styles.css`). Each task: its
 PR against `redesign`, `tools/web-e2e/list-checks.sh --missing` clean (or each removed check named with the feature it

@@ -7,12 +7,14 @@ import type { SettingsPageId } from './settings-search'
 export interface SettingsStart {
   page: SettingsPageId
   back: 'close' | 'up'
+  /** Optional initial search query (used when opening Advanced settings directly on one config key). */
+  query?: string
 }
 
 let start: SettingsStart | null = null
 
-export function openSettingsOn(page: SettingsPageId, back: SettingsStart['back'] = 'close'): void {
-  start = { page, back }
+export function openSettingsOn(page: SettingsPageId, back: SettingsStart['back'] = 'close', query?: string): void {
+  start = query ? { page, back, query } : { page, back }
   setState({ screen: 'settings', screenProfile: null, sheet: null, drawer: false })
 }
 

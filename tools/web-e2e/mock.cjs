@@ -122,7 +122,9 @@ let routeFail = {}
 // under what PUT /api/config saved, merged like Hermes's _deep_merge (maps merge, anything else replaces, null over a map
 // is ignored). The model, reasoning, plugin list and rotation keys keep their own handling above and below.
 const configDefaults = (({ _comment, ...d }) => d)(require('./fixtures/hermes-config-defaults.json'))
-let cfgSaved = {}
+// Start the mock's active config with approvals.mode = 'manual' (matching seed.py and the mock's own approval prompts);
+// GET /api/config/defaults still returns Hermes's raw defaults. Tests switch it via PUT /api/config or /__mock { approvalsMode }.
+let cfgSaved = { approvals: { mode: 'manual' } }
 const isMap = v => v && typeof v === 'object' && !Array.isArray(v)
 const deepMerge = (base, over) => {
   const out = { ...base }
@@ -258,6 +260,7 @@ const server = http.createServer((req, res) => {
       if (b.gen !== undefined) runtimeGen = b.gen
       if (b.forgetDrafts) draftGen++
       if (b.draftGen !== undefined) draftGen = b.draftGen
+      if (b.approvalsMode !== undefined) cfgSaved = deepMerge(cfgSaved, { approvals: { mode: b.approvalsMode } })
       if (b.up) refuseUntil = 0 // Hermes is back now (ends a drop early)
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
@@ -519,7 +522,10 @@ const server = http.createServer((req, res) => {
     // Hermes's schema has a field per option; the app reads only the time zone list from it (Hermes Settings).
     if (p === '/api/config/schema')
       return send({
-        fields: { timezone: { type: 'select', description: 'IANA timezone (e.g. America/New_York). Blank uses the system timezone.', category: 'general', options: ['Africa/Cairo', 'America/New_York', 'Asia/Tokyo', 'Europe/Amsterdam', 'UTC'] } },
+        fields: {
+          timezone: { type: 'select', description: 'IANA timezone (e.g. America/New_York). Blank uses the system timezone.', category: 'general', options: ['Africa/Cairo', 'America/New_York', 'Asia/Tokyo', 'Europe/Amsterdam', 'UTC'] },
+          'approvals.mode': { type: 'select', description: 'Command approval mode: manual, smart, or off.', category: 'security', options: ['manual', 'smart', 'off'] }
+        },
         category_order: ['general', 'agent', 'terminal', 'display', 'delegation', 'memory', 'compression', 'security', 'browser', 'voice', 'tts', 'stt', 'logging', 'discord', 'auxiliary']
       })
     if (p === '/api/config' && req.method === 'PUT') {

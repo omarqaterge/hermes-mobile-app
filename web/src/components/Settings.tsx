@@ -21,6 +21,7 @@ import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../l
 import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
 import { Collapse, IconChip, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
+import { accessSummary, approvalsModeNote, isLooseApprovals, recheckApprovalsMode, useApprovalsMode } from '../approvals-mode'
 import { SETTINGS_PAGE_NAME, searchSettings, type SettingsEntry, type SettingsPageId } from '../settings-search'
 import { setGlass, setMotionLevel, useGlass, useMotionLevel, type MotionLevel } from '../motion'
 import { setModelBarMode, useTray, type ModelBarMode } from '../tray'
@@ -467,13 +468,16 @@ function show(v: unknown): string {
   return String(v)
 }
 
-function ConfigTab({ scope, setScope }: { scope: string; setScope: (s: string) => void }) {
+function ConfigTab({ scope, setScope, initialQuery = '' }: { scope: string; setScope: (s: string) => void; initialQuery?: string }) {
   const { data, error, loading, reload, setData } = useLoader(async () => {
     schemaCache ??= await api<Schema>('GET', '/api/config/schema', undefined, { profile: false })
     const config = await api<Record<string, unknown>>('GET', `/api/config?${qs({ profile: scope })}`, undefined, { profile: false })
     return { schema: schemaCache, config }
   }, [scope])
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(initialQuery)
+  useEffect(() => {
+    setQ(initialQuery)
+  }, [initialQuery])
   const [open, setOpen] = useState<string | null>(null)
   const [edit, setEdit] = useState<string | null>(null)
 
@@ -512,6 +516,7 @@ function ConfigTab({ scope, setScope }: { scope: string; setScope: (s: string) =
       reload()
       if (key === 'model' || key.startsWith('model.')) void loadProfiles()
       if (key.startsWith('agent.reasoning') || key === 'model' || key.startsWith('model.')) void loadDefaultModel()
+      if (key === 'approvals.mode') recheckApprovalsMode(all ? undefined : scope)
     }
     return ok
   }
@@ -915,7 +920,6 @@ const PAGE_TITLE: Record<Page, string> = SETTINGS_PAGE_NAME
 const PARENT: Partial<Record<Page, Page>> = { stt: 'voice', add: 'models', keys: 'models', memory: 'hermes', config: 'hermes' }
 /** The pages that apply to one bot (`scope`): with several bots their top bar names it (BotTag). */
 const BOT_PAGES = new Set<Page>(['models', 'add', 'keys', 'connectors', 'hermes', 'config'])
-const ACCESS_NAME: Record<Access, string> = { off: 'Auto off', auto: 'Auto access', full: 'Full access' }
 
 /** One attention card on the main page: an icon, a title, one line and one button. Shown only while its condition is true. */
 function AttentionCard({ tone, icon, title, line, action, primary, onAction }: { tone: 'gold' | 'red'; icon: IconName; title: string; line: string; action: string; primary?: boolean; onAction: () => void }) {
@@ -980,6 +984,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
   const model = useStore(s => s.defaultModel || s.profiles.find(p => p.name === s.profile)?.model || '')
   const [theme] = useState<Theme>(savedTheme)
   const [access] = useState<Access>(defaultAccess)
+  const hermesMode = useApprovalsMode({ fresh: true })
   const notify = useNotifyState()
   const search = (
     <label className="set-search">
@@ -1006,7 +1011,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
         <Row icon="sparkles" tone="blue" title="Models" value={model || 'None yet'} chevron onClick={() => go('models')} />
         <Row icon="plug" tone="teal" title="Connectors" sub="Mail, web search, apps and services" chevron onClick={() => go('connectors')} />
         <Row icon="sliders" tone="purple" title="Behaviour" sub="Memory, long chats, limits, sub-agents" chevron onClick={() => go('hermes')} />
-        <Row icon="shield" tone="green" title="Access & privacy" value={ACCESS_NAME[access]} chevron onClick={() => go('access')} />
+        <Row icon="shield" tone="green" title="Access & privacy" value={accessSummary(access, hermesMode)} chevron onClick={() => go('access')} />
       </Section>
       <Section title="This app">
         <Row icon="palette" tone="purple" title="Appearance" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
@@ -1103,11 +1108,24 @@ function AddProviderPage({ scope, setScope, go, bump }: { scope: string; setScop
 
 /** Access & privacy: what Hermux may do and read, and what the app keeps on this phone. Each row is the component it was
  *  on the main page, moved as it is, with its own lock, request and confirmation. */
-function AccessPage() {
+function AccessPage({ openApprovalsMode }: { openApprovalsMode: () => void }) {
+  const hermesMode = useApprovalsMode({ fresh: true })
+  const note = isLooseApprovals(hermesMode) ? approvalsModeNote(hermesMode) : null
   return (
     <>
       <Section title="Approvals" footer="A chat you set with its own Auto button keeps that choice.">
-        <DefaultAccessRow />
+        <DefaultAccessRow hermesMode={hermesMode} openApprovalsMode={openApprovalsMode} />
+        {note && (
+          <Row
+            icon="sliders"
+            tone={hermesMode === 'off' ? 'red' : 'gold'}
+            title={note.title}
+            sub={note.sub}
+            value={note.value}
+            chevron
+            onClick={openApprovalsMode}
+          />
+        )}
         <ApprovalLockRow />
       </Section>
       <PhoneDataSection />
@@ -1416,9 +1434,11 @@ function HermesRow({ version }: { version: string }) {
 export function SettingsScreen() {
   const current = useStore(s => s.profile)
   const opened = useStore(s => s.screenProfile)
-  const [start] = useState(takeSettingsStart) // opened on a page from elsewhere (the chat's model sheet, the empty chat)
+  const [start] = useState(takeSettingsStart) // opened on a page from elsewhere (the chat's model sheet, the empty chat, the Auto picker)
   const [page, setPage] = useState<Page>(() => start?.page || (opened ? 'keys' : 'hub'))
   const [closeFrom, setCloseFrom] = useState<Page | null>(start?.back === 'close' ? start.page : null) // Back here closes Settings
+  const [configQuery, setConfigQuery] = useState(() => (start?.page === 'config' ? start.query || '' : ''))
+  const [configBack, setConfigBack] = useState<Page | null>(null)
   const [scope, setScope] = useState(opened || current)
   const [rotation, setRotation] = useState(0) // bumped when a provider changed: the fallback list re-reads its key status
   const [slot, setSlot] = useState<HTMLElement | null>(null) // the Memory page's Add button goes in the top bar
@@ -1445,9 +1465,24 @@ export function SettingsScreen() {
   }, [target])
   useEffect(() => {
     if (closeFrom && page !== closeFrom) setCloseFrom(null) // moved on (to Models after a pick): Back goes up as usual
-  }, [page, closeFrom])
-  const back = () => (closeFrom === page ? closeScreen() : setPage(PARENT[page] || 'hub'))
-  // Back on a page returns to the page it was opened from (PARENT), else the main page; on the page Settings was opened on
+    if (configBack && page !== 'config') setConfigBack(null)
+  }, [page, closeFrom, configBack])
+  const openConfig = (query = '', from: Page | null = null) => {
+    setConfigQuery(query)
+    setConfigBack(from)
+    setPage('config')
+  }
+  const back = () => {
+    if (closeFrom === page) return closeScreen()
+    if (page === 'config' && configBack) {
+      const to = configBack
+      setConfigBack(null)
+      setPage(to)
+      return
+    }
+    setPage(PARENT[page] || 'hub')
+  }
+  // Back on a page returns to the page it was opened from (PARENT, or Access & privacy when opened from there), else the main page; on the page Settings was opened on
   // from the chat, it closes Settings and the chat is there again.
   useBackHandler(back, page !== 'hub')
   const bump = () => setRotation(v => v + 1)
@@ -1465,14 +1500,14 @@ export function SettingsScreen() {
       {page === 'add' && <AddProviderPage go={setPage} scope={scope} setScope={setScope} bump={bump} />}
       {page === 'keys' && <KeysTab scope={scope} setScope={setScope} />}
       {page === 'connectors' && <ConnectorsPage scope={scope} setScope={setScope} />}
-      {page === 'hermes' && <HermesSettingsPage scope={scope} setScope={setScope} openMemory={() => setPage('memory')} openAdvanced={() => setPage('config')} />}
+      {page === 'hermes' && <HermesSettingsPage scope={scope} setScope={setScope} openMemory={() => setPage('memory')} openAdvanced={() => openConfig()} />}
       {page === 'memory' && (
         <EmbeddedShell.Provider value={{ slot }}>
           <MemoryScreen />
         </EmbeddedShell.Provider>
       )}
-      {page === 'config' && <ConfigTab scope={scope} setScope={setScope} />}
-      {page === 'access' && <AccessPage />}
+      {page === 'config' && <ConfigTab scope={scope} setScope={setScope} initialQuery={configQuery} />}
+      {page === 'access' && <AccessPage openApprovalsMode={() => openConfig('approvals.mode', 'access')} />}
       {page === 'about' && <AboutPage />}
       {page === 'notifications' && <NotificationsPage />}
     </ScreenShell>

@@ -50,7 +50,7 @@ const STATIC: SettingsEntry[] = [
   e('memory', 'Memory', 'Behaviour → Memory', 'See what Hermux remembers', 'remember notes profile of you', null),
   e('config', 'Advanced settings', 'Behaviour', 'Every option, by its config name', 'config yaml hermes agent options', null),
   // Access & privacy
-  e('access', 'Auto for all chats', 'Access & privacy → Approvals', 'What new and existing chats start in', 'yolo full access approve run without asking permission'),
+  e('access', 'Auto for all chats', 'Access & privacy → Approvals', 'What new and existing chats start in', 'yolo full access approve run without asking permission smart approvals.mode'),
   e('access', 'Confirm approvals with fingerprint', 'Access & privacy → Approvals', undefined, 'biometric lock screen security approval permission'),
   e('access', 'Phone data for the agent', 'Access & privacy', 'Contacts, calendar, call log, messages, location and latest photos', 'read permission privacy sms contacts calls location photos'),
   e('access', 'Let the agent read phone data', 'Access & privacy → Phone data for the agent', undefined, 'contacts calendar call log messages sms location photos privacy master'),

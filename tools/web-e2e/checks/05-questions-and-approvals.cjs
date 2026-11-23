@@ -1,5 +1,5 @@
 // Answers from a notification, several questions at once, a huge approval warning, phone data approvals.
-const { calls, rpcs, sleep, check, mock, nativeShell, setMotion, WEB } = require('../lib.cjs')
+const { calls, rpcs, sleep, check, mock, nativeShell, setMotion, lowContrast, WEB } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -538,7 +538,7 @@ module.exports = async t => {
     await mock({ waiting: [] })
     await wide.close()
   }
-}
+
   // ── Landscape approval sheet: at 740 x 360 and at phone font scale 2.0, with 4 buttons and a long
   //    command, what is asked and the command stay visible, nothing hides above the top, and every button is reachable. ──
   {
@@ -618,5 +618,90 @@ module.exports = async t => {
       check(ans.length === 1 && ans[0].result.choice === 'deny', `${label}: Deny closes the sheet and answers Hermes`)
       await lp.close()
     }
+  }
+
+  // ── Hermes approvals.mode: when Hermes's own mode is smart or off, the chat's Auto control and Access & privacy
+  //    say so plainly and link to approvals.mode in Advanced settings without changing the mode themselves. ──
+  {
+    const { browser } = t
+    const putsBefore = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/config').length
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await mock({ approvalsMode: 'smart' })
+    const startPuts = putsBefore()
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    const smartBtn = p.getByRole('button', { name: /Hermes approves low-risk commands by itself.*\. Change how much Hermux may do without asking$/ })
+    await smartBtn.waitFor({ timeout: 5000 })
+    check((await smartBtn.innerText()).trim() === 'Auto · smart', `approvals.mode smart: Auto button shows Auto · smart (${JSON.stringify(await smartBtn.innerText())})`)
+    await smartBtn.click()
+    const picker = p.getByRole('dialog')
+    await picker.getByText('Auto: run without asking').waitFor({ timeout: 3000 })
+    const pickerText = await picker.innerText()
+    check(
+      !pickerText.includes('Hermux asks before risky commands') && pickerText.includes('low-risk commands by itself'),
+      `approvals.mode smart: Auto picker says Hermes approves low-risk commands and does not imply every risky command asks`
+    )
+    const openSetting = picker.getByRole('button', { name: /Hermes approvals mode · Smart/ })
+    check((await openSetting.count()) === 1, 'approvals.mode smart: Auto picker offers a link to the setting')
+    await openSetting.click()
+    await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
+    const modeRow = p.getByRole('button', { name: /approvals\.mode/ })
+    await modeRow.waitFor({ timeout: 5000 })
+    check((await modeRow.innerText()).includes('smart'), 'approvals.mode smart: the link opens Advanced settings directly on approvals.mode')
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode smart: Back from Advanced settings returns to the chat')
+
+    // Settings main page & Access & privacy in smart mode.
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    const accessRow = p.getByRole('button', { name: /^Access & privacy/ })
+    await accessRow.waitFor({ timeout: 5000 })
+    check((await accessRow.innerText()).includes('Smart approvals') && !(await accessRow.innerText()).includes('Auto off'), `approvals.mode smart: Settings main page shows Smart approvals (${JSON.stringify(await accessRow.innerText())})`)
+    await accessRow.click()
+    await p.getByRole('heading', { level: 1, name: 'Access & privacy' }).waitFor({ timeout: 5000 })
+    const autoAll = p.getByRole('button', { name: /^Auto for all chats/ })
+    check((await autoAll.innerText()).includes('low-risk commands by itself'), `approvals.mode smart: Auto for all chats explains smart mode (${JSON.stringify(await autoAll.innerText())})`)
+    const hermesRow = p.getByRole('button', { name: /^Hermes approvals mode/ })
+    check((await hermesRow.count()) === 1 && (await hermesRow.innerText()).includes('Smart'), 'approvals.mode smart: Access & privacy shows the Hermes approvals mode row')
+    await hermesRow.click()
+    await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: /approvals\.mode/ }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByRole('heading', { level: 1, name: 'Access & privacy' }).waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode smart: tapping Hermes approvals mode opens Advanced settings on approvals.mode, and Back returns to Access & privacy')
+
+    // Hermes approvals.mode = off: says every command runs without asking.
+    await mock({ approvalsMode: 'off' })
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: /^Access & privacy.*Approvals off/ }).waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode off: Settings main page shows Approvals off')
+    await p.getByRole('button', { name: /^Access & privacy/ }).click()
+    await p.getByRole('heading', { level: 1, name: 'Access & privacy' }).waitFor({ timeout: 5000 })
+    check((await p.getByRole('button', { name: /^Hermes approvals mode/ }).innerText()).includes('approves every command without asking'), 'approvals.mode off: Access & privacy says Hermes approves every command')
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+    const offBtn = p.getByRole('button', { name: /Hermes approves every command without asking.*\. Change how much Hermux may do without asking$/ })
+    await offBtn.waitFor({ timeout: 5000 })
+    check((await offBtn.innerText()).trim() === 'Approvals off', `approvals.mode off: chat Auto button shows Approvals off (${JSON.stringify(await offBtn.innerText())})`)
+    // Light theme contrast on the calm Auto chip and picker note.
+    await p.evaluate(() => {
+      document.documentElement.dataset.theme = 'light'
+      document.documentElement.dataset.glass = 'off'
+    })
+    const lowOff = await lowContrast(p, '.composer-wrap')
+    await offBtn.click()
+    await p.getByRole('dialog').getByText('Auto: run without asking').waitFor({ timeout: 3000 })
+    const lowPicker = await lowContrast(p, '[role="dialog"]')
+    check(lowOff.length === 0 && lowPicker.length === 0, `approvals.mode off (Light): chip and picker note reach 4.5:1 (${JSON.stringify({ lowOff, lowPicker })})`)
+    await p.evaluate(() => window.hermesBack())
+    check(putsBefore() === startPuts, 'approvals.mode: reading and showing the mode never writes PUT /api/config')
+
+    // Restore manual mode so later checks see the baseline.
+    await mock({ approvalsMode: 'manual' })
+    await p.close()
   }
 }
