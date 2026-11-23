@@ -196,41 +196,44 @@ public class IslandStateTest {
                 && IslandState.ENDING.equals(IslandState.turnFate("A", 1000, 9000, quiet, 9000 + IslandState.DONE_GRACE_MS - 1)),
                 "it stopped with no reply yet: the panel waits a moment for it");
         check(IslandState.ENDED.equals(IslandState.turnFate("A", 1000, 9000, quiet, 9000 + IslandState.DONE_GRACE_MS)), "then nothing to show (stopped elsewhere, or failed): ended, it closes");
-        check(IslandState.SENDING.equals(IslandState.stopFate("A", 1000, busy)), "a stop on its way while the chat works: Stopping");
-        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", 1000, quiet)), "the turn over after a stop: Stopped");
-        IslandState stopBad = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "failed", "HTTP 500", 2000), null, null, Arrays.asList(w1), 1, null);
-        check(IslandState.Outcome.FAILED.equals(IslandState.stopFate("A", 1000, stopBad)), "it couldn't be stopped: failed");
-        IslandState stopBad2 = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "failed", "HTTP 500", 2000), null, null, Arrays.asList(w1, w2), 2, null);
-        check(IslandState.SENDING.equals(IslandState.stopFate("A", 3000, stopBad)) && IslandState.SENDING.equals(IslandState.stopFate("B", 1000, stopBad2)),
-                "an older stop's failure, or another chat's, is not this one's");
-        IslandState stopOk = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 2000), null, null, Arrays.asList(w1), 1, null);
-        check(IslandState.SENDING.equals(IslandState.stopFate("A", 1000, stopOk)), "the stop was taken but the turn still runs: still Stopping");
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", 1, busy)), "a stop on its way while the chat works: Stopping");
+        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", 1, quiet)), "the turn over after a stop: Stopped");
+        IslandState.Progress wStop = new IslandState.Progress("A", "", "Trip", "Trip", "x", 500, 3, "", "", 0, 0,
+                new IslandState.StopView(IslandState.StopView.SENDING, 2, 10_000, ""), "", 0);
+        IslandState.Progress wStopOk = new IslandState.Progress("A", "", "Trip", "Trip", "x", 500, 3, "", "", 0, 0,
+                new IslandState.StopView(IslandState.StopView.ACCEPTED, 2, 0, ""), "", 0);
+        IslandState.Progress wStopFail1 = new IslandState.Progress("A", "", "Trip", "Trip", "x", 500, 3, "", "", 0, 0,
+                new IslandState.StopView(IslandState.StopView.FAILED, 1, 0, "HTTP 500"), "", 0);
+        IslandState.Progress wStopFail2 = new IslandState.Progress("A", "", "Trip", "Trip", "x", 500, 3, "", "", 0, 0,
+                new IslandState.StopView(IslandState.StopView.FAILED, 2, 0, "HTTP 500"), "", 0);
+        IslandState stopBad = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStopFail1), 1, null);
+        check(IslandState.Outcome.FAILED.equals(IslandState.stopFate("A", 1, stopBad)), "attempt 1 failed: FAILED");
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", 2, stopBad))
+                && IslandState.Outcome.FAILED.equals(IslandState.stopFate("A", 2,
+                        new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStopFail2), 1, null))),
+                "attempt ordering ignores an older attempt's failure and catches a retry failure even in the same ms or after wall-clock jumps");
+        IslandState stopBadB = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStopFail1, w2), 2, null);
+        check(IslandState.SENDING.equals(IslandState.stopFate("B", 1, stopBadB)), "another chat's failure is not this chat's");
+        IslandState stopOk = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStopOk), 1, null);
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", 2, stopOk)), "the stop was accepted but the turn still runs: still Stopping");
         IslandState stop404AlreadyOver = new IslandState(IslandState.NONE, null, new IslandState.Outcome("stop", "A", "", "failed", "it isn't running in Hermux", 2000), null, null, Arrays.asList(w2), 1, null);
-        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", 1000, stop404AlreadyOver)), "an overlapping stop returning 404/FAILED after the turn is already over still reads Stopped, not FAILED");
-        // The 15 s wait for a stop: the failure line only when nothing came of it (review of 78239d3: the card's Stop
-        // sent at 1000 succeeded at 2000, the panel opened at 5000 and the turn takes over 15 s to wind down).
-        IslandState.Progress wStop = new IslandState.Progress("A", "Trip", "Trip", "x", 500, 3, "", "", 0, 0, true, 1000, false, "", 0);
-        IslandState.Progress wStopOk = new IslandState.Progress("A", "Trip", "Trip", "x", 500, 3, "", "", 0, 0, true, 1000, true, "", 0);
-        IslandState otherStopped = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(w2, wStopOk), 2, null);
-        check(!IslandState.stopUnheard("A", 1000, otherStopped) && !IslandState.newStop(otherStopped.progressFor("A"), 1000),
-                "a stopped chat in lastOthers keeps its stopAt and stopOk, so it never trips the 15 s failure or re-enters Stopping");
-        check(wStop.stopAt == 1000 && !wStop.stopOk && wStopOk.stopOk
-                && new IslandState.Progress("A", "", "", "x", 0, 0, "", "", 0, 0, false, 1000, true, "", 0).stopAt == 0,
-                "a chat at work carries when its stop was sent and whether it was accepted (nothing without a stop)");
-        IslandState okBeforeOpen = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 2000), null, null, Arrays.asList(wStop), 1, null);
-        check(!IslandState.stopUnheard("A", 1000, okBeforeOpen) && IslandState.SENDING.equals(IslandState.stopFate("A", 1000, okBeforeOpen)),
-                "a stop that succeeded before the panel opened, with the turn still winding down: Stopping, never the failure");
-        IslandState okOverwritten = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("approval", "A", "r1", "allowed", "", 3000), null, null, Arrays.asList(wStopOk), 1, null);
-        check(!IslandState.stopUnheard("A", 1000, okOverwritten), "accepted, its outcome since replaced by another answer's: still no failure");
-        IslandState nothing = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStop), 1, null);
-        IslandState olderOk = new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "", "stopped", "", 900), null, null, Arrays.asList(wStop), 1, null);
-        check(IslandState.stopUnheard("A", 1000, nothing) && IslandState.stopUnheard("A", 1000, olderOk) && IslandState.stopUnheard("A", 1000, null),
-                "nothing heard of this stop in 15 s (or only an older stop's outcome): the failure line");
-        check(!IslandState.stopUnheard("A", 1000, quiet), "the turn is over: Stopped, not a failure");
-        check(IslandState.newStop(wStop, 0) && IslandState.newStop(wStop, 999) && !IslandState.newStop(wStop, 1000) && !IslandState.newStop(w1, 0),
-                "a stop the panel already took in (one that failed, still held by the service) doesn't start Stopping again");
+        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", 1, stop404AlreadyOver)), "an overlapping stop returning 404/FAILED after the turn is already over still reads Stopped, not FAILED");
+        check(wStop.stopAttempt == 2 && !wStop.stopOk && wStop.stopRemainingMs == 10_000 && wStopOk.stopOk && wStopOk.stopAttempt == 2
+                && new IslandState.Progress("A", "", "", "", "x", 0, 0, "", "", 0, 0, IslandState.StopView.NONE, "", 0).stopAttempt == 0,
+                "a chat at work carries its stop attempt number, acceptance and remaining timeout (0 without a stop)");
+        check(IslandState.newStop(wStop, 0) && IslandState.newStop(wStop, 1) && !IslandState.newStop(wStop, 2) && !IslandState.newStop(w1, 0),
+                "a non-accepted sending stop the panel already saw does not re-enter Stopping, while a newer attempt does");
+        check(IslandState.newStop(wStopOk, 2), "an accepted stop for this turn re-enters Stopping even with the same attempt (late 200 after timeout)");
+        // Timeout fallback rules (stopTimeoutDelay): reschedule when time remains, never fail when accepted/ended, fail when no record / timed out.
+        IslandState stillSending = new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(wStop), 1, null);
+        check(IslandState.stopTimeoutDelay("A", "", 500, stillSending) == 10_000, "timeout with time left reschedules for the remainder");
+        check(IslandState.stopTimeoutDelay("A", "", 500, stopOk) == -1, "timeout for an accepted stop stays silent (never fails)");
+        check(IslandState.stopTimeoutDelay("A", "", 500, quiet) == -1, "timeout after turn ended stays silent");
+        check(IslandState.stopTimeoutDelay("A", "", 1000, busy) == 0, "timeout when no stop record was created shows failure (never sticks)");
+        check(IslandState.stopTimeoutDelay("A", "", 500, stopBad) == 0, "timeout when only an older failed attempt exists shows failure (never sticks)");
+        check(IslandState.stopTimeoutDelay("A", "", 500, null) == 0, "timeout with null snapshot shows failure");
 
-        // ── Per-turn StopBook: event-order table covering all 8 security-review scenarios ──
+        // ── Per-turn StopBook: event-order table covering all security-review scenarios ──
         // Steps run in order on a fresh StopBook (timeout = 15_000 ms), asserting the exact state after each scenario.
         final class StopTable {
             void run(String name, Runnable body) {
@@ -245,31 +248,31 @@ public class IslandStateTest {
         tbl.run("quick_turns_lastSession", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000)), 100);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000, 100);
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 100);
             check(t1 != null && b.view("A", "p1:1", 200).stopping(), "t1 starts SENDING");
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:2", 1000)), 300); // Turn 2 even in the same ms (only turn_id differs)
             check(!b.view("A", "p1:1", 300).stopping() && IslandState.StopView.IDLE.equals(b.view("A", "p1:2", 300).state),
                     "turn 2 in lastSession clears turn 1 stop even with equal since");
             check(!b.onStop200("A", "p1:1", "p1:1", t1.attempt, 350)
-                    && !b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 500", 1350, 350),
+                    && !b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 500", 350),
                     "late 200 and late failure from turn 1 are ignored");
-            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 1400, 400);
+            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 400);
             check(t2 != null && b.view("A", "p1:2", 400).stopping(), "Stop is immediately usable on turn 2");
         });
         // 2. Two quick turns in one chat (lastOthers): turn_id separates them; other chat unaffected.
         tbl.run("quick_turns_lastOthers", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("B", "p1:0", 900), tbl.lt("A", "p1:1", 1000)), 100);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000, 100);
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 100);
             check(t1 != null && b.view("A", "p1:1", 150).stopping() && !b.view("B", "p1:0", 150).stopping(),
                     "stopping chat A in others leaves chat B unaffected");
             b.onStatus("p1", true, Arrays.asList(tbl.lt("B", "p1:0", 900), tbl.lt("A", "p1:2", 1000)), 300);
             check(IslandState.StopView.IDLE.equals(b.view("A", "p1:2", 300).state),
                     "back-to-back turn 2 in lastOthers clears turn 1 stop even with equal since");
             check(!b.onStop200("A", "p1:1", "p1:1", t1.attempt, 350)
-                    && !b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 404", 1350, 350),
+                    && !b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 404", 350),
                     "late 200/failure from earlier turn in others ignored");
-            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 1400, 400);
+            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 400);
             check(t2 != null && b.onStop200("A", "p1:2", "p1:2", t2.attempt, 450) && b.view("A", "p1:2", 450).accepted(),
                     "turn 2 in others stops and accepts cleanly");
         });
@@ -277,13 +280,13 @@ public class IslandStateTest {
         tbl.run("late_200_and_failure_from_earlier_turn", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000)), 100);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000, 100);
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 100);
             check(b.onDoneFlash("p1", "A", "p1:1"), "done flash for turn 1 ends turn 1 stop");
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:2", 2000)), 200);
-            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 2100, 250);
+            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 250);
             check(!b.onStop200("A", "p1:1", "p1:1", t1.attempt, 300) && !b.view("A", "p1:2", 300).accepted(),
                     "turn 1 late 200 cannot mark turn 2 accepted");
-            check(!b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 500", 2300, 300) && b.view("A", "p1:2", 300).stopping(),
+            check(!b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 500", 300) && b.view("A", "p1:2", 300).stopping(),
                     "turn 1 late failure cannot fail turn 2");
             check(b.onStop200("A", "p1:2", "p1:2", t2.attempt, 350) && b.view("A", "p1:2", 350).accepted(),
                     "turn 2 own 200 marks turn 2 accepted");
@@ -292,67 +295,78 @@ public class IslandStateTest {
         tbl.run("overlapping_stops_and_retries", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000), tbl.lt("B", "p1:2", 1050)), 100);
-            IslandState.StopTicket a1 = b.beginStop("A", "p1:1", 1000, 100);
-            check(a1 != null && b.beginStop("A", "p1:1", 1100, 200) == null, "overlapping stop while SENDING is skipped");
-            IslandState.StopTicket tb1 = b.beginStop("B", "p1:2", 1100, 200);
+            IslandState.StopTicket a1 = b.beginStop("A", "p1:1", 100);
+            check(a1 != null && b.beginStop("A", "p1:1", 200) == null, "overlapping stop while SENDING is skipped");
+            IslandState.StopTicket tb1 = b.beginStop("B", "p1:2", 200);
             check(tb1 != null && b.view("A", "p1:1", 200).stopping() && b.view("B", "p1:2", 200).stopping(),
                     "stopping chat B does not overwrite chat A's stop");
-            check(b.onStopFailed("A", "p1:1", a1.attempt, "HTTP 500", 1200, 300) && b.view("A", "p1:1", 300).failed()
+            check(b.onStopFailed("A", "p1:1", a1.attempt, "HTTP 500", 300) && b.view("A", "p1:1", 300).failed()
                     && !b.view("A", "p1:1", 300).stopping(), "real failure moves to FAILED and restores Stop");
-            IslandState.StopTicket a2 = b.beginStop("A", "p1:1", 1300, 400);
+            IslandState.StopTicket a2 = b.beginStop("A", "p1:1", 400);
             check(a2 != null && a2.attempt > a1.attempt && b.view("A", "p1:1", 400).stopping(), "retry after failure starts new attempt");
-            check(!b.onStopFailed("A", "p1:1", a1.attempt, "stale", 1350, 450) && b.view("A", "p1:1", 450).stopping(),
+            check(!b.onStopFailed("A", "p1:1", a1.attempt, "stale", 450) && b.view("A", "p1:1", 450).stopping(),
                     "stale failure from attempt 1 cannot fail retry attempt 2");
             check(b.onStop200("A", "p1:1", "p1:1", a1.attempt, 500) && b.view("A", "p1:1", 500).accepted(),
                     "matching turn_id 200 from earlier attempt of the same turn is accepted");
-            check(b.beginStop("A", "p1:1", 1500, 600) == null, "overlapping stop while ACCEPTED is skipped");
-            check(!b.onStopFailed("A", "p1:1", a2.attempt, "HTTP 404", 1600, 650) && b.view("A", "p1:1", 650).accepted(),
+            check(b.beginStop("A", "p1:1", 600) == null, "overlapping stop while ACCEPTED is skipped");
+            check(!b.onStopFailed("A", "p1:1", a2.attempt, "HTTP 404", 650) && b.view("A", "p1:1", 650).accepted(),
                     "failure from racing attempt 2 after ACCEPTED is ignored");
         });
-        // 5. Timeout then late failure with no retry: chip & panel both leave Stopping, reopened panel sees no phantom 15 s.
-        tbl.run("timeout_then_late_failure_no_retry", () -> {
+        // 5. Timeout then late failure with no retry, AND late 200 after timeout with no retry (panel follows chip back into Stopping).
+        tbl.run("timeout_then_late_failure_or_late_200_no_retry", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000)), 1000);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 5000, 1000);
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000);
             IslandState.StopView mid = b.view("A", "p1:1", 6000);
             check(mid.stopping() && mid.remainingMs == 10_000 && b.nextTimeoutDelayMs(6000) == 10_000,
                     "panel reopened 5 s in sees only 10 s remaining, not a fresh 15 s");
             IslandState.StopView atLimit = b.view("A", "p1:1", 16_000);
-            check(atLimit.failed() && !atLimit.stopping() && atLimit.remainingMs == 0,
+            check(atLimit.failed() && !atLimit.stopping() && atLimit.remainingMs == 0 && atLimit.attempt == t1.attempt,
                     "at 15 s view derives FAILED immediately (chip restores Stop, reopened panel sees no phantom wait)");
-            java.util.List<IslandState.StopTimeout> tos = b.expireTimeouts(20_000, 16_000);
+            java.util.List<IslandState.StopTimeout> tos = b.expireTimeouts(16_000);
             check(tos.size() == 1 && "A".equals(tos.get(0).session) && "p1:1".equals(tos.get(0).turnId)
                     && b.nextTimeoutDelayMs(16_000) == -1, "expireTimeouts reports the timed-out turn once and stops timer");
-            check(b.expireTimeouts(21_000, 17_000).isEmpty(), "expireTimeouts does not fire a second time");
-            check(!b.onStopFailed("A", "p1:1", t1.attempt, "socket timeout", 22_000, 18_000)
+            check(b.expireTimeouts(17_000).isEmpty(), "expireTimeouts does not fire a second time");
+            check(!b.onStopFailed("A", "p1:1", t1.attempt, "socket timeout", 18_000)
                     && b.view("A", "p1:1", 18_000).failed() && !b.view("A", "p1:1", 18_000).stopping(),
                     "late failure after timeout with no retry is a no-op and leaves Stop usable");
-            IslandState.StopTicket t2 = b.beginStop("A", "p1:1", 23_000, 19_000);
-            check(t2 != null && b.view("A", "p1:1", 19_000).stopping() && b.view("A", "p1:1", 19_000).remainingMs == 15_000,
+            // Late 200 after timeout with NO retry: record moves to ACCEPTED with the same attempt, and newStop returns true so the open panel re-enters Stopping!
+            check(b.onStop200("A", "p1:1", "p1:1", t1.attempt, 18_500), "late 200 for the same turn after timeout is accepted");
+            IslandState.StopView lateAcc = b.view("A", "p1:1", 18_500);
+            IslandState.Progress pLateAcc = new IslandState.Progress("A", "p1:1", "Trip", "Trip", "Step", 1000, 1, "", "", 0, 0, lateAcc, "", 0);
+            check(lateAcc.accepted() && lateAcc.attempt == t1.attempt && IslandState.newStop(pLateAcc, t1.attempt),
+                    "open panel re-enters Stopping when late 200 marks the same attempt ACCEPTED");
+            // On a fresh turn, after timeout, tapping Stop again starts a fresh retry with higher attempt.
+            b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:2", 2000)), 19_000);
+            IslandState.StopTicket t2 = b.beginStop("A", "p1:2", 19_000);
+            b.expireTimeouts(34_000);
+            IslandState.StopTicket t3 = b.beginStop("A", "p1:2", 35_000);
+            check(t3 != null && t3.attempt > t2.attempt && b.view("A", "p1:2", 35_000).stopping()
+                    && b.view("A", "p1:2", 35_000).remainingMs == 15_000,
                     "after timeout, tapping Stop again always starts a fresh retry");
         });
         // 6. Stop tapped before a new turn's first throttled status (and stale tap arriving after new turn's status).
         tbl.run("stop_before_new_turn_first_status", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000)), 100);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000, 100); // tapped while turn 1 was still on screen
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 100); // tapped while turn 1 was still on screen
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:2", 1800)), 200); // turn 2's first throttled status
             check(IslandState.StopView.IDLE.equals(b.view("A", "p1:2", 200).state),
                     "turn 2's first status drops turn 1's stop instead of binding it to turn 2");
-            check(!b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 409", 1900, 250)
+            check(!b.onStopFailed("A", "p1:1", t1.attempt, "HTTP 409", 250)
                     && !b.onStop200("A", "p1:1", "p1:1", t1.attempt, 250),
                     "turn 1's 409/200 after turn 2 starts is dropped");
-            check(b.beginStop("A", "p1:1", 2000, 300) == null,
+            check(b.beginStop("A", "p1:1", 300) == null,
                     "a stale Stop intent carrying turn 1's turn_id is refused once turn 2 is live");
             b.onStatus("p1", false, null, 400);
-            check(b.beginStop("A", "p1:2", 2100, 400) == null && b.beginStop("A", "", 2100, 400) == null,
+            check(b.beginStop("A", "p1:2", 400) == null && b.beginStop("A", "", 400) == null,
                     "no stop is started when no turn is active");
         });
         // 7. Events from another chat or another Hermes process, and delayed done flashes without/wrong turn_id.
         tbl.run("other_chat_and_other_process", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000)), 100);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000, 100);
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 100);
             b.onStatus("p2", false, null, 200); // second Hermes process goes idle
             b.onStatus("p2", true, Arrays.asList(tbl.lt("C", "p2:1", 1100)), 250); // second process works on chat C
             b.onStatus("p2", false, null, 300);
@@ -367,7 +381,7 @@ public class IslandStateTest {
                     "matching process + chat + turn_id done flash ends the stop");
             // Expire-all drops everything.
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:2", 2000)), 500);
-            b.beginStop("A", "p1:2", 2000, 500);
+            b.beginStop("A", "p1:2", 500);
             b.onExpireAll();
             check(IslandState.StopView.IDLE.equals(b.view("A", "p1:2", 550).state), "onExpireAll clears all stop state");
         });
@@ -375,7 +389,7 @@ public class IslandStateTest {
         tbl.run("missing_turn_identity", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("p1", true, Arrays.asList(tbl.lt("A", "p1:1", 1000)), 100);
-            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 1000, 100);
+            IslandState.StopTicket t1 = b.beginStop("A", "p1:1", 100);
             check(!b.onStop200("A", "p1:1", "", t1.attempt, 200) && !b.view("A", "p1:1", 200).accepted(),
                     "identified turn rejects a 200 with missing response turn_id");
             check(!b.onStop200("A", "p1:1", "p1:99", t1.attempt, 250) && !b.view("A", "p1:1", 250).accepted(),
@@ -384,7 +398,7 @@ public class IslandStateTest {
             // Missing both turn_id and since: never claims ACCEPTED, but still clears when turn ends or times out.
             IslandState.StopBook b2 = new IslandState.StopBook(15_000);
             b2.onStatus("p1", true, Arrays.asList(tbl.lt("A", "", 0)), 100);
-            IslandState.StopTicket u1 = b2.beginStop("A", "", 1000, 100);
+            IslandState.StopTicket u1 = b2.beginStop("A", "", 100);
             check(u1 != null && !b2.onStop200("A", "", "", u1.attempt, 200) && !b2.view("A", "", 200).accepted(),
                     "turn with neither turn_id nor since never claims ACCEPTED on 200");
             check(b2.view("A", "", 15_100).failed(), "and falls back to FAILED at 15 s so Stop stays usable");
@@ -393,13 +407,13 @@ public class IslandStateTest {
         tbl.run("older_plugin_fallback", () -> {
             IslandState.StopBook b = new IslandState.StopBook(15_000);
             b.onStatus("", true, Arrays.asList(tbl.lt("A", "", 1000), tbl.lt("B", "", 0)), 100);
-            IslandState.StopTicket tA = b.beginStop("A", "", 1000, 100);
+            IslandState.StopTicket tA = b.beginStop("A", "", 100);
             check(tA != null && b.onStop200("A", "", "", tA.attempt, 200) && b.view("A", "", 200).accepted(),
                     "older plugin lastSession (with since > 0) accepts its own in-flight 200 within timeout");
             b.onStatus("", true, Arrays.asList(tbl.lt("A", "", 2000)), 300); // strictly newer since = turn 2
             check(IslandState.StopView.IDLE.equals(b.view("A", "", 300).state),
                     "older plugin strictly newer since clears turn 1 stop");
-            IslandState.StopTicket tA2 = b.beginStop("A", "", 2000, 300);
+            IslandState.StopTicket tA2 = b.beginStop("A", "", 300);
             check(!b.onStop200("A", "", "", tA.attempt, 350) && !b.view("A", "", 350).accepted(),
                     "older plugin rejects late 200 from earlier attempt");
             check(!b.onStop200("A", "", "", tA2.attempt, 15_300) && b.view("A", "", 15_300).failed(),
@@ -408,7 +422,7 @@ public class IslandStateTest {
                     "older plugin done flash with empty turn_id clears legacy stop");
             // Older plugin others (since == 0): never falsely accepts 200 while since is unknown, adopts since on promotion.
             b.onStatus("", true, Arrays.asList(tbl.lt("X", "", 900), tbl.lt("B", "", 0)), 500);
-            IslandState.StopTicket tB = b.beginStop("B", "", 3000, 500);
+            IslandState.StopTicket tB = b.beginStop("B", "", 500);
             check(tB != null && !b.onStop200("B", "", "", tB.attempt, 550) && !b.view("B", "", 550).accepted(),
                     "older plugin others (no since, no turn_id) never guesses ACCEPTED");
             b.onStatus("", true, Arrays.asList(tbl.lt("B", "", 950)), 600); // promoted to lastSession
@@ -417,21 +431,21 @@ public class IslandStateTest {
         });
         // 10. Progress / Done / stopFate / turnFate with explicit turnId.
         IslandState.Progress pT1 = new IslandState.Progress("A", "p1:1", "Trip", "Trip", "Step 1", 1000, 1, "", "", 0, 0,
-                new IslandState.StopView(IslandState.StopView.SENDING, 1500, 12_000, 0, ""), "", 0);
+                new IslandState.StopView(IslandState.StopView.SENDING, 1, 12_000, ""), "", 0);
         IslandState.Progress pT2 = new IslandState.Progress("A", "p1:2", "Trip", "Trip", "Step 1", 2000, 0, "", "", 0, 0,
                 IslandState.StopView.NONE, "", 0);
         IslandState.Progress pT1Fail = new IslandState.Progress("A", "p1:1", "Trip", "Trip", "Step 1", 1000, 1, "", "", 0, 0,
-                new IslandState.StopView(IslandState.StopView.FAILED, 1500, 0, 2000, "timed out"), "", 0);
+                new IslandState.StopView(IslandState.StopView.FAILED, 1, 0, "timed out"), "", 0);
         check(IslandState.sameTurn("p1:1", 1000, pT1) && !IslandState.sameTurn("p1:1", 1000, pT2),
                 "sameTurn distinguishes turn 1 from turn 2 by turnId");
-        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", "p1:1", 1000, 1500,
+        check(IslandState.Outcome.STOPPED.equals(IslandState.stopFate("A", "p1:1", 1000, 1,
                 new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(pT2), 1, null))),
                 "stopFate reads STOPPED when turn 2 has already replaced turn 1 in working");
-        check(IslandState.SENDING.equals(IslandState.stopFate("A", "p1:1", 1000, 1500,
+        check(IslandState.SENDING.equals(IslandState.stopFate("A", "p1:1", 1000, 1,
                 new IslandState(IslandState.PROGRESS, null, new IslandState.Outcome("stop", "A", "p1:1", "failed", "old", 1500),
                         null, null, Arrays.asList(pT1), 1, null))),
-                "active stopping state on Progress beats a same-ms older FAILED outcome");
-        check(IslandState.Outcome.FAILED.equals(IslandState.stopFate("A", "p1:1", 1000, 1500,
+                "active stopping state on Progress beats any stale outcome");
+        check(IslandState.Outcome.FAILED.equals(IslandState.stopFate("A", "p1:1", 1000, 1,
                 new IslandState(IslandState.PROGRESS, null, null, null, null, Arrays.asList(pT1Fail), 1, null))),
                 "stopFailed on Progress reports FAILED even if st.outcome was overwritten");
         IslandState.Done dT1 = new IslandState.Done("A", "p1:1", "Trip", "Done 1", 1, 5, 2500);
@@ -578,7 +592,7 @@ ok 'src "Notification statusNotification(" HermesService | sed -n 2p | grep -q "
 TASKSET=$(sed -n '/void set(String now, Ticker t, boolean reduced, boolean animate)/,/^        }/p' "$VIEWS")
 ok 'grep -q "for (Ticker.Handle m : moving) m.cancel();" <<<"$TASKSET" && grep -q "g\[k\] = v" <<<"$TASKSET" && grep -q "h\[k\] = IslandMotion.swell(v)" <<<"$TASKSET" && grep -q "au\[k\] = v" <<<"$TASKSET" && ! grep -q "green\[k\]\|height\[k\]\|gold\[k\]" <<<"$TASKSET"' "a new task list cancels the running motions, and each writes only to its own list (no index past a shorter list)"
 ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "col.flex.add(scroll);" && src "IslandViews.Fit buildDone(" IslandProgress | grep -q "col.flex.add(bodyScroll);"' "Progress and Done scroll their body when the panel can't fit it"
-ok '[ "$(grep -c "enterStopping(" "$PROG")" -ge 5 ] && src "IslandViews.Fit build(" IslandProgress | grep -q "if (a.stopping) enterStopping(false, a.stopAt, a.stopOk ? 0 : a.stopRemainingMs);" && src "void update(" IslandProgress | grep -q "enterStopping(true, a.stopAt, a.stopOk ? 0 : a.stopRemainingMs)" && src "void enterStopping(" IslandProgress | grep -q "phase = IslandState.SENDING;" && src "void enterStopping(" IslandProgress | grep -q "if (timeoutMs > 0) p.MAIN.postDelayed(stopTimeoutRun, timeoutMs);"' "the panel's Stop, the card's Stop seen while open and the card's Stop already on its way all enter Stopping the same way with remaining timeout"
+ok '[ "$(grep -c "enterStopping(" "$PROG")" -ge 5 ] && src "IslandViews.Fit build(" IslandProgress | grep -q "if (a.stopping) enterStopping(false, a.stopAttempt, a.stopOk ? 0 : Math.max(1, a.stopRemainingMs));" && src "void update(" IslandProgress | grep -q "enterStopping(true, a.stopAttempt, a.stopOk ? 0 : Math.max(1, a.stopRemainingMs))" && src "void enterStopping(" IslandProgress | grep -q "phase = IslandState.SENDING;" && src "void enterStopping(" IslandProgress | grep -q "if (timeoutMs > 0) p.MAIN.postDelayed(stopTimeoutRun, timeoutMs);"' "the panel's Stop, the card's Stop seen while open, a late 200 accepted and the card's Stop already on its way all enter Stopping the same way with attempt number and remaining timeout"
 ok 'src "Notification confirmNotification()" HermesService | grep -q "R.drawable.ic_stat_check : R.drawable.ic_stat_cross" && [ -f android/res/drawable/ic_stat_check.xml ] && [ -f android/res/drawable/ic_stat_cross.xml ]' "the chip's confirmation has a drawn check or cross beside the word"
 ok 'grep -q "watch.setMinimumWidth(Math.round(dp(92)))" "$PROG" && grep -q "appRow.addView(watch, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT" "$PROG" && grep -q "protected void onMeasure(int ws, int hs)" "$VIEWS"' "Watch wraps its text, 92 dp at least"
 ok 'src "void swapInner(IslandViews.Fit now)" IslandPanel | grep -q "if (swapIn != null) swapIn.cancel();"' "a change of state right after another cancels the earlier fade-in"
@@ -589,13 +603,16 @@ ok 'sed -n "/static final class MaxScroll/,/^    }/p" "$VIEWS" | tr -d "\n" | gr
 ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "scrolled.addView(errLine" && ! src "IslandViews.Fit build(" IslandProgress | grep -q "col.addView(errLine"' "the stop failure line is in the scrolled part, so Stop and Open chat stay on the panel"
 STOPFAIL=$(src "void stopFailed()" IslandProgress)
 ok 'grep -q "OnLayoutChangeListener" <<<"$STOPFAIL" && grep -q "removeOnLayoutChangeListener(this)" <<<"$STOPFAIL" && grep -q "scroll.smoothScrollTo(0, scrolled.getHeight())" <<<"$STOPFAIL" && ! grep -q "fullScroll" <<<"$STOPFAIL"' "stopFailed scrolls the failure line into view after layout with a one-shot OnLayoutChangeListener and smoothScrollTo (no fullScroll focus jump)"
-ok 'src "IslandViews.Fit build(" IslandProgress | grep -q "enterStopping(false, a.stopAt, a.stopOk ? 0 : a.stopRemainingMs)" && src "void update(" IslandProgress | grep -q "IslandState.newStop(a, stopSeen))" && grep -q "s.expireStopTimeouts();" "$PROG" && src "void stopTurn(String session, String turnId)" HermesService | grep -q "stops.onStop200("' "panel and chip share StopBook timeout and acceptance rules"
+STOPTO=$(src "void onStopTimeout()" IslandProgress)
+ok 'grep -q "s.expireStopTimeouts();" <<<"$STOPTO" && grep -q "IslandState.stopTimeoutDelay(session, turnId, since, st)" <<<"$STOPTO" && grep -q "if (delay > 0) p.MAIN.postDelayed(stopTimeoutRun, delay);" <<<"$STOPTO" && grep -q "else if (delay == 0) stopFailed();" <<<"$STOPTO"' "onStopTimeout reschedules for remaining time or shows failure unless accepted/ended (never sticks)"
 STOPTURN=$(src "void stopTurn(String session, String turnId)" HermesService)
-ok 'grep -q "stops.beginStop(session, turnId," <<<"$STOPTURN" && grep -q "stops.onStop200(ticket.session, ticket.turnId, gotTurnId, ticket.attempt" <<<"$STOPTURN" && grep -q "stops.onStopFailed(ticket.session, ticket.turnId, ticket.attempt, failed" <<<"$STOPTURN" && grep -q "req.put(\"turn_id\", ticket.turnId)" <<<"$STOPTURN" && ! grep -q "stopEpisode\|stopAttempt\|stopInFlight\|stopTurnSince\|clearStopInFlight\|endStopEpisode" "$SVC" "$PROG" android/src/com/omarqaterge/hermesmobile/IslandState.java' "stopTurn uses StopBook with turn_id and all old ad-hoc stop flags/counters are deleted"
-ok 'src "synchronized void expireWorking()" HermesService | grep -q "stops.onExpireAll();" && src "void expireStopTimeouts()" HermesService | grep -q "stops.expireTimeouts("' "expireWorking and expireStopTimeouts drive StopBook cleanly"
+ok 'grep -q "stops.beginStop(session, turnId," <<<"$STOPTURN" && grep -q "stops.onStop200(ticket.session, ticket.turnId, gotTurnId, ticket.attempt" <<<"$STOPTURN" && grep -q "stops.onStopFailed(ticket.session, ticket.turnId, ticket.attempt, failed" <<<"$STOPTURN" && grep -q "req.put(\"turn_id\", ticket.turnId)" <<<"$STOPTURN" && ! grep -q "stopEpisode\|stopInFlight\|stopTurnSince\|clearStopInFlight\|endStopEpisode\|stopUnheard" "$SVC" "$PROG" android/src/com/omarqaterge/hermesmobile/IslandState.java' "stopTurn uses StopBook with turn_id and all old ad-hoc stop flags/stopUnheard are deleted"
+ok 'src "synchronized void expireWorking()" HermesService | grep -q "stops.onExpireAll();" && src "void expireStopTimeouts()" HermesService | grep -q "stops.expireTimeouts(" && src "public void onDestroy()" HermesService | grep -q "main.removeCallbacks(stopTimeoutTask);"' "expireWorking, expireStopTimeouts and onDestroy drive and clean up StopBook/stopTimeoutTask cleanly"
 ok 'src "synchronized java.util.List<IslandState.Progress> islandWorking()" HermesService | grep -q "stops.view(lastSession, lastTurnId, nowMono)" && src "synchronized java.util.List<IslandState.Progress> islandWorking()" HermesService | grep -q "stops.view(ses, oTurnId, nowMono)" && src "Notification workingNotification(" HermesService | grep -q "stops.view(lastSession, lastTurnId," && src "Notification workingNotification(" HermesService | grep -q "putExtra(\"turn_id\", lastTurnId)"' "chip and panel (including lastOthers) derive Stop state from one StopBook.view and pass turn_id"
 STATUS=$(sed -n '/case "status": {/,/^            }/p' "$SVC")
 ok 'grep -q "stops.onStatus(proc, working, liveTurns," <<<"$STATUS" && grep -q "!working && lastWorking && !lastProc.isEmpty() && !proc.isEmpty() && !proc.equals(lastProc)" <<<"$STATUS" && grep -q "stops.onDoneFlash(proc, session, turnId)" <<<"$FLASH"' "status (with proc + others turn_id/since) and done flash (with proc + turn_id) update StopBook and ignore other processes going idle"
+ok 'grep -q "if (!lastWorking) lastSession = session;" <<<"$FLASH" && grep -q "if (!lastWorking && session != null && !session.isEmpty()) lastSession = session;" <<<"$FLASH" && ! grep -q "^[[:space:]]*lastSession = session;" <<<"$FLASH"' "a flash never overwrites lastSession while lastWorking is true"
+ok '! src "void update(IslandState.Progress a" IslandProgress | grep -q "sameTurn(" && src "void update(IslandState.Progress a" IslandProgress | grep -q "if (IslandState.SENDING.equals(phase) && a.stopOk) p.MAIN.removeCallbacks(stopTimeoutRun);"' "IslandProgress.update has no unreachable !sameTurn branch and cancels stopTimeoutRun once accepted"
 # The pop-up and the 20 s / 40 s reminders don't ask the panel (review of 78239d3: a request could run out unheard
 # behind a panel nobody looks at, or behind our own PIN screen); whether the pop-up may cover the panel is the owner's.
 APPROVAL=$(sed -n '/case "approval": {/,/^            }/p' "$SVC"); ASK=$(sed -n '/case "ask": {/,/^            }/p' "$SVC")

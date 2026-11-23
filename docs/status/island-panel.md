@@ -27,11 +27,17 @@ Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms min
 extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny;
 Stop tracking is unified in one per-turn `IslandState.StopBook` fed by explicit plugin `turn_id` and `proc` fields on
 `status` (for both `lastSession` and every `others` entry, with `since`), `done` flashes, and `/stop` responses (with
-safe fallback for older plugins and missing turn identity): both chip and panel derive Stop state from `StopBook.view`,
-a timeout or failure restores Stop on both chip and panel immediately (with no phantom 15 s wait on reopen and late
-failures ignored), events from other chats or Hermes processes never end a turn's stop, all ad-hoc stop flags/counters
-are deleted, `stopFate` prefers `!sameTurn` over a late failure, and the stop failure line scrolls into view after layout
-via a one-shot `OnLayoutChangeListener` without moving focus.
+safe fallback for older plugins and missing turn identity): `/stop` resolves active turns only from the in-process
+plugin registry (no `activity.json` fallback, multiple loads register without clobbering `sys.modules["hm_plugin"]`)
+and fails closed with 409 whenever a caller sends `turn_id` unless the live turn id is known and equal; both chip and
+panel derive Stop state from `StopBook.view` ordered by monotonic attempt number and monotonic clock (never wall time),
+a timeout or failure restores Stop on both chip and panel immediately (`stopTimeoutRun` reschedules for remaining time
+or shows failure unless accepted/ended so it can never stick, and `stopTimeoutTask` is removed in `onDestroy`), a late
+200 after timeout with no retry brings the open panel back into Stopping alongside the chip, a `flash` from another
+chat never overwrites `lastSession` while `lastWorking` is true, events from other chats or Hermes processes never end
+a turn's stop, all ad-hoc stop flags/counters and `stopUnheard` are deleted, `stopFate` prefers `!sameTurn` over a late
+failure, and the stop failure line scrolls into view after layout via a one-shot `OnLayoutChangeListener` without
+moving focus.
 
 **Open question for the owner:** while the panel is open, the service's heads-up pop-up for a new request or question
 (and a request's 20 s / 40 s reminders) can drop over the panel's header. The design doesn't cover notification
@@ -49,7 +55,8 @@ buttons. The service's own "Couldn't send your answer" card drops down over the 
 its "Couldn't stop Hermux" card when a stop fails. The panel follows waiting requests even with "When Hermux needs me"
 off (the chip still respects it). Home from the PIN screen (Android 8-10, or the PIN fallback) leaves the panel and
 that screen in the background until the request's deadline, when both go; nothing is sent. A turn that ends with no
-reply heard closes the Progress state 2 s later instead of showing Done.
+reply heard closes the Progress state 2 s later instead of showing Done. Working status from a second Hermes process
+(a cron job or a second bot) can take over the chip and the panel from the first; this predates PR 227.
 
 **Needs a real phone:**
 - Parts 1 and 2: the motion and its frame rate, the blur's cost, the keyboard, TalkBack and the locked-phone path;

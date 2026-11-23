@@ -643,6 +643,7 @@ public class HermesService extends Service {
         main.removeCallbacks(updateCheck);
         main.removeCallbacks(retryBind);
         main.removeCallbacks(dashRecheck);
+        main.removeCallbacks(stopTimeoutTask);
         if (voice != null) voice.destroy();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         try {
@@ -1471,7 +1472,7 @@ public class HermesService extends Service {
                     // What the expanded Done chip says about the turn (in memory only; a restart shows the title alone).
                     doneInfo.keySet().retainAll(unseen.keySet());
                     doneInfo.put(session, e);
-                    lastSession = session;
+                    if (!lastWorking) lastSession = session;
                     saveUnseen();
                     updateBadge();
                     postStatus();
@@ -1484,7 +1485,7 @@ public class HermesService extends Service {
                 flashBody = body;
                 flashColor = Color.parseColor(e.optString("color", "#2E9E5B"));
                 flashUntil = System.currentTimeMillis() + FLASH_MS;
-                if (session != null && !session.isEmpty()) lastSession = session;
+                if (!lastWorking && session != null && !session.isEmpty()) lastSession = session;
                 postStatus();
                 main.postDelayed(this::expireFlash, FLASH_MS + 100);
                 return;
@@ -2021,11 +2022,9 @@ public class HermesService extends Service {
     void expireStopTimeouts() {
         java.util.List<IslandState.StopTimeout> timedOut;
         synchronized (this) {
-            timedOut = stops.expireTimeouts(System.currentTimeMillis(), android.os.SystemClock.uptimeMillis());
+            timedOut = stops.expireTimeouts(android.os.SystemClock.uptimeMillis());
             scheduleStopTimeout();
             if (timedOut.isEmpty()) return;
-            for (IslandState.StopTimeout to : timedOut)
-                noteOutcome("stop", to.session, to.turnId, IslandState.Outcome.FAILED, "timed out");
             postStatus();
         }
         NotificationManager nm = getSystemService(NotificationManager.class);
@@ -2042,7 +2041,7 @@ public class HermesService extends Service {
         if (session == null || session.isEmpty()) return;
         final IslandState.StopTicket ticket;
         synchronized (this) {
-            ticket = stops.beginStop(session, turnId, System.currentTimeMillis(), android.os.SystemClock.uptimeMillis());
+            ticket = stops.beginStop(session, turnId, android.os.SystemClock.uptimeMillis());
             if (ticket == null) {
                 postStatus(); // refresh panel in case the turn already ended or a stop is already active
                 return;
@@ -2079,7 +2078,6 @@ public class HermesService extends Service {
                         if (!stops.onStop200(ticket.session, ticket.turnId, gotTurnId, ticket.attempt,
                                 android.os.SystemClock.uptimeMillis())) return;
                         scheduleStopTimeout();
-                        noteOutcome("stop", ticket.session, ticket.turnId, IslandState.Outcome.STOPPED, null);
                         postStatus();
                     }
                 });
@@ -2089,9 +2087,8 @@ public class HermesService extends Service {
             main.post(() -> {
                 synchronized (HermesService.this) {
                     if (!stops.onStopFailed(ticket.session, ticket.turnId, ticket.attempt, failed,
-                            System.currentTimeMillis(), android.os.SystemClock.uptimeMillis())) return;
+                            android.os.SystemClock.uptimeMillis())) return;
                     scheduleStopTimeout();
-                    noteOutcome("stop", ticket.session, ticket.turnId, IslandState.Outcome.FAILED, failed);
                     postStatus();
                 }
                 NotificationManager nm = getSystemService(NotificationManager.class);
