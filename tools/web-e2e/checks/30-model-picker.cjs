@@ -82,6 +82,9 @@ module.exports = async t => {
   await pg.locator('.model-row', { hasText: 'mock-sonnet' }).first().waitFor({ timeout: 5000 }).then(() => check(true, 'model picker: Try again loads the list'), () => check(false, 'model picker: Try again loads the list'))
   check((await pg.locator('.sheet .load-error').count()) === 0, 'model picker: the error goes once the list is there')
   await close()
+  check((await mock({ models: { delay: 1e9 } })).status === 400, 'model picker mock: rejects models.delay above the bound')
+  check((await mock({ models: { delay: -1 } })).status === 400, 'model picker mock: rejects negative models.delay')
+  check((await mock({ models: { delay: '1000' } })).status === 400, 'model picker mock: rejects non-numeric models.delay')
   await mock({ models: { mark: false, fail: false, delay: 0 } })
   await pg.close()
 
