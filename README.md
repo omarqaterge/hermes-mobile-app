@@ -69,6 +69,22 @@ next to what Hermux cannot protect you from.
 - **Connects to what you use.** Sign in with ChatGPT, Claude, Grok or Nous Portal, or use any provider Hermes
   supports, with fallback models. Connect a Google account, MCP servers and tools.
 
+### Answer from the island
+
+Tap a card on the status chip and a dark panel drops from the top of the screen, over whatever app you are in:
+
+- **A question:** its choices, or a field to type in. The answer goes straight to the chat.
+- **A command to run:** what Hermux wants to do, the command, a ring counting down the time left, and Deny, Allow
+  once and Allow this session. Allow asks for your fingerprint first, every time, while "Confirm approvals with
+  fingerprint" is on. A request to read your phone's data is reviewed in the app, never allowed from the panel.
+- **A chat at work:** the live step, a clock, the task list filling in as tasks finish, other chats that are busy,
+  the app Hermux is using with Watch, and Stop. When the turn ends with the panel open it shows Done with the start
+  of the reply.
+
+When a request arrives while the panel is open, or another waits after you answer, the panel changes to it in place.
+An answer from a card's own button is confirmed on the chip for two seconds. The panel never shows over the lock
+screen, and nothing in it moves once it is closed.
+
 ### It evolves with you
 
 Hermux gets better the longer you use it, and shows you what it learned:

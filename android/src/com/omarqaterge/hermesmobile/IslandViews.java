@@ -11,10 +11,12 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.SystemClock;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Choreographer;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,6 +43,10 @@ final class IslandViews {
     static final int RED_WASH = 0x26E5564B, RED_TEXT = 0xFFFF8177, GREEN_WASH = 0x2B3DBE7A, GREEN_TEXT = 0xFF6FDCA0;
     /** The badge behind the icon (gold at 14 %), the grab line (white 16 %), the focused field's border (gold 55 %). */
     static final int GOLD_SOFT = 0x24D9A441, GRAB = 0x29FFFFFF, FOCUS = 0x8CD9A441;
+    /** The task bar's to-do and dropped segments (white 12 %, 5 %), the sweep's track (white 10 %) and the light band
+     *  crossing the current task (white 60 % at its middle). */
+    static final int SEG_TODO = 0x1FFFFFFF, SEG_DROPPED = 0x0DFFFFFF, SWEEP_TRACK = 0x1AFFFFFF,
+            SHIMMER = 0x99FFFFFF;
     /** The spinner's track: white 18 % on dark, gold ink 25 % on gold. */
     static final int SPIN_TRACK = 0x2EFFFFFF, SPIN_TRACK_GOLD = 0x401A1307;
     /** The timer's track (white 10 %), the command block's text and border (white 5 %). */
@@ -83,18 +89,66 @@ final class IslandViews {
         return style(new TextView(c), size, line, weight, colour);
     }
 
+    /** A text button that answers a permission request: ignores touches under another app's window, on Android 10+
+     *  while one covers any part of the panel's window whenever {@link #strict} holds, and while {@link #hold} holds
+     *  (reporting a swallowed press through {@link #onSwallow}). */
+    static final class GuardedText extends TextView {
+        final java.util.function.BooleanSupplier strict;
+        java.util.function.BooleanSupplier hold;
+        Runnable onSwallow;
+        final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
+
+        GuardedText(Context c, java.util.function.BooleanSupplier strict) {
+            super(c);
+            this.strict = strict;
+            setFilterTouchesWhenObscured(true);
+        }
+
+        @Override
+        public boolean onFilterTouchEventForSecurity(MotionEvent e) {
+            return !(strict.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            java.util.function.BooleanSupplier h = hold;
+            if (h != null && h.getAsBoolean()) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN && onSwallow != null) onSwallow.run();
+                return false;
+            }
+            return super.dispatchTouchEvent(e);
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            java.util.function.BooleanSupplier h = hold;
+            if (consumeHeldKey(heldKeys, e, h != null && h.getAsBoolean(), onSwallow)) return true;
+            return super.dispatchKeyEvent(e);
+        }
+    }
+
     /** The same text for a button that answers a permission request: it ignores touches while another app's window
      *  covers it ({@code setFilterTouchesWhenObscured}), and on Android 10+ also while one covers any part of the
      *  panel's window whenever {@code strict} says so at the touch (an Allow that asks for no fingerprint). */
-    static TextView guardedText(Context c, float size, float line, int weight, int colour, java.util.function.BooleanSupplier strict) {
-        TextView t = new TextView(c) {
-            @Override
-            public boolean onFilterTouchEventForSecurity(MotionEvent e) {
-                return !(strict.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
-            }
-        };
-        t.setFilterTouchesWhenObscured(true);
-        return style(t, size, line, weight, colour);
+    static GuardedText guardedText(Context c, float size, float line, int weight, int colour, java.util.function.BooleanSupplier strict) {
+        GuardedText t = new GuardedText(c, strict);
+        style(t, size, line, weight, colour);
+        return t;
+    }
+
+    /** Keys that activate a focused control on a keyboard, D-pad or switch device (never Back). */
+    static boolean isActivationKey(int code) {
+        return code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                || code == KeyEvent.KEYCODE_SPACE || code == KeyEvent.KEYCODE_DPAD_CENTER
+                || code == KeyEvent.KEYCODE_BUTTON_A;
+    }
+
+    /** Filters activation keys through a {@link IslandMotion.HeldKeys} set for a held control or panel. */
+    static boolean consumeHeldKey(IslandMotion.HeldKeys held, KeyEvent e, boolean holding, Runnable onSwallow) {
+        int code = e.getKeyCode();
+        if (!isActivationKey(code)) return false;
+        int act = e.getAction();
+        return held.onKey(code, act == KeyEvent.ACTION_DOWN, act == KeyEvent.ACTION_UP, e.getRepeatCount(), holding, onSwallow);
     }
 
     /** A guarded view's touch arrived while another app's window covered part of this window (Android 10+ says so;
@@ -250,13 +304,21 @@ final class IslandViews {
     // ── the badge (design 3, "Header"; 5.2) ──
 
     /** The 40 dp round badge: gold at 14 % with the icon in gold, and the Question state's ring pulsing outward. The
-     *  view is 64 dp so the ring (to 155 %) draws inside it; the header gives it -12 dp margins. */
+     *  view is 64 dp so the ring (to 155 %) draws inside it; the header gives it -12 dp margins. The Progress state adds
+     *  the turning arc around it ({@link #spinArc}); the Done state is the green badge with its check ({@link #done}). */
     static final class Badge extends View {
-        static final float SIZE_DP = 64, ORB_DP = 40, ICON_DP = 21;
+        static final float SIZE_DP = 64, ORB_DP = 40, ICON_DP = 21, CHECK_DP = 22;
         final Drawable icon;
-        final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), ring = new Paint(Paint.ANTI_ALIAS_FLAG),
+                arc = new Paint(Paint.ANTI_ALIAS_FLAG);
         /** The ring's size (1 = the badge) and opacity; opacity 0 = no ring. */
         float ringScale = 1, ringAlpha = 0;
+        /** The turning arc is drawn, turned this far (0..1); the orb's size (the Done pop); the check drawn so far
+         *  (below 0: no check). */
+        boolean arcOn;
+        double arcTurn, check = -1;
+        float orbScale = 1;
+        int checkColour = GREEN;
 
         Badge(Context c, Drawable icon) {
             super(c);
@@ -264,7 +326,18 @@ final class IslandViews {
             fill.setColor(GOLD_SOFT);
             ring.setStyle(Paint.Style.STROKE);
             ring.setColor(GOLD);
+            arc.setStyle(Paint.Style.STROKE);
+            arc.setStrokeWidth(dp(c, IslandMotion.ARC_STROKE_DP));
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        /** The Done badge: the green wash with a check, no icon. */
+        static Badge done(Context c) {
+            Badge b = new Badge(c, null);
+            b.fill.setColor(GREEN_WASH); // the design's green wash (17 %)
+            b.ring.setColor(GREEN);
+            b.check = 0;
+            return b;
         }
 
         /** Pulses the ring three times (1.6 s each, to 155 %, fading) and stops; nothing with reduced motion. */
@@ -285,13 +358,68 @@ final class IslandViews {
             });
         }
 
+        /** The Progress state's arc: one turn every 1.4 s while the panel is on screen; with reduced motion a still
+         *  ring (null: nothing runs). */
+        Ticker.Handle spinArc(Ticker t, boolean reduced) {
+            arcOn = true;
+            invalidate();
+            if (reduced) return null;
+            return t.add(ms -> {
+                arcTurn = (ms % IslandMotion.ARC_TURN_MS) / (double) IslandMotion.ARC_TURN_MS;
+                invalidate();
+                return true;
+            });
+        }
+
+        /** The Done badge arriving: it pops in from 60 % (380 ms on back), its check draws itself (300 ms), one green
+         *  ring expands to 160 % and fades (520 ms). With reduced motion the check is drawn in 120 ms, nothing else. */
+        void doneIn(Ticker t, boolean reduced) {
+            if (reduced) {
+                t.tween(0, IslandMotion.reduced(IslandMotion.DONE_CHECK_MS), IslandMotion.STANDARD, v -> { check = v; invalidate(); }, null);
+                return;
+            }
+            orbScale = IslandMotion.DONE_POP_FROM;
+            t.tween(IslandMotion.DONE_POP_DELAY_MS, IslandMotion.DONE_POP_MS, IslandMotion.BACK, v -> {
+                orbScale = (float) (IslandMotion.DONE_POP_FROM + (1 - IslandMotion.DONE_POP_FROM) * v);
+                invalidate();
+            }, null);
+            t.tween(IslandMotion.DONE_CHECK_DELAY_MS, IslandMotion.DONE_CHECK_MS, IslandMotion.STANDARD, v -> { check = v; invalidate(); }, null);
+            t.tween(IslandMotion.DONE_RING_DELAY_MS, IslandMotion.DONE_RING_MS, IslandMotion.OUT, v -> {
+                ringScale = (float) (1 + (IslandMotion.DONE_RING_SCALE - 1) * v);
+                ringAlpha = (float) (IslandMotion.DONE_RING_FROM_ALPHA * (1 - v));
+                invalidate();
+            }, () -> { ringAlpha = 0; invalidate(); });
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int ow, int oh) {
+            super.onSizeChanged(w, h, ow, oh);
+            // The prototype's conic gradient: nothing over the first 22 % of the circle, then gold fading in to its head.
+            int clear = GOLD & 0x00FFFFFF;
+            arc.setShader(new android.graphics.SweepGradient(w / 2f, h / 2f, new int[]{clear, clear, GOLD},
+                    new float[]{0, IslandMotion.ARC_GAP, 1}));
+        }
+
         @Override
         protected void onDraw(Canvas c) {
             float cx = getWidth() / 2f, cy = getHeight() / 2f, r = dp(getContext(), ORB_DP) / 2f;
+            int save = c.save();
+            c.scale(orbScale, orbScale, cx, cy);
             c.drawCircle(cx, cy, r, fill);
-            int half = Math.round(dp(getContext(), ICON_DP) / 2f);
-            icon.setBounds(Math.round(cx) - half, Math.round(cy) - half, Math.round(cx) + half, Math.round(cy) + half);
-            icon.draw(c);
+            if (icon != null) {
+                int half = Math.round(dp(getContext(), ICON_DP) / 2f);
+                icon.setBounds(Math.round(cx) - half, Math.round(cy) - half, Math.round(cx) + half, Math.round(cy) + half);
+                icon.draw(c);
+            }
+            if (check >= 0) drawStroke(c, CHECK_PATH, cx, cy, dp(getContext(), CHECK_DP), 2.4f, checkColour, check);
+            c.restoreToCount(save);
+            if (arcOn) {
+                float w = arc.getStrokeWidth(), ar = dp(getContext(), IslandMotion.ARC_OUTER_DP) - w / 2f;
+                int s2 = c.save();
+                c.rotate((float) (-90 + 360 * arcTurn), cx, cy);
+                c.drawCircle(cx, cy, ar, arc);
+                c.restoreToCount(s2);
+            }
             if (ringAlpha > 0) {
                 float w = dp(getContext(), 2);
                 ring.setStrokeWidth(w * ringScale);
@@ -636,7 +764,7 @@ final class IslandViews {
      * with its label.
      */
     static final class Pill extends View {
-        static final int NO_ICON = 0, FINGER = 1, SPIN = 2, CHECK = 3, CROSS = 4;
+        static final int NO_ICON = 0, FINGER = 1, SPIN = 2, CHECK = 3, CROSS = 4, SQUARE = 5;
         final TextPaint label = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         final RectF box = new RectF();
@@ -653,6 +781,11 @@ final class IslandViews {
          *  refused while another app covers any part of the window (Android 10+). Null for every other button (Deny,
          *  Review in Hermux, Open chat), which still refuses a touch that passes through another app's window. */
         java.util.function.BooleanSupplier strict;
+        /** Asked at each touch: true while Allow is held after a change in place or while fading back in; a swallowed
+         *  press notifies {@link #onSwallow} so the hold extends briefly. */
+        java.util.function.BooleanSupplier hold;
+        Runnable onSwallow;
+        final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
 
         Pill(Context c, String text, int bg, int fg, int icon, int span) {
             super(c);
@@ -678,6 +811,23 @@ final class IslandViews {
         public boolean onFilterTouchEventForSecurity(MotionEvent e) {
             java.util.function.BooleanSupplier s = strict;
             return !(s != null && s.getAsBoolean() && partlyCovered(this, e)) && super.onFilterTouchEventForSecurity(e);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent e) {
+            java.util.function.BooleanSupplier h = hold;
+            if (h != null && h.getAsBoolean()) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN && onSwallow != null) onSwallow.run();
+                return false;
+            }
+            return super.dispatchTouchEvent(e);
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            java.util.function.BooleanSupplier h = hold;
+            if (consumeHeldKey(heldKeys, e, h != null && h.getAsBoolean(), onSwallow)) return true;
+            return super.dispatchKeyEvent(e);
         }
 
         void setText(String t) {
@@ -736,6 +886,17 @@ final class IslandViews {
             invalidate();
         }
 
+        /** As wide as its label and icon with 12 dp each side (at least its minimum width), 48 dp tall, where the
+         *  parent lets it choose (Watch); in a ButtonRow it is given its span exactly. */
+        @Override
+        protected void onMeasure(int ws, int hs) {
+            Context ctx = getContext();
+            float iconPx = icon == NO_ICON ? 0 : dp(ctx, 20);
+            float want = label.measureText(text) + iconPx + (iconPx > 0 ? dp(ctx, 8) : 0) + dp(ctx, 24);
+            setMeasuredDimension(resolveSize(Math.max(getSuggestedMinimumWidth(), (int) Math.ceil(want)), ws),
+                    resolveSize(Math.max(getSuggestedMinimumHeight(), Math.round(dp(ctx, 48))), hs));
+        }
+
         @Override
         protected void onDraw(Canvas c) {
             Context ctx = getContext();
@@ -743,7 +904,8 @@ final class IslandViews {
             box.set(0, 0, w, h);
             fill.setColor(press > 0 ? blend(bg, brighten(bg, IslandMotion.PRESS_BRIGHTEN), press) : bg);
             c.drawRoundRect(box, rad, rad, fill);
-            float iconPx = icon == FINGER ? dp(ctx, 19) : icon == SPIN ? dp(ctx, IslandMotion.SPINNER_DP) : icon == NO_ICON ? 0 : dp(ctx, 20);
+            float iconPx = icon == FINGER ? dp(ctx, 19) : icon == SPIN ? dp(ctx, IslandMotion.SPINNER_DP) : icon == SQUARE ? dp(ctx, 12)
+                    : icon == NO_ICON ? 0 : dp(ctx, 20);
             float gap = iconPx > 0 ? dp(ctx, 8) : 0;
             float room = Math.max(0, w - dp(ctx, 24) - iconPx - gap);
             CharSequence shown = TextUtils.ellipsize(text, label, room, TextUtils.TruncateAt.END);
@@ -753,6 +915,12 @@ final class IslandViews {
             else if (icon == SPIN) drawSpinner(c, ctx, icx, cy, SPIN_TRACK, fg, turn);
             else if (icon == CHECK) drawStroke(c, CHECK_PATH, icx, cy, iconPx, 2.6f, fg, drawn);
             else if (icon == CROSS) drawStroke(c, CROSS_PATH, icx, cy, iconPx, 2.6f, fg, drawn);
+            else if (icon == SQUARE) { // Stop's small square: 12 dp, corners 2.5 (the prototype's SQUARE)
+                float half = iconPx / 2f, rr = dp(ctx, 2.5f);
+                box.set(icx - half, cy - half, icx + half, cy + half);
+                fill.setColor(fg);
+                c.drawRoundRect(box, rr, rr, fill);
+            }
             label.setColor(fg);
             label.setAlpha(Math.round(Color.alpha(fg) * labelAlpha));
             Paint.FontMetrics fm = label.getFontMetrics();
@@ -841,6 +1009,248 @@ final class IslandViews {
         }
     }
 
+    // ── the Progress state (design 5.3) ──
+
+    /**
+     * The task bar: one segment per task, 6 dp high, 4 dp apart, round ends. Done: green; current: gold, with a light
+     * band crossing it every 1.6 s; to do: white 12 %; dropped: white 5 %. A task finishing fills green from the left,
+     * swells and settles, and the next one turns gold a moment later. The view is 12 dp tall so a swell (to 170 %)
+     * draws inside it; the panel gives it -3 dp margins above and below.
+     */
+    static final class TaskBar extends View {
+        static final float VIEW_DP = 12;
+        final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG), band = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final RectF seg = new RectF();
+        final Path clip = new Path();
+        String states = "";
+        /** Per segment: the green fill from the left (0..1), the gold's opacity (0..1), the height (1 = 6 dp). */
+        double[] green = new double[0], gold = new double[0], height = new double[0];
+        /** Where the current task's band is: its left edge as a share of the segment's width (-1..1). */
+        double shim = -1;
+        boolean shimOn;
+        android.graphics.LinearGradient bandShader;
+        final android.graphics.Matrix bandAt = new android.graphics.Matrix();
+        float bandW;
+
+        TaskBar(Context c) {
+            super(c);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        /** The fill, swell and next-gold motions still running: a new task list cancels them first. */
+        final java.util.ArrayList<Ticker.Handle> moving = new java.util.ArrayList<>();
+
+        /** The task list now. With {@code animate}, a task that turned done fills and swells, and the next current one
+         *  turns gold after it; a list that changed its length (or a first one) is just drawn. Each motion writes only
+         *  to the arrays of its own list, and a newer list cancels the ones still running, so a list that shrinks or
+         *  changes again mid-motion never reaches past its end or a segment the newer list drew. */
+        void set(String now, Ticker t, boolean reduced, boolean animate) {
+            if (now == null) now = "";
+            if (now.equals(states)) return;
+            for (Ticker.Handle m : moving) m.cancel();
+            moving.clear();
+            String old = states;
+            states = now;
+            int n = now.length();
+            double[] g = new double[n], au = new double[n], h = new double[n];
+            boolean same = animate && old.length() == n;
+            boolean finished = false;
+            for (int i = 0; i < n; i++) {
+                char c = now.charAt(i), o = same ? old.charAt(i) : c;
+                h[i] = 1;
+                g[i] = c == 'd' ? 1 : 0;
+                au[i] = c == 'a' ? 1 : 0;
+                if (same && c == 'd' && o != 'd') {
+                    finished = true;
+                    g[i] = 0;
+                    final int k = i;
+                    long fill = reduced ? IslandMotion.reduced(IslandMotion.TASK_FILL_MS) : IslandMotion.TASK_FILL_MS;
+                    moving.add(t.tween(0, fill, IslandMotion.STANDARD, v -> { g[k] = v; invalidate(); }, null));
+                    if (!reduced) moving.add(t.tween(IslandMotion.TASK_SWELL_DELAY_MS, IslandMotion.TASK_SWELL_MS, IslandMotion.BACK, v -> {
+                        h[k] = IslandMotion.swell(v);
+                        invalidate();
+                    }, () -> { h[k] = 1; invalidate(); }));
+                }
+            }
+            if (same) for (int i = 0; i < n; i++) {
+                if (now.charAt(i) != 'a' || old.charAt(i) == 'a') continue;
+                au[i] = 0;
+                final int k = i;
+                long in = reduced ? IslandMotion.reduced(IslandMotion.TASK_NEXT_IN_MS) : IslandMotion.TASK_NEXT_IN_MS;
+                moving.add(t.tween(finished && !reduced ? IslandMotion.TASK_NEXT_MS : 0, in, IslandMotion.OUT, v -> { au[k] = v; invalidate(); }, null));
+            }
+            green = g;
+            gold = au;
+            height = h;
+            invalidate();
+        }
+
+        /** The current task's band, for as long as the panel is on screen; none with reduced motion. */
+        Ticker.Handle shimmer(Ticker t, boolean reduced) {
+            if (reduced) return null;
+            shimOn = true;
+            return t.add(ms -> {
+                shim = IslandMotion.shimmerAt(ms);
+                if (states.indexOf('a') >= 0) invalidate();
+                return true;
+            });
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            int n = states.length();
+            if (n == 0) return;
+            Context ctx = getContext();
+            float gap = dp(ctx, IslandMotion.SEG_GAP_DP), h = dp(ctx, IslandMotion.SEG_H_DP), cy = getHeight() / 2f;
+            float w = (getWidth() - gap * (n - 1)) / n;
+            for (int i = 0; i < n; i++) {
+                char st = states.charAt(i);
+                float x = i * (w + gap), hh = (float) (h * (i < height.length ? height[i] : 1));
+                seg.set(x, cy - hh / 2f, x + w, cy + hh / 2f);
+                float r = Math.min(hh, w) / 2f;
+                paint.setShader(null);
+                paint.setColor(st == 'x' ? SEG_DROPPED : SEG_TODO);
+                c.drawRoundRect(seg, r, r, paint);
+                double gr = i < green.length ? green[i] : 0, go = i < gold.length ? gold[i] : 0;
+                if (gr <= 0 && go <= 0) continue;
+                int save = c.save();
+                clip.reset();
+                clip.addRoundRect(seg, r, r, Path.Direction.CW);
+                c.clipPath(clip);
+                if (go > 0 && st == 'a') {
+                    paint.setColor(blend(GOLD & 0x00FFFFFF, GOLD, go));
+                    c.drawRect(seg, paint);
+                    if (shimOn && shim > -1 && shim < 1) {
+                        float bx = (float) (x + shim * w);
+                        if (bandShader == null || bandW != w) { // one shader per width, moved by a matrix: nothing new per frame
+                            bandW = w;
+                            bandShader = new android.graphics.LinearGradient(0, 0, w, 0, new int[]{0, SHIMMER, 0}, null,
+                                    android.graphics.Shader.TileMode.CLAMP);
+                            band.setShader(bandShader);
+                        }
+                        bandAt.setTranslate(bx, 0);
+                        bandShader.setLocalMatrix(bandAt);
+                        c.drawRect(bx, seg.top, bx + w, seg.bottom, band);
+                    }
+                }
+                if (gr > 0) {
+                    paint.setColor(GREEN);
+                    c.drawRect(seg.left, seg.top, (float) (seg.left + w * gr), seg.bottom, paint);
+                }
+                c.restoreToCount(save);
+            }
+        }
+    }
+
+    /** Without a task list: a 4 dp line with a soft gold band sweeping across it every 1.25 s; with reduced motion the
+     *  band is still, in the middle. */
+    static final class Sweep extends View {
+        final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG), band = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final RectF line = new RectF();
+        final Path clip = new Path();
+        /** The band's left edge, as a share of the width. */
+        double at = (1 - IslandMotion.SWEEP_BAND) / 2;
+        android.graphics.LinearGradient shader;
+        final android.graphics.Matrix moved = new android.graphics.Matrix();
+        float shaderW;
+
+        Sweep(Context c) {
+            super(c);
+            track.setColor(SWEEP_TRACK);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        Ticker.Handle run(Ticker t, boolean reduced) {
+            if (reduced) return null;
+            return t.add(ms -> {
+                at = IslandMotion.sweepAt(ms);
+                invalidate();
+                return true;
+            });
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float w = getWidth(), h = getHeight(), r = h / 2f;
+            line.set(0, 0, w, h);
+            c.drawRoundRect(line, r, r, track);
+            int save = c.save();
+            clip.reset();
+            clip.addRoundRect(line, r, r, Path.Direction.CW);
+            c.clipPath(clip);
+            float bw = w * IslandMotion.SWEEP_BAND, bx = (float) (at * w);
+            if (shader == null || shaderW != bw) { // one shader per width, moved by a matrix: nothing new per frame
+                shaderW = bw;
+                shader = new android.graphics.LinearGradient(0, 0, bw, 0, new int[]{GOLD & 0x00FFFFFF, GOLD, GOLD & 0x00FFFFFF},
+                        null, android.graphics.Shader.TileMode.CLAMP);
+                band.setShader(shader);
+            }
+            moved.setTranslate(bx, 0);
+            shader.setLocalMatrix(moved);
+            c.drawRoundRect(bx, 0, bx + bw, h, r, r, band);
+            c.restoreToCount(save);
+        }
+    }
+
+    /** A short number that rolls, drawn right-aligned, with fixed words after it: the turn's running time on the right
+     *  of the header ("1:24": 14 sp), and the task count under the bar ("2" + " of 5 tasks": 13 sp). Dim, tabular
+     *  digits; changed digits roll upward when the number grows, downward when it shrinks. */
+    static final class Clock extends View {
+        final TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        final Roll roll = new Roll(this);
+        String suffix = "";
+
+        Clock(Context c, float sizeSp) {
+            super(c);
+            paint.setTextSize(sp(c, sizeSp));
+            paint.setTypeface(weight(400));
+            paint.setFontFeatureSettings("tnum");
+            paint.setColor(DIM);
+        }
+
+        /** The number {@code t} (rolling {@code dir}: 1 up, -1 down) and the words after it. */
+        void set(String t, String after, int dir, Ticker ticker, boolean reduced) {
+            String a = after == null ? "" : after;
+            boolean wider = t.length() != roll.text.length() || !a.equals(suffix);
+            suffix = a;
+            roll.set(t, dir, ticker, reduced);
+            setContentDescription(t + a);
+            if (wider) requestLayout();
+            invalidate();
+        }
+
+        @Override
+        protected void onMeasure(int ws, int hs) {
+            String t = (roll.text.isEmpty() ? "0:00" : roll.text) + suffix;
+            setMeasuredDimension((int) Math.ceil(paint.measureText(t)), (int) Math.ceil(paint.getFontSpacing()));
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            Paint.FontMetrics fm = paint.getFontMetrics();
+            float sw = paint.measureText(suffix), tw = paint.measureText(roll.text), y = getHeight() / 2f - (fm.ascent + fm.descent) / 2f;
+            roll.draw(c, paint, getWidth() - sw - tw / 2f, y);
+            if (!suffix.isEmpty()) c.drawText(suffix, getWidth() - sw, y, paint);
+        }
+    }
+
+    /** The live picture of the app Hermux uses: a square, corners 12 dp, the screen fitted on black. */
+    static android.widget.ImageView picture(Context c) {
+        android.widget.ImageView v = new android.widget.ImageView(c);
+        v.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        v.setBackgroundColor(Color.BLACK);
+        float r = dp(c, IslandMotion.APP_PICTURE_R);
+        v.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline o) {
+                o.setRoundRect(0, 0, view.getWidth(), view.getHeight(), r);
+            }
+        });
+        v.setClipToOutline(true);
+        v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return v;
+    }
+
     // ── pressing ──
 
     /**
@@ -909,6 +1319,21 @@ final class IslandViews {
             return canScrollVertically(1) || canScrollVertically(-1);
         }
 
+        /** While its content is taller than it, the content is cut at its edges: it doesn't clip to its padding (a
+         *  task bar's swell, a choice arriving from above may show past them while all fits), and the panel's column
+         *  doesn't clip its children, so without this the hidden part would draw over the buttons below. */
+        @Override
+        protected void dispatchDraw(Canvas c) {
+            if (!scrolls()) {
+                super.dispatchDraw(c);
+                return;
+            }
+            int at = c.save();
+            c.clipRect(getScrollX(), getScrollY(), getScrollX() + getWidth(), getScrollY() + getHeight());
+            super.dispatchDraw(c);
+            c.restoreToCount(at);
+        }
+
         @Override
         protected void onMeasure(int w, int h) {
             super.onMeasure(w, max == Integer.MAX_VALUE ? h : MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST));
@@ -940,15 +1365,83 @@ final class IslandViews {
             minFlex = Math.round(dp(c, 48));
         }
 
-        /** Content on its way out (a change of state): it takes no touch, so a tap in its last 100 ms can't answer the
-         *  new question with the old choice; the touch goes on to what lies under it (the new content, the panel). */
+        /** Content on its way out (a change of state): it takes no touch, key or focus, so an input in its last 100 ms
+         *  can't answer the new question with the old choice; the touch goes on to what lies under it (the panel). */
         boolean blocked;
+        /** Content on its way in (a change of state): monotonic hold anchored to {@link #fadeDone()}, blocking touch,
+         *  activation keys and focus until the fade-in ends (and Allow for a reaction pause longer). */
+        final IslandMotion.Hold hold = new IslandMotion.Hold();
+        boolean holdFocused;
+        Runnable releaseRun;
+        final Runnable checkRelease = this::releaseIfDone;
+
+        /** Starts the input hold for content arriving in place: monotonic clock, focus kept off its children until the
+         *  hold ends. Anchored to {@link #fadeDone()}, not a bare postDelayed. */
+        void beginHold() {
+            hold.start(SystemClock.uptimeMillis());
+            holdFocused = true;
+            View f = findFocus();
+            if (f != null) f.clearFocus();
+            setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+            removeCallbacks(checkRelease);
+        }
+
+        /** The fade-in has actually finished: anchors Allow's reaction pause to now and restores focus once the general
+         *  hold is also over. */
+        void fadeDone() {
+            long now = SystemClock.uptimeMillis();
+            hold.fadeDone(now);
+            long rem = hold.remaining(now);
+            removeCallbacks(checkRelease);
+            if (rem <= 0) releaseIfDone();
+            else postDelayed(checkRelease, rem);
+        }
+
+        void releaseIfDone() {
+            if (blocked) return;
+            if (holding()) {
+                long rem = hold.remaining(SystemClock.uptimeMillis());
+                if (rem > 0) postDelayed(checkRelease, rem);
+                return;
+            }
+            if (holdFocused) {
+                holdFocused = false;
+                setDescendantFocusability(FOCUS_AFTER_DESCENDANTS);
+            }
+            Runnable r = releaseRun;
+            releaseRun = null;
+            if (r != null) r.run();
+        }
+
+        /** Runs {@code r} as soon as the general hold is over (at once when not holding). */
+        void whenReleased(Runnable r) {
+            if (!holding()) r.run();
+            else releaseRun = r;
+        }
+
+        /** True while the general change-in-place hold is active (fading in, or before its monotonic deadline). */
+        boolean holding() {
+            return hold.holding(SystemClock.uptimeMillis());
+        }
+
+        /** True while Allow once / Allow this session is held (fading in, or before its post-fade reaction pause). */
+        boolean holdingAllow() {
+            return hold.holdingAllow(SystemClock.uptimeMillis());
+        }
+
+        /** Records an input swallowed during the hold, extending Allow's deadline briefly. */
+        void swallowed() {
+            hold.swallowed(SystemClock.uptimeMillis());
+        }
 
         /** Stops this content taking touches: a touch already on one of its buttons is cancelled, and nothing in it can
          *  take the focus or be read out. */
         void block() {
             if (blocked) return;
-            long now = android.os.SystemClock.uptimeMillis();
+            removeCallbacks(checkRelease);
+            releaseRun = null;
+            holdFocused = false;
+            long now = SystemClock.uptimeMillis();
             MotionEvent c = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
             super.dispatchTouchEvent(c);
             c.recycle();
@@ -960,8 +1453,29 @@ final class IslandViews {
         }
 
         @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            removeCallbacks(checkRelease);
+            releaseRun = null;
+        }
+
+        @Override
         public boolean dispatchTouchEvent(MotionEvent e) {
-            return !blocked && super.dispatchTouchEvent(e);
+            if (blocked) return false;
+            if (holding()) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) swallowed();
+                return false;
+            }
+            return super.dispatchTouchEvent(e);
+        }
+
+        final IslandMotion.HeldKeys heldKeys = new IslandMotion.HeldKeys();
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent e) {
+            if (blocked) return true;
+            if (consumeHeldKey(heldKeys, e, holding(), this::swallowed)) return true;
+            return super.dispatchKeyEvent(e);
         }
 
         @Override

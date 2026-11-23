@@ -3,8 +3,9 @@
 # (docs/design/island-panel.md section 4) and the prototype's script (island-panel-prototype.html): the four springs
 # (start, end, overshoot, when they stop, about 400 ms to open), the named curves (ends, a known point of each, the
 # overshoot of back), the close curve, the drag rules, the reduced-motion cap, the timer colour, and the Permission
-# state's numbers (the ring, its pulse, the answer row's timings and holds, against buildApproval and resolveRow).
-# Needs javac 11+.
+# state's numbers (the ring, its pulse, the answer row's timings and holds, against buildApproval and resolveRow),
+# and the Progress and Done states' numbers (the arc, the task bar's finish, the sweep and shimmer, the done pop, against
+# buildWorking and buildDone). Needs javac 11+.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -85,6 +86,75 @@ public class IslandMotionTest {
         check(IslandMotion.dragCloses(-10, -801) && !IslandMotion.dragCloses(-10, -799), "a flick faster than 800 dp/s up: it closes");
         check(!IslandMotion.dragCloses(20, 2000), "down never closes");
         check(IslandMotion.reduced(220) == 120 && IslandMotion.reduced(90) == 90, "reduced motion: at most 120 ms");
+        check(IslandMotion.STATE_TOUCH_HOLD_MS >= IslandMotion.STATE_IN_DELAY_MS + IslandMotion.STATE_IN_MS
+                && IslandMotion.STATE_TOUCH_HOLD_MS > IslandMotion.reduced(IslandMotion.STATE_IN_MS),
+                "a change's new content takes touches only once its fade-in ends (" + IslandMotion.STATE_TOUCH_HOLD_MS + " ms), a pause with reduced motion too");
+        check(IslandMotion.ALLOW_HOLD_MS >= 550 && IslandMotion.ALLOW_HOLD_MS <= 600
+                && IslandMotion.ALLOW_PAUSE_MS >= 290 && IslandMotion.ALLOW_EXTEND_MS >= 150,
+                "Allow once / Allow this session hold is 550-600 ms (" + IslandMotion.ALLOW_HOLD_MS + " ms), with post-fade pause " + IslandMotion.ALLOW_PAUSE_MS + " ms and swallow extension " + IslandMotion.ALLOW_EXTEND_MS + " ms");
+        // Monotonic hold state machine: anchored to fade completion, never ends a frame early, same with reduced motion, extends on swallowed input.
+        IslandMotion.Hold h0 = new IslandMotion.Hold();
+        check(!h0.holding(1000) && !h0.holdingAllow(1000), "a fresh Hold is not holding");
+        h0.start(1000);
+        check(h0.holding(1000) && h0.holding(1259) && h0.holding(1300) && h0.holdingAllow(1700),
+                "while fade-in has not completed, both general and Allow holds stay active even past nominal duration (never ends a frame early)");
+        h0.fadeDone(1270);
+        check(!h0.holding(1270) && h0.holdingAllow(1270) && h0.holdingAllow(1270 + IslandMotion.ALLOW_PAUSE_MS - 1)
+                && !h0.holdingAllow(1270 + IslandMotion.ALLOW_PAUSE_MS),
+                "once fade finishes at 270 ms, general hold ends and Allow holds for the full reaction pause after fade completion");
+        // Reduced motion: fade finishes at 120 ms, general hold still lasts STATE_TOUCH_HOLD_MS and Allow still lasts ALLOW_HOLD_MS.
+        IslandMotion.Hold hr = new IslandMotion.Hold();
+        hr.start(2000);
+        hr.fadeDone(2120);
+        check(hr.holding(2120) && hr.holding(2259) && !hr.holding(2260) && hr.remaining(2120) == IslandMotion.STATE_TOUCH_HOLD_MS - 120,
+                "reduced motion: general hold still lasts STATE_TOUCH_HOLD_MS");
+        check(hr.holdingAllow(2000 + IslandMotion.ALLOW_HOLD_MS - 1) && !hr.holdingAllow(2000 + IslandMotion.ALLOW_HOLD_MS),
+                "reduced motion: Allow hold still lasts ALLOW_HOLD_MS");
+        // Swallowed tap during fade-in and during post-fade pause extends Allow hold briefly.
+        IslandMotion.Hold hs = new IslandMotion.Hold();
+        hs.start(3000);
+        hs.swallowed(3150);
+        hs.fadeDone(3260);
+        check(hs.holdingAllow(3000 + IslandMotion.ALLOW_HOLD_MS) && hs.holdingAllow(3000 + IslandMotion.ALLOW_HOLD_MS + IslandMotion.ALLOW_EXTEND_MS - 1)
+                && !hs.holdingAllow(3000 + IslandMotion.ALLOW_HOLD_MS + IslandMotion.ALLOW_EXTEND_MS),
+                "a tap swallowed during fade-in extends Allow hold past the base deadline");
+        IslandMotion.Hold hs2 = new IslandMotion.Hold();
+        hs2.start(4000);
+        hs2.fadeDone(4260);
+        long nearEnd = 4000 + IslandMotion.ALLOW_HOLD_MS - 50;
+        hs2.swallowed(nearEnd);
+        check(hs2.holdingAllow(nearEnd + IslandMotion.ALLOW_EXTEND_MS - 1),
+                "a tap swallowed near the end of the Allow hold extends it past that tap");
+        // Repeated impatient taps are capped at baseAllowUntil + ALLOW_EXTEND_MAX_MS, so Allow always becomes available.
+        IslandMotion.Hold hcap = new IslandMotion.Hold();
+        hcap.start(5000);
+        hcap.fadeDone(5260);
+        long baseCap = 5000 + IslandMotion.ALLOW_HOLD_MS;
+        for (long t = baseCap - 100; t < baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS + 600; t += 100) hcap.swallowed(t);
+        check(IslandMotion.ALLOW_EXTEND_MAX_MS == 400 && hcap.holdingAllow(baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS - 1)
+                && !hcap.holdingAllow(baseCap + IslandMotion.ALLOW_EXTEND_MAX_MS),
+                "repeated swallowed taps cap Allow's extension at base + ALLOW_EXTEND_MAX_MS (" + IslandMotion.ALLOW_EXTEND_MAX_MS + " ms) so Allow always opens");
+        // HeldKeys: tracks a set of activation keys across the hold boundary so simultaneous keys (Space + Enter) don't overwrite each other.
+        IslandMotion.HeldKeys hk = new IslandMotion.HeldKeys();
+        int[] sw = {0};
+        Runnable bump = () -> sw[0]++;
+        check(hk.onKey(62, true, false, 0, true, bump) && sw[0] == 1, "first activation key-down during hold is consumed and counts one swallow");
+        check(hk.onKey(66, true, false, 0, true, bump) && sw[0] == 2, "second simultaneous activation key-down during hold is tracked alongside the first");
+        check(hk.onKey(62, true, false, 1, true, bump) && sw[0] == 2, "key repeat during hold is consumed without counting another swallow");
+        check(hk.onKey(62, true, false, 2, false, bump) && hk.onKey(66, true, false, 1, false, bump),
+                "after hold ends, repeats of BOTH held keys are still consumed");
+        check(hk.onKey(62, false, true, 0, false, bump) && hk.onKey(66, false, true, 0, false, bump),
+                "after hold ends, matching key-ups of BOTH held keys are consumed");
+        check(!hk.onKey(62, true, false, 0, false, bump) && !hk.onKey(66, true, false, 0, false, bump),
+                "fresh presses after release pass through");
+        // Key already repeating before hold started (repeatCount > 0 on first down seen during hold) is captured without counting swallow.
+        check(hk.onKey(62, true, false, 3, true, bump) && sw[0] == 2
+                && hk.onKey(62, true, false, 4, false, bump) && hk.onKey(62, false, true, 0, false, bump)
+                && !hk.onKey(62, true, false, 0, false, bump),
+                "key already repeating before hold is captured on repeat down, does not extend swallow, and is consumed until key-up");
+        // Missed key-up: a fresh down (repeatCount == 0) after hold ends clears the stale entry and passes through.
+        check(hk.onKey(66, true, false, 0, true, bump) && !hk.onKey(66, true, false, 0, false, bump),
+                "fresh press with repeat 0 after hold ends clears a key whose key-up was missed");
         check(IslandMotion.PULSE_TIMES == 3 && IslandMotion.PULSE_MS == 1600 && IslandMotion.PULSE_SCALE == 1.55f,
                 "the Question badge pulses three times, 1.6 s each, to 155 %");
         check(IslandMotion.ANSWER_HOLD_MS == 850 && IslandMotion.CLOSED_HOLD_MS == 900 && IslandMotion.DIMMED == 0.32f,
@@ -114,6 +184,27 @@ public class IslandMotionTest {
         check(IslandMotion.BUTTON_COLOUR_MS == 200 && IslandMotion.LABEL_IN_MS == 200 && IslandMotion.LABEL_FROM_DX == -4,
                 "a button's colour changes in 200 ms; its result label arrives from 4 dp to the left in 200 ms");
         check(IslandMotion.COMMAND_LINES == 4, "the command shows four lines, then scrolls");
+
+        // ── Progress and Done (design 5.3, 5.4; the prototype's buildWorking, buildDone) ──
+        check(IslandMotion.ARC_TURN_MS == 1400 && IslandMotion.ARC_GAP == 0.22f, "the arc: one turn every 1.4 s, its tail fading out over the first 22 %");
+        check(IslandMotion.SEG_H_DP == 6 && IslandMotion.SEG_GAP_DP == 4, "the task bar: segments 6 dp high, 4 dp apart");
+        check(IslandMotion.SHIMMER_MS == 1600 && IslandMotion.SWEEP_MS == 1250 && IslandMotion.SWEEP_H_DP == 4 && IslandMotion.SWEEP_BAND == 0.42f,
+                "the band crosses the current task every 1.6 s; the sweep: a 4 dp line, a 42 % band, 1.25 s");
+        check(near(IslandMotion.shimmerAt(0), -1, 1e-9) && near(IslandMotion.shimmerAt(960), 1, 1e-9) && near(IslandMotion.shimmerAt(1500), 1, 1e-9)
+                && near(IslandMotion.shimmerAt(1600), -1, 1e-9), "the band crosses in the first 60 % of its 1.6 s and rests");
+        check(near(IslandMotion.sweepAt(0), -0.42, 1e-6) && near(IslandMotion.sweepAt(1249.999), 1, 1e-3), "the sweep runs from just before the line to its end");
+        check(IslandMotion.TASK_FILL_MS == 300 && IslandMotion.TASK_SWELL_MS == 420 && IslandMotion.TASK_SWELL_DELAY_MS == 220
+                && IslandMotion.TASK_NEXT_MS == 240 && IslandMotion.TASK_NEXT_IN_MS == 200 && IslandMotion.TASK_SWELL_SCALE == 1.7f,
+                "a task finishing: fills in 300 ms, swells to 170 % in 420 ms, the next turns gold 240 ms later");
+        check(IslandMotion.swell(0) == 1 && near(IslandMotion.swell(0.5), 1.7, 1e-6) && IslandMotion.swell(1) == 1 && IslandMotion.swell(1.1) < 1,
+                "the swell: to 170 % half way and back (the back curve may overshoot below)");
+        check(IslandMotion.APP_PICTURE_DP == 72 && IslandMotion.APP_PICTURE_R == 12, "the app's picture: 72 dp, corners 12 dp");
+        check(IslandMotion.STOPPED_HOLD_MS == 900 && IslandMotion.PROGRESS_IDLE_MS == 90_000, "Stopped holds 900 ms; Progress closes after 90 s without a touch");
+        check(IslandMotion.DONE_POP_MS == 380 && IslandMotion.DONE_POP_FROM == 0.6f && IslandMotion.DONE_POP_DELAY_MS == 80
+                && IslandMotion.DONE_CHECK_MS == 300 && IslandMotion.DONE_CHECK_DELAY_MS == 160
+                && IslandMotion.DONE_RING_MS == 520 && IslandMotion.DONE_RING_SCALE == 1.6f && IslandMotion.DONE_RING_DELAY_MS == 160,
+                "Done: the badge pops in from 60 % (380 ms), its check draws (300 ms), one ring to 160 % (520 ms)");
+        check(IslandMotion.REPLY_LINES == 3, "Done: the start of the reply, three lines at most");
 
         System.out.println(fails == 0 ? "\nALL PASSED" : "\n" + fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);

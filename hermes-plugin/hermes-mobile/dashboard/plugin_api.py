@@ -593,12 +593,49 @@ async def approve(body: Approve, request: Request):
 
 class Stop(BaseModel):
     session: str
+    turn_id: Optional[str] = None
+
+
+def _active_turn_id(sessions: list[str]) -> str:
+    """The plugin's active turn_id for any of ``sessions`` from the in-process plugin registry, or '' when unknown.
+    Never reads activity.json (which can be forged, uses a shorter cutoff, and blocks the event loop)."""
+    wanted = [s for s in dict.fromkeys(sessions) if isinstance(s, str) and s]
+    if not wanted:
+        return ""
+    plug = sys.modules.get("hm_plugin")
+    if plug is None:
+        return ""
+    raw = getattr(plug, "_turn_lookups", None)
+    if isinstance(raw, list):
+        reg_lock = getattr(plug, "_turn_lookups_lock", None)
+        if reg_lock is not None:
+            with reg_lock:
+                lookups = list(reversed(raw))
+        else:
+            lookups = list(reversed(raw))
+    else:
+        single = getattr(plug, "_active_turn_id", None)
+        lookups = [single] if callable(single) else []
+    for lookup in lookups:
+        if not callable(lookup):
+            continue
+        for sid in wanted:
+            try:
+                tid = lookup(sid)
+            except Exception:
+                tid = ""
+            if _is_text(tid) and 0 < len(tid) <= 128:
+                return tid
+    return ""
 
 
 @router.post("/stop")
 async def stop(body: Stop, request: Request):
     """Stop a running turn from the status chip's Stop button: find the live runtime that holds this stored
-    chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends."""
+    chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends.
+    When ``turn_id`` is given, refuses with 409 unless the live turn's id is known in-process and matches (failing
+    closed between turns or before a new turn's first stream event); requests with no ``turn_id`` (older apps) still
+    interrupt as before. Includes the interrupted turn's ``turn_id`` in the answer when known."""
     import asyncio
     import json
 
@@ -620,13 +657,23 @@ async def stop(body: Stop, request: Request):
                     return msg
 
         live = ((await call(1, "session.active_list", {})).get("result") or {}).get("sessions") or []
-        rts = [s.get("id") for s in live if body.session in (s.get("session_key"), s.get("id")) and s.get("id")]
+        matched = [s for s in live if body.session in (s.get("session_key"), s.get("id")) and s.get("id")]
+        rts = [s.get("id") for s in matched]
         if not rts:
             raise HTTPException(status_code=404, detail="that chat isn't running here")
+        live_tid = next((s.get("turn_id") for s in matched if _is_text(s.get("turn_id")) and s.get("turn_id")), "")
+        if not live_tid:
+            ids = [body.session] + [x for s in matched for x in (s.get("session_key"), s.get("id")) if x]
+            live_tid = _active_turn_id(ids)
+        if body.turn_id and (not live_tid or body.turn_id != live_tid):
+            raise HTTPException(status_code=409, detail="that turn already ended")
         for n, rt in enumerate(rts, 2):
             msg = await call(n, "session.interrupt", {"session_id": rt})
             if (msg.get("result") or {}).get("status") == "interrupted":
-                return {"interrupted": rt}
+                out = {"interrupted": rt}
+                if live_tid:
+                    out["turn_id"] = live_tid
+                return out
     raise HTTPException(status_code=409, detail="not interrupted")
 
 

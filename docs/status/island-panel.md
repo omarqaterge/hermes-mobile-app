@@ -1,46 +1,69 @@
 # The island panel (what opens from the status chip)
 
-**State** (2026-11-22): parts 1 and 2 of 3 built. Part 1 (the Question state, `AnswerBox` removed) is merged into
-`redesign`. Part 2, the Permission state, is in review (branch `island-panel-part2`, against `redesign`): the
-permission card's body and, while the fingerprint is needed, its Allow buttons open the panel on that request, with
-the timer ring, Deny / Allow once / Allow this session, the fingerprint asked every time through
-`ApprovalLock.askOnce`, a one-use grant the service checks (`approveFromPanel`), Sending then Allowed or Denied, a
-failed send, running out, answered elsewhere, "N more waiting" and moving on to the next request, and phone-data
-requests with no Allow. The owner's decision (the card's Allow opens the panel and asks there) is recorded in
-`docs/decisions/approval-needs-fingerprint.md`. Seen on Android 15 and Android 8.0 emulators without Hermes, so the
-answer was never seen arriving and "Allowed"/"Denied" were not seen on screen.
+**State (2026-11-22):** parts 1 to 3 of 3 built. Part 1 (the Question state, `AnswerBox` removed) and part 2 (the
+Permission state) are merged into `redesign`. Part 3 (Progress, Done, changing in place, the chip's confirmation of a
+card answer) is PR 227 against `redesign`, under review. The owner's decision on the card's Allow (it opens the panel
+and asks there) is in `docs/decisions/approval-needs-fingerprint.md`.
 
-**Review round 1 (2026-11-22):** the security review's findings are fixed on the branch: the screen-lock result is
-taken only by the activity whose prompt is up, with that prompt's own request code, and a cancelled prompt's screen is
-closed; two requests of one chat no longer share a notification button; with animations off the Permission state
-still starts; no Allow past the deadline; the card's choice is used once; on Android 10+ the answer buttons also
-ignore touches while another app covers part of the window.
+**Part 1:** the question card and its Answer button open the panel on the Question state; `AnswerBox` is removed.
 
-**Design round (2026-11-22):** a send that finds the request gone or run out shows that without the Sending motion;
-"N more waiting" is part of the opening stagger and "Allow this session" arrives with the buttons; the expired Open
-chat fades in on the out curve; the ring's pulse and resize, and each view's fade, replace the previous one; a failed
-Deny on phone data or an unreadable request shows no second Open chat; an empty plain line leaves no gap; the grow
-bounce stays inside the card. The panel follows every waiting request whatever "When Hermux needs me" says. Back from
-the Android 8 PIN screen its keyboard is put away once the panel has focus.
+**Part 2, review round 1:** the screen-lock result is taken only by the activity whose prompt is up, with that
+prompt's own request code; two requests of one chat no longer share a notification button; with animations off the
+Permission state still starts; no Allow past the deadline; the card's choice is used once.
+**Design round:** sends that find the request gone show that without the Sending motion; the opening stagger, fades
+and the grow bounce follow the design. **Review round 2:** the partly-covered rule (Android 10+) only on Allow once and
+Allow this session while the fingerprint is not asked; a recreated panel never asks for the card's choice again; the
+panel ends its prompt before its teardown; behind its own prompt every motion ends where it was going.
 
-**Review round 2 (2026-11-22):** the partly-covered rule (Android 10+) is only on Allow once and Allow this session,
-and only while the fingerprint is not asked; Deny, Review in Hermux and Open chat keep only the usual overlay rule. A
-recreated panel never asks for the card's choice again; Allow this session's prompt says "for this session"; the panel
-ends its prompt before its teardown; screen-lock codes are counted on their own. A fade stops a row's opening entrance,
-and behind its own prompt every motion ends where it was going (Ticker.finishAll), so the pulse and later fades play.
+**Part 3, review round (78239d3):** the task bar's motions on a changing list, Progress and Done scrolling, one path
+into Stopping, the chip's drawn check and cross, one Done per chat. **Re-check:** pop-ups and reminders back as on
+`redesign` (see the question below); a stop counts from when it was sent and one the plugin accepted is never shown as
+failed; new content takes no touch for 260 ms after a change in place; the stop failure line scrolls with the body,
+and the scrolled part cuts its content at its edges. **Security review fixes:** monotonic change-in-place hold blocks
+touches, activation keys (including on `Pill` and `GuardedText` during the Allow pause, tracking simultaneous held keys
+in an `IslandMotion.HeldKeys` set on any key-down during the hold and consuming each held key's repeats and matching
+key-up across the hold boundary, with swallow counted only on repeat count 0), focus and accessibility/click handlers until fade-in completes (Deny stays usable at once);
+Allow once and Allow this session wait 320 ms after fade-in finishes (580 ms minimum, same with reduced motion,
+extended by 200 ms on swallowed input, capped at +400 ms past base), and Allow once stays held while fading back in after a failed Deny;
+Stop tracking is unified in one per-turn `IslandState.StopBook` fed by explicit plugin `turn_id` and `proc` fields on
+`status` (for both `lastSession` and every `others` entry, with `since`), `done` flashes, and `/stop` responses (with
+safe fallback for older plugins and missing turn identity): `/stop` resolves active turns only from the in-process
+plugin registry (no `activity.json` fallback, multiple loads register without clobbering `sys.modules["hm_plugin"]`)
+and fails closed with 409 whenever a caller sends `turn_id` unless the live turn id is known and equal; both chip and
+panel derive Stop state from `StopBook.view` ordered by monotonic attempt number and monotonic clock (never wall time),
+a timeout or failure restores Stop on both chip and panel immediately (`stopTimeoutRun` reschedules for remaining time
+or shows failure unless accepted/ended so it can never stick, and `stopTimeoutTask` is removed in `onDestroy`), a late
+200 after timeout with no retry brings the open panel back into Stopping alongside the chip, a `flash` from another
+chat never overwrites `lastSession` while `lastWorking` is true, events from other chats or Hermes processes never end
+a turn's stop, all ad-hoc stop flags/counters and `stopUnheard` are deleted, `stopFate` prefers `!sameTurn` over a late
+failure, and the stop failure line scrolls into view after layout via a one-shot `OnLayoutChangeListener` without
+moving focus.
 
-**Next:** the phone checks in `docs/manual-tests.md` ("The island panel"), for parts 1 and 2. Then part 3 (Progress,
-Done, the links between states). It changes `HermesService.java` too, so it waits for part 2.
+**Open question for the owner:** while the panel is open, the service's heads-up pop-up for a new request or question
+(and a request's 20 s / 40 s reminders) can drop over the panel's header. The design doesn't cover notification
+changes, so they behave as they do with the panel closed. An earlier attempt to hold them back while the panel showed
+the request was undone: a request could then run out unheard (a panel on Progress or Done with nobody looking, a
+second request behind the one on screen, the panel hidden behind our own PIN screen). Whether to change this, and how,
+is the owner's call.
 
-**Known limits:** the service keeps waiting requests in memory, so a restart (an app update) drops them from the chip
-and the panel. A failed answer leaves the question off the chip, as for the card's own buttons. The service's own
-"Couldn't send your answer" card drops down over the panel when a send fails (as it did for the card's buttons). The
-panel follows waiting requests even with "When Hermux needs me" off (the chip still respects it). Home from the PIN
-screen (Android 8-10, or the PIN fallback) leaves the panel and that screen in the background until the request's
-deadline, when both go; nothing is sent.
+**Next:** the owner's answer to the question above; the phone checks in `docs/manual-tests.md` ("The island panel"),
+parts 1 to 3.
 
-**Needs a real phone:** yes. The motion and its frame rate, the blur's cost, the keyboard, TalkBack and the
-locked-phone path can only be judged on one.
+**Known limits:** the service keeps waiting requests and the last turn's reply in memory, so a restart (an app update)
+drops them from the chip and the panel. A failed answer leaves the question off the chip, as for the card's own
+buttons. The service's own "Couldn't send your answer" card drops down over the panel when a send fails, and so does
+its "Couldn't stop Hermux" card when a stop fails. The panel follows waiting requests even with "When Hermux needs me"
+off (the chip still respects it). Home from the PIN screen (Android 8-10, or the PIN fallback) leaves the panel and
+that screen in the background until the request's deadline, when both go; nothing is sent. A turn that ends with no
+reply heard closes the Progress state 2 s later instead of showing Done. Working status from a second Hermes process
+(a cron job or a second bot) can take over the chip and the panel from the first; this predates PR 227.
+
+**Needs a real phone:**
+- Parts 1 and 2: the motion and its frame rate, the blur's cost, the keyboard, TalkBack and the locked-phone path;
+  the answer arriving and "Allowed" / "Denied" on screen (the emulators had no Hermes).
+- Part 3: the Progress and Done states end to end with a real Hermes (a real stop, the chip's two-second confirmation
+  after a card answer, the app-in-use row with a real app), a real rotation and reduced motion, the lock screen,
+  battery once hidden.
 
 **Links:** [design](../design/island-panel.md), [prototype](../design/island-panel-prototype.html),
 [plan and prompts](../plans/15-island-panel.md), spec 3.22, 4.1, 4.3.

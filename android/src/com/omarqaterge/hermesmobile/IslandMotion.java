@@ -168,6 +168,84 @@ final class IslandMotion {
     // ── changing state, and small parts ──
     static final long STATE_OUT_MS = 100, STATE_IN_MS = 180, STATE_IN_DELAY_MS = 80;
     static final float STATE_OUT_SCALE = 0.98f, STATE_IN_DY = 6;
+    /** The new content takes no touch, key or focus until its fade-in ends (at least its delay and fade, as long with
+     *  reduced motion); Allow once and Allow this session wait ALLOW_PAUSE_MS longer after the fade finishes (at least
+     *  ALLOW_HOLD_MS in all, same with reduced motion), extended by ALLOW_EXTEND_MS if an input is swallowed during the
+     *  hold. */
+    static final long STATE_TOUCH_HOLD_MS = STATE_IN_DELAY_MS + STATE_IN_MS;
+    static final long ALLOW_PAUSE_MS = 320;
+    static final long ALLOW_HOLD_MS = STATE_TOUCH_HOLD_MS + ALLOW_PAUSE_MS;
+    static final long ALLOW_EXTEND_MS = 200;
+    /** Repeated swallowed taps can extend Allow's hold at most this much past the base Allow deadline. */
+    static final long ALLOW_EXTEND_MAX_MS = 400;
+
+    /** Monotonic hold state for content arriving in place: general input (until the fade-in finishes and at least
+     *  STATE_TOUCH_HOLD_MS) and Allow (until the fade-in finishes plus ALLOW_PAUSE_MS, at least ALLOW_HOLD_MS in all,
+     *  extended briefly when an input is swallowed during the hold, capped at ALLOW_EXTEND_MAX_MS past base). Plain
+     *  Java so a JDK test can drive its clock. */
+    static final class Hold {
+        boolean fading, sawSwallow;
+        long holdUntil, baseAllowUntil, allowUntil;
+
+        void start(long now) {
+            fading = true;
+            sawSwallow = false;
+            holdUntil = now + STATE_TOUCH_HOLD_MS;
+            baseAllowUntil = now + ALLOW_HOLD_MS;
+            allowUntil = baseAllowUntil;
+        }
+
+        void fadeDone(long now) {
+            if (!fading) return;
+            fading = false;
+            baseAllowUntil = Math.max(baseAllowUntil, now + ALLOW_PAUSE_MS);
+            long cap = baseAllowUntil + ALLOW_EXTEND_MAX_MS;
+            allowUntil = Math.min(cap, Math.max(allowUntil, sawSwallow ? baseAllowUntil + ALLOW_EXTEND_MS : baseAllowUntil));
+        }
+
+        boolean holding(long now) {
+            return fading || now < holdUntil;
+        }
+
+        boolean holdingAllow(long now) {
+            return fading || now < allowUntil;
+        }
+
+        long remaining(long now) {
+            return fading ? STATE_TOUCH_HOLD_MS : Math.max(0, holdUntil - now);
+        }
+
+        void swallowed(long now) {
+            if (!holdingAllow(now)) return;
+            sawSwallow = true;
+            long cap = baseAllowUntil + ALLOW_EXTEND_MAX_MS;
+            allowUntil = Math.min(cap, Math.max(allowUntil, Math.max(baseAllowUntil + ALLOW_EXTEND_MS, now + ALLOW_EXTEND_MS)));
+        }
+    }
+
+    /** Tracks activation keys pressed during an input hold as a set so several keys held at once (e.g. Space and Enter)
+     *  each have their repeats and matching key-up consumed across the hold boundary without overwriting each other. */
+    static final class HeldKeys {
+        final java.util.HashSet<Integer> keys = new java.util.HashSet<>();
+
+        boolean onKey(int code, boolean down, boolean up, int repeatCount, boolean holding, Runnable onSwallow) {
+            if (holding) {
+                if (down) {
+                    keys.add(code);
+                    if (repeatCount == 0 && onSwallow != null) onSwallow.run();
+                } else if (up) {
+                    keys.remove(code);
+                }
+                return true;
+            }
+            if (up && keys.remove(code)) return true;
+            if (down && keys.contains(code)) {
+                if (repeatCount > 0) return true;
+                keys.remove(code);
+            }
+            return false;
+        }
+    }
     /** A line of text that changes: the old one leaves upward on IN, the new one arrives from below on OUT. */
     static final long TEXT_OUT_MS = 110, TEXT_IN_MS = 200;
     static final float TEXT_DY = 6;
@@ -229,6 +307,65 @@ final class IslandMotion {
         double up = q < 0.5 ? q / 0.5 : (1 - q) / 0.5;
         return 1 + (TIMER_PULSE_SCALE - 1) * up;
     }
+
+    // ── the Progress state (design 5.3; the prototype's buildWorking) ──
+    /** The badge's turning arc: one turn per ARC_TURN_MS; empty over the first ARC_GAP of the circle, then fading in to
+     *  solid gold at its head; a ring ARC_STROKE_DP thick whose outer edge is ARC_OUTER_DP from the badge's centre. */
+    static final long ARC_TURN_MS = 1400;
+    static final float ARC_GAP = 0.22f, ARC_STROKE_DP = 3, ARC_OUTER_DP = 21;
+    /** The task bar: segments this high and this far apart (dp), round ends. */
+    static final float SEG_H_DP = 6, SEG_GAP_DP = 4;
+    /** The current task's light band: it crosses in SHIMMER_SHARE of every SHIMMER_MS, then rests. */
+    static final long SHIMMER_MS = 1600;
+    static final double SHIMMER_SHARE = 0.6;
+    /** CSS ease-in-out: the band crossing the current task. */
+    static final Curve EASE_IN_OUT = new Bezier(0.42, 0, 0.58, 1);
+    /** Without a task list: a 4 dp line with a soft gold band (SWEEP_BAND of its width) sweeping across in SWEEP_MS. */
+    static final float SWEEP_H_DP = 4, SWEEP_BAND = 0.42f;
+    static final long SWEEP_MS = 1250;
+    static final Curve SWEEP = new Bezier(0.45, 0, 0.55, 1);
+    /** A task finishing: its segment fills green from the left in TASK_FILL_MS on STANDARD; TASK_SWELL_DELAY_MS after
+     *  the fill starts it swells to TASK_SWELL_SCALE of its height and back in TASK_SWELL_MS on BACK; TASK_NEXT_MS after
+     *  the fill starts the next segment turns gold, fading in over TASK_NEXT_IN_MS. */
+    static final long TASK_FILL_MS = 300, TASK_SWELL_MS = 420, TASK_SWELL_DELAY_MS = 220, TASK_NEXT_MS = 240, TASK_NEXT_IN_MS = 200;
+    static final float TASK_SWELL_SCALE = 1.7f;
+    /** The app in use: its picture is this big (dp), with these corners. */
+    static final float APP_PICTURE_DP = 72, APP_PICTURE_R = 12;
+    /** Stopped holds this long before the panel closes. */
+    static final long STOPPED_HOLD_MS = 900;
+    /** The Progress state closes by itself after this long without a touch (battery). */
+    static final long PROGRESS_IDLE_MS = 90_000;
+
+    /** A segment's height during its swell, p the eased time (BACK may pass 1): up to the peak half way, back after. */
+    static double swell(double p) {
+        double up = p < 0.5 ? p / 0.5 : (1 - p) / 0.5;
+        return 1 + (TASK_SWELL_SCALE - 1) * up;
+    }
+
+    /** The current task's band: where its left edge is, as a share of the segment's width (-1 = just before it, 1 =
+     *  just past it), {@code ms} into the shimmer. */
+    static double shimmerAt(double ms) {
+        double t = (ms % SHIMMER_MS) / SHIMMER_MS;
+        return -1 + 2 * EASE_IN_OUT.at(Math.min(1, t / SHIMMER_SHARE));
+    }
+
+    /** The sweep's band: where its left edge is, as a share of the line's width (from -SWEEP_BAND to 1). */
+    static double sweepAt(double ms) {
+        double t = (ms % SWEEP_MS) / SWEEP_MS;
+        return -SWEEP_BAND + (1 + SWEEP_BAND) * SWEEP.at(t);
+    }
+
+    // ── the Done state (design 5.4; the prototype's buildDone) ──
+    /** The badge pops in from DONE_POP_FROM of its size in DONE_POP_MS on BACK, after DONE_POP_DELAY_MS. */
+    static final long DONE_POP_MS = 380, DONE_POP_DELAY_MS = 80;
+    static final float DONE_POP_FROM = 0.6f;
+    /** Its check draws itself in DONE_CHECK_MS on STANDARD, after DONE_CHECK_DELAY_MS. */
+    static final long DONE_CHECK_MS = 300, DONE_CHECK_DELAY_MS = 160;
+    /** One green ring expands to DONE_RING_SCALE and fades from DONE_RING_FROM_ALPHA in DONE_RING_MS on OUT. */
+    static final long DONE_RING_MS = 520, DONE_RING_DELAY_MS = 160;
+    static final float DONE_RING_SCALE = 1.6f, DONE_RING_FROM_ALPHA = 0.9f;
+    /** The start of the reply: three lines at most. */
+    static final int REPLY_LINES = 3;
 
     // ── reduced motion ──
     /** With the phone's animations off, everything is a fade of at most this long, with no movement. */
