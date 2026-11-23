@@ -1489,6 +1489,52 @@ textarea {
 .sheet-actions.col {
   flex-direction: column;
 }
+/* Request sheet body: in portrait, `.sheet-scroll` scrolls while buttons stay pinned; on short viewports (landscape),
+   the body itself scrolls from the top so title, description and command are never crushed to 0 px or hidden above the
+   viewport, while `.sheet::before` (the glass surface) stays fixed behind the sheet. */
+.request-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-height: 540px) {
+  .sheet.request-sheet {
+    max-height: calc(100vh - 8px);
+    max-height: calc(100dvh - 8px);
+    gap: 6px;
+    padding: 6px 14px calc(12px + env(safe-area-inset-bottom));
+  }
+  .sheet.request-sheet .request-sheet-body {
+    gap: 8px;
+    overflow-y: auto;
+  }
+  .sheet.request-sheet .request-sheet-body > * {
+    flex-shrink: 0;
+  }
+  .sheet.request-sheet .sheet-scroll {
+    flex: 1 0 auto;
+    overflow-y: visible;
+  }
+  .sheet.request-sheet .sheet-desc {
+    max-height: min(110px, 30vh);
+    overflow-y: auto;
+  }
+  .sheet.request-sheet .sheet-code {
+    max-height: min(140px, 36vh);
+    overflow-y: auto;
+  }
+}
+@media (max-height: 540px) and (min-width: 480px) {
+  .sheet.request-sheet .sheet-actions.col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sheet.request-sheet .sheet-actions.col > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
 .btn {
   padding: 12px 16px;
   border-radius: 12px;

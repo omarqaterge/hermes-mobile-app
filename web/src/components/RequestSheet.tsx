@@ -327,10 +327,12 @@ export function RequestSheet({ req }: { req: ServerRequest }) {
   useLayoutEffect(() => sheetShown(req.id), [req.id])
   return (
     <div className="sheet-backdrop">
-      <div className="sheet" role="dialog">
+      <div className="sheet request-sheet" role="dialog">
         <div className="sheet-grip" />
-        {from && !locked && <div className="sheet-from dim small">From {from}</div>}
-        {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
+        <div className="request-sheet-body">
+          {from && !locked && <div className="sheet-from dim small">From {from}</div>}
+          {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
+        </div>
       </div>
     </div>
   )

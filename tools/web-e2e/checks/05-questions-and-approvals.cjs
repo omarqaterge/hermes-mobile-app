@@ -539,3 +539,84 @@ module.exports = async t => {
     await wide.close()
   }
 }
+  // ── Landscape approval sheet: at 740 x 360 and at phone font scale 2.0, with 4 buttons and a long
+  //    command, what is asked and the command stay visible, nothing hides above the top, and every button is reachable. ──
+  {
+    const { browser } = t
+    for (const [label, phoneScale] of [['landscape 1x', 1], ['landscape font 2.0', 2]]) {
+      const lp = await browser.newPage({ viewport: { width: 740, height: 360 } })
+      await lp.addInitScript(nativeShell)
+      await lp.addInitScript(fs => {
+        window.__socks = []
+        window.__out = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+          }
+          send(d) {
+            try {
+              window.__out.push(JSON.parse(d))
+            } catch { /* */ }
+            return super.send(d)
+          }
+        }
+        Object.assign(window.HermesAndroid, { phoneTextScale: () => fs })
+      }, phoneScale)
+      await lp.goto(WEB + '/')
+      await lp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      await lp.waitForFunction(() => window.__socks.some(x => x.readyState === 1), { timeout: 5000 })
+      const longCmd = 'chmod 666 ' + Array.from({ length: 40 }, (_, i) => `~/hm-test/F${i + 1}.txt`).join(' ')
+      const desc = 'world/other-writable permissions; ' + 'detailed safety note about this command. '.repeat(8)
+      await lp.evaluate(([cmd, description]) => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        s.dispatchEvent(new MessageEvent('message', {
+          data: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'srv-land-1',
+            method: 'approval',
+            params: { session_id: 'rt-new', command: cmd, description, choices: ['once', 'session', 'always', 'deny'], allow_session: true, allow_permanent: true }
+          })
+        }))
+      }, [longCmd, desc])
+      const dlg = lp.getByRole('dialog')
+      await dlg.getByText('Approve command?').waitFor({ timeout: 5000 })
+      const dBox = await dlg.boundingBox()
+      const titleBox = await dlg.getByText('Approve command?').boundingBox()
+      const descBox = await dlg.getByText(/world\/other-writable permissions/).boundingBox()
+      const cmdEl = dlg.getByText(/chmod 666 ~\/hm-test\/F1\.txt/)
+      const cmdBox = await cmdEl.boundingBox()
+      check(
+        dBox && dBox.y >= 0 && titleBox && titleBox.y >= 0 && titleBox.height > 10,
+        `${label}: sheet and title sit inside the viewport, nothing hides above the top (${JSON.stringify({ dBox, titleBox })})`
+      )
+      check(
+        descBox && descBox.height >= 16 && descBox.y >= dBox.y && descBox.y + 12 <= 360,
+        `${label}: the approval description is visible (${JSON.stringify(descBox)})`
+      )
+      check(
+        cmdBox && cmdBox.height >= 24 && cmdBox.y >= dBox.y && cmdBox.y + 20 <= 360,
+        `${label}: the long command is visible in landscape (${JSON.stringify(cmdBox)})`
+      )
+      const scrolled = await cmdEl.evaluate(el => {
+        const before = el.scrollTop
+        el.scrollTop = el.scrollHeight
+        return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, moved: el.scrollTop > before, hasEnd: (el.textContent || '').includes('F40.txt') }
+      })
+      check(scrolled.hasEnd && scrolled.scrollHeight > scrolled.clientHeight && scrolled.moved, `${label}: the long command block scrolls to the end (${JSON.stringify(scrolled)})`)
+      // Every choice button stays reachable (scrolls into view if the sheet scrolls) and Deny answers Hermes.
+      for (const name of ['Allow once', 'Allow this session', 'Always allow', 'Deny']) {
+        const btn = dlg.getByRole('button', { name, exact: true })
+        await btn.scrollIntoViewIfNeeded()
+        const b = await btn.boundingBox()
+        check(b && b.height >= 44 && b.y >= 0 && b.y + b.height <= 360, `${label}: "${name}" button is reachable (${JSON.stringify(b)})`)
+      }
+      await dlg.getByRole('button', { name: 'Deny', exact: true }).click()
+      await dlg.waitFor({ state: 'detached', timeout: 3000 })
+      const ans = await lp.evaluate(() => window.__out.filter(m => m.id === 'srv-land-1' && 'result' in m))
+      check(ans.length === 1 && ans[0].result.choice === 'deny', `${label}: Deny closes the sheet and answers Hermes`)
+      await lp.close()
+    }
+  }
+}
