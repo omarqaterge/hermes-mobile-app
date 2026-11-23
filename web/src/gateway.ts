@@ -677,7 +677,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   if (replay) await replay
   let r: SessionResumeResult
   try {
-    r = await rpc<SessionResumeResult>('session.resume', { session_id: storedId }, 60_000)
+    r = await rpc<SessionResumeResult>('session.resume', { session_id: storedId, source: 'mobile' }, 60_000)
   } catch (err) {
     if (seq === openSeq) setState({ opening: null, preview: null })
     throw err
@@ -1362,7 +1362,7 @@ export async function continueSubAgent(chat: string, agent: Pick<SubAgent, 'chil
     isTaintedItems(hereNow()?.items) ||
     idsReadState([...allIds]) !== 'clear'
   if (hasTaint()) throw new Error('This can’t continue in a new chat: phone data may be involved')
-  const opened = await rpc<SessionResumeResult>('session.resume', { session_id: agent.child }, 60_000)
+  const opened = await rpc<SessionResumeResult>('session.resume', { session_id: agent.child, source: 'mobile' }, 60_000)
   try {
     if (lockView()) return
     widen(opened.session_id, opened.resumed, opened.stored_session_id, opened.info?.stored_session_id)
@@ -1800,7 +1800,7 @@ async function syncRunning(): Promise<void> {
   const a = getState().active
   if (!a || !a.running || getState().conn !== 'open') return
   try {
-    const r = await rpc<SessionResumeResult>('session.resume', { session_id: a.storedId }, 20_000)
+    const r = await rpc<SessionResumeResult>('session.resume', { session_id: a.storedId, source: 'mobile' }, 20_000)
     const cur = getState().active
     if (!cur || cur.storedId !== a.storedId || !cur.running) return
     if (Boolean(r.running ?? r.info?.running)) return
