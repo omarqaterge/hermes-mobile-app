@@ -87,7 +87,19 @@ def _active_turn_id(session_id: str) -> str:
         return str((cur.get("turn") or {}).get("id") or "") if cur else ""
 
 
-sys.modules["hm_plugin"] = types.SimpleNamespace(_active_turn_id=_active_turn_id)
+def _register_turn_lookup(fn) -> None:
+    """Register this plugin load's active-turn lookup in-process without clobbering other loads."""
+    reg = sys.modules.setdefault("hm_plugin", types.SimpleNamespace())
+    reg_lock = reg.__dict__.setdefault("_turn_lookups_lock", threading.Lock())
+    with reg_lock:
+        lookups = reg.__dict__.setdefault("_turn_lookups", [])
+        if fn not in lookups:
+            lookups.append(fn)
+            if len(lookups) > 64:
+                del lookups[:-64]
+
+
+_register_turn_lookup(_active_turn_id)
 
 
 def _profile() -> str:

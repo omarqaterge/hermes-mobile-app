@@ -597,16 +597,28 @@ class Stop(BaseModel):
 
 
 def _active_turn_id(sessions: list[str]) -> str:
-    """The plugin's active turn_id for any of ``sessions``, or '' when unknown: reads the in-process plugin's live
-    table first (exact and race-free in the dashboard process), then activity.json for live processes."""
-    import time
-
+    """The plugin's active turn_id for any of ``sessions`` from the in-process plugin registry, or '' when unknown.
+    Never reads activity.json (which can be forged, uses a shorter cutoff, and blocks the event loop)."""
     wanted = [s for s in dict.fromkeys(sessions) if isinstance(s, str) and s]
     if not wanted:
         return ""
     plug = sys.modules.get("hm_plugin")
-    lookup = getattr(plug, "_active_turn_id", None) if plug is not None else None
-    if callable(lookup):
+    if plug is None:
+        return ""
+    raw = getattr(plug, "_turn_lookups", None)
+    if isinstance(raw, list):
+        reg_lock = getattr(plug, "_turn_lookups_lock", None)
+        if reg_lock is not None:
+            with reg_lock:
+                lookups = list(reversed(raw))
+        else:
+            lookups = list(reversed(raw))
+    else:
+        single = getattr(plug, "_active_turn_id", None)
+        lookups = [single] if callable(single) else []
+    for lookup in lookups:
+        if not callable(lookup):
+            continue
         for sid in wanted:
             try:
                 tid = lookup(sid)
@@ -614,51 +626,16 @@ def _active_turn_id(sessions: list[str]) -> str:
                 tid = ""
             if _is_text(tid) and 0 < len(tid) <= 128:
                 return tid
-    data = _read_activity_file(Path.home() / ".hermes" / "mobile" / "activity.json")
-    if not data:
-        return ""
-    now = time.time()
-    me = str(os.getpid())
-    ordered = ([me] if me in data and not callable(lookup) else []) + [k for k in data if k != me]
-    best = ""
-    lookups = 0
-    for pid in ordered:
-        if lookups >= ACTIVITY_MAX_LOOKUPS:
-            break
-        entry = data.get(pid)
-        if not (isinstance(entry, dict) and str(pid).isdigit()):
-            continue
-        if pid != me:
-            lookups += 1
-            if Path("/proc").is_dir() and not Path("/proc", str(pid)).exists():
-                continue
-        at = entry.get("at")
-        if not _is_number(at) or at > now + ACTIVITY_FUTURE_S or now - at > 300:
-            continue
-        listed = entry.get("items")
-        if not isinstance(listed, list):
-            continue
-        for it in listed:
-            if not isinstance(it, dict) or it.get("session") not in wanted:
-                continue
-            ts = it.get("ts")
-            if not _is_number(ts) or ts > now + ACTIVITY_FUTURE_S or now - ts > (60 if it.get("review") else 180):
-                continue
-            tid = it.get("turn_id")
-            if _is_text(tid) and 0 < len(tid) <= 128:
-                if not it.get("review"):
-                    return tid
-                if not best:
-                    best = tid
-    return best
+    return ""
 
 
 @router.post("/stop")
 async def stop(body: Stop, request: Request):
     """Stop a running turn from the status chip's Stop button: find the live runtime that holds this stored
     chat (``session.active_list``) and send it the same ``session.interrupt`` the app's stop button sends.
-    When ``turn_id`` is given and differs from the live turn's id, refuses with 409 instead of interrupting a newer
-    turn; includes the interrupted turn's ``turn_id`` in the answer when known."""
+    When ``turn_id`` is given, refuses with 409 unless the live turn's id is known in-process and matches (failing
+    closed between turns or before a new turn's first stream event); requests with no ``turn_id`` (older apps) still
+    interrupt as before. Includes the interrupted turn's ``turn_id`` in the answer when known."""
     import asyncio
     import json
 
@@ -688,7 +665,7 @@ async def stop(body: Stop, request: Request):
         if not live_tid:
             ids = [body.session] + [x for s in matched for x in (s.get("session_key"), s.get("id")) if x]
             live_tid = _active_turn_id(ids)
-        if body.turn_id and live_tid and body.turn_id != live_tid:
+        if body.turn_id and (not live_tid or body.turn_id != live_tid):
             raise HTTPException(status_code=409, detail="that turn already ended")
         for n, rt in enumerate(rts, 2):
             msg = await call(n, "session.interrupt", {"session_id": rt})

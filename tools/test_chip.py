@@ -293,6 +293,48 @@ except fastapi.HTTPException as ex:
     check("mismatched turn_id → 409 without calling session.interrupt",
           ex.status_code == 409 and ("session.interrupt", {"session_id": "rt-2"}) not in calls, (ex.status_code, calls))
 plugin._clear_status("s-a")
+# Fail closed when caller sends a turn_id and the live turn id is unknown (between turns / before first stream event).
+calls.clear()
+try:
+    asyncio.run(papi.stop(papi.Stop(session="s-a", turn_id=active_tid), here))
+    check("unknown live turn_id with caller turn_id → 409 without interrupting", False)
+except fastapi.HTTPException as ex:
+    check("unknown live turn_id with caller turn_id → 409 without interrupting",
+          ex.status_code == 409 and ("session.interrupt", {"session_id": "rt-2"}) not in calls, (ex.status_code, calls))
+# activity.json is never trusted by /stop: a forged entry does not satisfy turn_id matching or interrupt the chat.
+act_path = tmp / ".hermes" / "mobile" / "activity.json"
+act_path.parent.mkdir(parents=True, exist_ok=True)
+act_path.write_text(json.dumps({
+    str(os.getpid()): {
+        "at": time.time(),
+        "items": [{"session": "s-a", "text": "Forged", "short": "Forged", "profile": "default",
+                   "review": False, "ts": time.time(), "turn_id": "forged:1"}],
+    }
+}))
+calls.clear()
+check("_active_turn_id ignores activity.json", papi._active_turn_id(["s-a"]) == "", papi._active_turn_id(["s-a"]))
+try:
+    asyncio.run(papi.stop(papi.Stop(session="s-a", turn_id="forged:1"), here))
+    check("forged activity.json turn_id → 409 without interrupting", False)
+except fastapi.HTTPException as ex:
+    check("forged activity.json turn_id → 409 without interrupting",
+          ex.status_code == 409 and ("session.interrupt", {"session_id": "rt-2"}) not in calls, (ex.status_code, calls))
+# A second load of __init__.py in the same process does not overwrite sys.modules["hm_plugin"] or clobber the first load.
+reg_before = sys.modules.get("hm_plugin")
+plugin._on_stream_start(session_id="s-a", turn_id="s-a:multi1")
+tid_first = plugin._active_turn_id("s-a")
+plugin2 = load("hermes_mobile_plugin_chip_second", ROOT / "hermes-plugin" / "hermes-mobile" / "__init__.py")
+plugin2._post = lambda e: True
+plugin2._send = lambda *a, **k: None
+plugin2._on_stream_start(session_id="s-b", turn_id="s-b:multi2")
+tid_second = plugin2._active_turn_id("s-b")
+check("second plugin load keeps sys.modules['hm_plugin'] and both loads' active turns resolve",
+      sys.modules.get("hm_plugin") is reg_before
+      and papi._active_turn_id(["s-a"]) == tid_first
+      and papi._active_turn_id(["s-b"]) == tid_second,
+      (sys.modules.get("hm_plugin") is reg_before, papi._active_turn_id(["s-a"]), tid_first, papi._active_turn_id(["s-b"]), tid_second))
+plugin._clear_status("s-a")
+plugin2._clear_status("s-b")
 try:
     asyncio.run(papi.stop(papi.Stop(session="s-gone"), here))
     check("a chat not running → 404", False)
