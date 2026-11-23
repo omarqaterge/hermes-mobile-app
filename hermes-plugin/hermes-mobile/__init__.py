@@ -956,6 +956,64 @@ def _bg_clear(session_id) -> None:
     _clear_status(session_id, only_review=True)
 
 
+def _reply_text(val) -> str:
+    """Plain reply text from a hook value (string or list of content parts), trimmed; empty if none."""
+    if isinstance(val, str):
+        return val.strip()
+    if isinstance(val, list):
+        parts = []
+        for item in val:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts).strip()
+    return ""
+
+
+def _remember_reply(session_id, text) -> None:
+    s = _reply_text(text)
+    if not session_id or not s:
+        return
+    with _lock:
+        _last_text[session_id] = s
+        if len(_last_text) > 200:
+            _last_text.pop(next(iter(_last_text)))
+
+
+_EXIT_REASON_WORDS = (
+    ("max_iterations_reached", "Reached the step limit"),
+    ("budget_exhausted", "Reached the step limit"),
+    ("review_input_budget_exhausted", "Reached the step limit"),
+    ("empty_response_exhausted", "No reply from the model"),
+    ("all_retries_exhausted_no_response", "The model didn't answer"),
+    ("session_persistence_failed", "Couldn't save the chat"),
+    ("guardrail_halt", "Stopped by a safety limit"),
+    ("context_compression_timeout", "Couldn't compact the chat"),
+    ("context_compression_exhausted", "Couldn't compact the chat"),
+    ("compaction_handoff_not_actionable", "Couldn't compact the chat"),
+    ("ollama_runtime_context_too_small", "The model's context window is too small"),
+    ("pending_tool_result", "Stopped before finishing a tool step"),
+    ("interpreter_shutdown", "Hermes was shutting down"),
+    ("redirect_restart_limit_exceeded", "Stopped after too many retries"),
+    ("rebuilt_restart_limit_exceeded", "Stopped after too many retries"),
+    ("local_processing_error", "Something went wrong while running the turn"),
+    ("repeated_outer_errors", "Something went wrong while running the turn"),
+    ("error_near_max_iterations", "Something went wrong while running the turn"),
+)
+
+
+def _plain_exit_reason(reason, *, failed: bool = False, cron: bool = False) -> str:
+    """Turn Hermes's internal turn_exit_reason into plain words for a person; never return raw code or reprs."""
+    raw = str(reason or "").strip()
+    for prefix, words in _EXIT_REASON_WORDS:
+        if raw == prefix or raw.startswith(prefix + "(") or raw.startswith(prefix + ":"):
+            return words
+    if failed:
+        return "The scheduled job failed" if cron else "The turn failed"
+    return "Finished" if cron else ""
+
+
 def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
     # Hermes runs a background self-review (memory / skills) after a turn, on the same session id.
     # It fires our hooks but never a session_end, so label it and let it expire on its own.
@@ -964,15 +1022,23 @@ def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
         _dbg(f"review-start {session_id} {turn_id}")
         _bg_status(session_id, turn_id)
         return None
-    if session_id and session_id not in _subagents and _note_start(session_id):
-        _event("turn", "start", chat=_alias(session_id))
+    if session_id and session_id not in _subagents:
+        with _lock:
+            _last_text.pop(session_id, None)  # a new turn starts clean, so an empty/failed turn never reuses an old reply
+        if _note_start(session_id):
+            _event("turn", "start", chat=_alias(session_id))
     return None
 
 
-def _on_post_llm_call(session_id=None, turn_id=None, **_):
-    if _is_review(turn_id):
+def _on_post_llm_call(session_id=None, turn_id=None, assistant_response=None, **_):
+    if _is_review(turn_id, session_id):
         _dbg(f"review-end {session_id} {turn_id}")
         _bg_clear(session_id)
+        return None
+    # Hermes fires post_llm_call synchronously right before on_session_end with the finalized reply for every
+    # provider (including Codex Responses and non-streaming calls, where on_stream_end has empty text or never runs).
+    if session_id and session_id not in _subagents:
+        _remember_reply(session_id, assistant_response)
     return None
 
 
@@ -991,11 +1057,8 @@ def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None
         if finished and final_text:  # its last model call: it is over (it sends no session_end)
             _bg_clear(session_id)
         return
-    if session_id and final_text:
-        with _lock:
-            _last_text[session_id] = final_text
-            if len(_last_text) > 200:
-                _last_text.pop(next(iter(_last_text)))
+    if session_id and session_id not in _subagents:
+        _remember_reply(session_id, final_text)
 
 
 def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, task_id=None, tool_call_id=None, **_):
@@ -1261,6 +1324,8 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
         _bg_clear(session_id)
         return
     _clear_status(session_id)
+    with _lock:
+        _last_text.pop(session_id, None)
     _end_phone_app(session_id)
     msg = str((error.get("message") if isinstance(error, dict) else error) or reason or "")
     inner = re.search(r"""['"]message['"]\s*:\s*['"]([^'"]+)""", msg)  # "Error code: 401 - {'error': {'message': '…'}}"
@@ -1333,10 +1398,12 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     name = _profile()
     title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
     if platform == "cron":
+        body = text or _plain_exit_reason(turn_exit_reason, failed=bool(failed), cron=True)
         _send("cron", "Scheduled job finished" if not failed else "Scheduled job failed",
-              text or str(turn_exit_reason or ""), session_id, id=session_id)
+              body, session_id, id=session_id)
     elif failed:
-        _send("error", f"{title} · failed", str(turn_exit_reason or "The turn failed"), session_id)
+        body = text or _plain_exit_reason(turn_exit_reason, failed=True)
+        _send("error", f"{title} · failed", body, session_id)
     elif completed or text:
         # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
         _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])

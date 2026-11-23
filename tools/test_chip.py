@@ -224,6 +224,88 @@ check("a review clear does not drop a live turn", "race-1" in plugin._active)
 plugin._clear_status("race-1")
 
 
+print("reply text via post_llm_call (Codex / non-streaming) and plain-words exit reasons")
+sent.clear()
+# Codex Responses passes final_text="" to on_stream_end, then passes assistant_response to post_llm_call right before on_session_end.
+plugin._on_pre_llm_call(session_id="s-a", turn_id="s-a:codex1", user_message="What is the capital of France?")
+plugin._on_stream_start(session_id="s-a", turn_id="s-a:codex1")
+plugin._on_stream_end(final_text="", session_id="s-a", turn_id="s-a:codex1", finished=True)
+plugin._on_post_llm_call(session_id="s-a", turn_id="s-a:codex1", assistant_response="The capital of France is Paris.")
+plugin._on_session_end(session_id="s-a", turn_id="s-a:codex1", completed=True, platform="mobile",
+                       turn_exit_reason="text_response(finish_reason=stop)")
+rep = [x for x in sent if x["kind"] == "reply"][-1]
+fl = [x for x in sent if x["kind"] == "flash"][-1]
+check("Codex reply event carries reply text, speak_text and platform",
+      rep.get("body") == "The capital of France is Paris."
+      and rep.get("speak_text") == "The capital of France is Paris."
+      and rep.get("platform") == "mobile", rep)
+check("Codex flash (Done chip + island) carries reply text",
+      fl.get("reply") == "The capital of France is Paris."
+      and "Paris" in fl.get("body", ""), fl)
+
+# Non-streaming provider: no on_stream_end at all, content-block list in post_llm_call.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-a", turn_id="s-a:ns1", user_message="hi")
+plugin._on_post_llm_call(session_id="s-a", turn_id="s-a:ns1",
+                         assistant_response=[{"type": "text", "text": "Tea is ready."}])
+plugin._on_session_end(session_id="s-a", turn_id="s-a:ns1", completed=True, platform="mobile")
+rep_ns = [x for x in sent if x["kind"] == "reply"][-1]
+fl_ns = [x for x in sent if x["kind"] == "flash"][-1]
+check("non-streaming list-of-blocks reply reaches reply, speak_text and flash",
+      rep_ns.get("body") == "Tea is ready." and rep_ns.get("speak_text") == "Tea is ready."
+      and fl_ns.get("reply") == "Tea is ready.", (rep_ns, fl_ns))
+
+# Stale reply text is cleared when a new turn starts (so an empty cron/failed turn never reuses an earlier turn's text).
+sent.clear()
+plugin._last_text["s-cron"] = "Old reply from an earlier turn"
+plugin._on_pre_llm_call(session_id="s-cron", turn_id="s-cron:1", user_message="run job")
+plugin._on_post_llm_call(session_id="s-cron", turn_id="s-cron:1", assistant_response="Cron ping ok.")
+plugin._on_session_end(session_id="s-cron", turn_id="s-cron:1", completed=True, platform="cron",
+                       turn_exit_reason="text_response(finish_reason=stop)")
+cr = [x for x in sent if x["kind"] == "cron"][-1]
+check("cron job shows its reply text from post_llm_call", cr.get("body") == "Cron ping ok.", cr)
+
+# Empty cron turn never shows raw text_response(finish_reason=stop); gets plain words.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-cron2", turn_id="s-cron2:1", user_message="run quiet job")
+plugin._on_session_end(session_id="s-cron2", turn_id="s-cron2:1", completed=True, platform="cron",
+                       turn_exit_reason="text_response(finish_reason=stop)")
+cr_empty = [x for x in sent if x["kind"] == "cron"][-1]
+check("empty cron turn gets plain words, never text_response(finish_reason=stop)",
+      cr_empty.get("body") == "Finished" and "finish_reason" not in cr_empty.get("body", ""), cr_empty)
+
+# Failed cron and failed chat turns never leak raw internal turn_exit_reason strings.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-fail", turn_id="s-fail:1", user_message="x")
+plugin._on_session_end(session_id="s-fail", turn_id="s-fail:1", failed=True, platform="mobile",
+                       turn_exit_reason="max_iterations_reached(20/20)")
+er1 = [x for x in sent if x["kind"] == "error"][-1]
+plugin._on_pre_llm_call(session_id="s-fail", turn_id="s-fail:2", user_message="x")
+plugin._on_session_end(session_id="s-fail", turn_id="s-fail:2", failed=True, platform="mobile",
+                       turn_exit_reason="local_processing_error(ValueError: internal traceback)")
+er2 = [x for x in sent if x["kind"] == "error"][-1]
+plugin._on_pre_llm_call(session_id="s-fail", turn_id="s-fail:3", user_message="x")
+plugin._on_session_end(session_id="s-fail", turn_id="s-fail:3", failed=True, platform="mobile",
+                       turn_exit_reason="unknown_repr(foo=bar)")
+er3 = [x for x in sent if x["kind"] == "error"][-1]
+check("failed turns map internal exit reasons to plain words (never raw reprs)",
+      er1.get("body") == "Reached the step limit"
+      and er2.get("body") == "Something went wrong while running the turn"
+      and er3.get("body") == "The turn failed"
+      and "ValueError" not in er2.get("body", "") and "unknown_repr" not in er3.get("body", ""),
+      (er1, er2, er3))
+
+# Tool Search bridge wrapping todo_list still updates the working status chip's task list.
+plugin._on_stream_start(session_id="s-todo", turn_id="s-todo:1")
+bridged_todo = {"calls": [{"name": "todo_list", "arguments": {"todos": [{"id": "1", "content": "Step 1", "status": "in_progress"}]}}]}
+plugin._on_pre_tool_call(tool_name="tool_call", args=bridged_todo, session_id="s-todo", turn_id="s-todo:1")
+plugin._on_post_tool_call(tool_name="tool_call", args=bridged_todo, result=res, session_id="s-todo", turn_id="s-todo:1")
+st_todo = last_status()
+check("todo_list through tool_call updates the chip's task list",
+      (st_todo.get("todo") or {}).get("states") == "dapx", st_todo.get("todo"))
+plugin._on_session_end(session_id="s-todo", turn_id=None, interrupted=True)
+
+
 # ── /stop: finds the live runtime of the stored chat and interrupts it ──
 print("/stop")
 try:
