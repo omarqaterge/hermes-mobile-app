@@ -226,13 +226,15 @@ const EMPTY_TODOS: Todo[] = []
 
 /** What Hermes is doing that the chat stream doesn't show: background review, other chats, other bots. */
 function ActivityBanner() {
+  const locked = useLockView()
   const items = useStore(s => s.activity)
   const activeId = useStore(s => s.active?.storedId)
   const running = useStore(s => s.active?.running ?? false)
   const sessions = useStore(s => s.sessions)
   const waiting = useStore(openNeeds)
-  // Over the lock screen the banner stays as it was: it doesn't say which chat waits for what.
-  const needs = useLockView() ? [] : waiting
+  // Over the lock screen show nothing here (no other chats' titles, waits or live tool text).
+  if (locked) return null
+  const needs = waiting
   // The open chat's own live turn already has the status line.
   const all = bannerItems(items, activeId, running)
   // The banner shows when it always did: a wait can last an hour, and that height belongs to the chat (the header button

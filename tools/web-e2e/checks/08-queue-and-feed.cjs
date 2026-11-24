@@ -187,4 +187,17 @@ module.exports = async t => {
   await row9.click()
   await page.locator('.msg.assistant', { hasText: 'answer s-9' }).waitFor({ timeout: 5000 })
   check((await page.locator('.unread-dot').count()) === 0, 'opening the chat clears the dot')
+
+  // Over the lock screen, ActivityBanner shows nothing (no other chat's title or live tool text).
+  const banner = page.getByRole('button', { name: /Chat 10:.*secret-tool/ })
+  await mock({ activity: [{ session: 's-10', text: 'Running `secret-tool`', short: 'Shell', profile: 'default', review: false, ts: Date.now() / 1000 }] })
+  await banner.waitFor({ timeout: 12000 })
+  check((await banner.count()) === 1, 'activity banner shows another chat while unlocked')
+  await page.evaluate(() => window.hermesLockView(true))
+  await banner.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {})
+  check((await banner.count()) === 0 && (await page.getByRole('button', { name: /Chat 10:|secret-tool/ }).count()) === 0, 'activity banner shows nothing over the lock screen')
+  await page.evaluate(() => window.hermesLockView(false))
+  await banner.waitFor({ timeout: 3000 })
+  check((await banner.count()) === 1, 'activity banner returns once unlocked')
+  await mock({ activity: [] })
 }
