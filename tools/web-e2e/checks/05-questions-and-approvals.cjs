@@ -539,12 +539,17 @@ module.exports = async t => {
     await wide.close()
   }
 
-  // ── Landscape approval sheet: at 740 x 360 and at phone font scale 2.0, with 4 buttons and a long
-  //    command, what is asked and the command stay visible, nothing hides above the top, and every button is reachable. ──
+  // ── Short-viewport approval sheet: at 740 x 360 and 360 x 520, at 1x and phone font scale 2.0, with 4 buttons and a long
+  //    description and command, the start of the command and Deny are both visible and tappable on first paint before any scroll. ──
   {
     const { browser } = t
-    for (const [label, phoneScale] of [['landscape 1x', 1], ['landscape font 2.0', 2]]) {
-      const lp = await browser.newPage({ viewport: { width: 740, height: 360 } })
+    for (const [label, width, height, phoneScale] of [
+      ['landscape 740x360 1x', 740, 360, 1],
+      ['landscape 740x360 font 2.0', 740, 360, 2],
+      ['short portrait 360x520 1x', 360, 520, 1],
+      ['short portrait 360x520 font 2.0', 360, 520, 2]
+    ]) {
+      const lp = await browser.newPage({ viewport: { width, height } })
       await lp.addInitScript(nativeShell)
       await lp.addInitScript(fs => {
         window.__socks = []
@@ -581,23 +586,31 @@ module.exports = async t => {
         }))
       }, [longCmd, desc])
       const dlg = lp.getByRole('dialog')
-      await dlg.getByText('Approve command?').waitFor({ timeout: 5000 })
+      const titleEl = dlg.getByText('Approve command?')
+      await titleEl.waitFor({ timeout: 5000 })
       const dBox = await dlg.boundingBox()
-      const titleBox = await dlg.getByText('Approve command?').boundingBox()
+      const titleBox = await titleEl.boundingBox()
+      const titleTouch = await titleEl.evaluate(el => getComputedStyle(el).touchAction)
       const descBox = await dlg.getByText(/world\/other-writable permissions/).boundingBox()
       const cmdEl = dlg.getByText(/chmod 666 ~\/hm-test\/F1\.txt/)
       const cmdBox = await cmdEl.boundingBox()
+      const denyBtn = dlg.getByRole('button', { name: 'Deny', exact: true })
+      const denyBeforeScroll = await denyBtn.boundingBox()
       check(
-        dBox && dBox.y >= 0 && titleBox && titleBox.y >= 0 && titleBox.height > 10,
-        `${label}: sheet and title sit inside the viewport, nothing hides above the top (${JSON.stringify({ dBox, titleBox })})`
+        dBox && dBox.y >= 0 && titleBox && titleBox.y >= 0 && titleBox.height > 10 && titleTouch !== 'none',
+        `${label}: sheet and title sit inside the viewport and title allows touch scroll (${JSON.stringify({ dBox, titleBox, titleTouch })})`
       )
       check(
-        descBox && descBox.height >= 16 && descBox.y >= dBox.y && descBox.y + 12 <= 360,
-        `${label}: the approval description is visible (${JSON.stringify(descBox)})`
+        descBox && descBox.height >= 16 && descBox.y >= dBox.y && descBox.y + 12 <= height,
+        `${label}: the approval description is visible on first paint (${JSON.stringify(descBox)})`
       )
       check(
-        cmdBox && cmdBox.height >= 24 && cmdBox.y >= dBox.y && cmdBox.y + 20 <= 360,
-        `${label}: the long command is visible in landscape (${JSON.stringify(cmdBox)})`
+        cmdBox && cmdBox.height >= 24 && cmdBox.y >= dBox.y && cmdBox.y + 20 <= height,
+        `${label}: the start of the long command is visible on first paint (${JSON.stringify(cmdBox)})`
+      )
+      check(
+        denyBeforeScroll && denyBeforeScroll.height >= 44 && denyBeforeScroll.y >= 0 && denyBeforeScroll.y + denyBeforeScroll.height <= height,
+        `${label}: Deny is visible and tappable on first paint before any scroll (${JSON.stringify(denyBeforeScroll)})`
       )
       const scrolled = await cmdEl.evaluate(el => {
         const before = el.scrollTop
@@ -605,14 +618,12 @@ module.exports = async t => {
         return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, moved: el.scrollTop > before, hasEnd: (el.textContent || '').includes('F40.txt') }
       })
       check(scrolled.hasEnd && scrolled.scrollHeight > scrolled.clientHeight && scrolled.moved, `${label}: the long command block scrolls to the end (${JSON.stringify(scrolled)})`)
-      // Every choice button stays reachable (scrolls into view if the sheet scrolls) and Deny answers Hermes.
       for (const name of ['Allow once', 'Allow this session', 'Always allow', 'Deny']) {
         const btn = dlg.getByRole('button', { name, exact: true })
-        await btn.scrollIntoViewIfNeeded()
         const b = await btn.boundingBox()
-        check(b && b.height >= 44 && b.y >= 0 && b.y + b.height <= 360, `${label}: "${name}" button is reachable (${JSON.stringify(b)})`)
+        check(b && b.height >= 44 && b.y >= 0 && b.y + b.height <= height, `${label}: "${name}" button is visible and tappable without scrolling (${JSON.stringify(b)})`)
       }
-      await dlg.getByRole('button', { name: 'Deny', exact: true }).click()
+      await denyBtn.click()
       await dlg.waitFor({ state: 'detached', timeout: 3000 })
       const ans = await lp.evaluate(() => window.__out.filter(m => m.id === 'srv-land-1' && 'result' in m))
       check(ans.length === 1 && ans[0].result.choice === 'deny', `${label}: Deny closes the sheet and answers Hermes`)

@@ -1489,9 +1489,10 @@ textarea {
 .sheet-actions.col {
   flex-direction: column;
 }
-/* Request sheet body: in portrait, `.sheet-scroll` scrolls while buttons stay pinned; on short viewports (landscape),
-   the body itself scrolls from the top so title, description and command are never crushed to 0 px or hidden above the
-   viewport, while `.sheet::before` (the glass surface) stays fixed behind the sheet. */
+/* Request sheet body: in portrait, `.sheet-scroll` scrolls while buttons stay pinned; on short viewports (landscape,
+   keyboard open, split screen), the sheet grows to `100dvh - 8px`, keeps `.sheet::before` fixed behind it, caps the
+   description and command heights, and lays action buttons out in two columns so the start of the command and Deny are
+   both visible and tappable on first paint before any scroll. */
 .request-sheet-body {
   display: flex;
   flex-direction: column;
@@ -1499,40 +1500,55 @@ textarea {
   flex: 1;
   min-height: 0;
 }
+.sheet.request-sheet .sheet-title {
+  touch-action: pan-y;
+}
 @media (max-height: 540px) {
   .sheet.request-sheet {
     max-height: calc(100vh - 8px);
     max-height: calc(100dvh - 8px);
     gap: 6px;
-    padding: 6px 14px calc(12px + env(safe-area-inset-bottom));
+    padding: 6px 14px calc(10px + env(safe-area-inset-bottom));
   }
   .sheet.request-sheet .request-sheet-body {
-    gap: 8px;
+    gap: 6px;
     overflow-y: auto;
   }
-  .sheet.request-sheet .request-sheet-body > * {
+  .sheet.request-sheet .sheet-title {
     flex-shrink: 0;
   }
   .sheet.request-sheet .sheet-scroll {
-    flex: 1 0 auto;
-    overflow-y: visible;
+    flex: 1 1 auto;
+    min-height: 88px;
+    overflow-y: auto;
+    gap: 6px;
   }
   .sheet.request-sheet .sheet-desc {
-    max-height: min(110px, 30vh);
+    max-height: min(56px, 16vh);
     overflow-y: auto;
+    flex-shrink: 0;
   }
   .sheet.request-sheet .sheet-code {
-    max-height: min(140px, 36vh);
+    min-height: 44px;
+    max-height: min(96px, 27vh);
     overflow-y: auto;
+    flex-shrink: 0;
   }
-}
-@media (max-height: 540px) and (min-width: 480px) {
+  .sheet.request-sheet .sheet-actions {
+    flex-shrink: 0;
+    gap: 6px;
+  }
   .sheet.request-sheet .sheet-actions.col {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
   .sheet.request-sheet .sheet-actions.col > :last-child:nth-child(odd) {
     grid-column: 1 / -1;
+  }
+  .sheet.request-sheet .sheet-actions.col > .btn {
+    min-height: 44px;
+    padding: 8px 10px;
   }
 }
 .btn {
