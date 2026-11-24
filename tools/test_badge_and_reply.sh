@@ -347,6 +347,9 @@ check("lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED" in app_card
 
 # Finding 2: tickApproval tracks lock/unlock transitions to silently refresh every pending tainted popup, and cancels expired cards.
 check("lastApprovalLocked" in app_case
+      and "else if (lastApprovalLocked != null && lockedNow != lastApprovalLocked)" in app_case
+      and "main.post(() -> refreshApprovalPopups(lockedNow))" in app_case
+      and app_case.find("refreshApprovalPopups(lockedNow)") < app_case.find("pending.arrived(")
       and "lastApprovalLocked != null && lockedNow != lastApprovalLocked" in app_tick
       and "refreshApprovalPopups(lockedNow)" in app_tick
       and "pending.all(PendingAsk.APPROVAL)" in app_ref
@@ -356,7 +359,7 @@ check("lastApprovalLocked" in app_case
       and "pending.expire(now, 3000)" in app_tick
       and 'cancelCard(nm, tag("approval", ses))' in app_tick
       and "if (!after.contains(ses))" in app_tick,
-      "tickApproval silently refreshes all pending tainted approval pop-ups on lock/unlock transitions and cancels expired approval cards when no newer approval waits for that session")
+      "tickApproval (and a second approval arriving after a lock or unlock since the last tick) silently refreshes all pending tainted approval pop-ups on lock/unlock transitions and cancels expired approval cards when no newer approval waits for that session")
 
 # Finding 3: MainActivity.keyguardLocked fails closed when KeyguardManager is null, and askUnlock guards null km.
 check("km == null || km.isKeyguardLocked()" in kg_fn and "if (km == null) return;" in ask_un,

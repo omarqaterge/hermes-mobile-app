@@ -1541,6 +1541,12 @@ public class HermesService extends Service {
                 boolean ticking = pendingApproval != null;
                 boolean lockedNow = MainActivity.keyguardLocked(this);
                 if (!ticking) lastApprovalLocked = lockedNow;
+                else if (lastApprovalLocked != null && lockedNow != lastApprovalLocked) {
+                    // The phone locked or unlocked since the last tick: bring the cards already showing in line now, or
+                    // the next tick sees no change and a card posted in between keeps the wrong (open or hidden) text.
+                    lastApprovalLocked = lockedNow;
+                    main.post(() -> refreshApprovalPopups(lockedNow));
+                }
                 pending.arrived(PendingAsk.APPROVAL, session, ev.optString("request_id", ""), ev,
                         System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L);
                 syncPending();
