@@ -5,8 +5,8 @@ removed afterwards, and its first check fails when a check would get the caller'
 opts out). `test_cron_ticker.py`, `test_claude_login.py` and `test_token_guard.py` set their own temporary home before
 importing anything, so they are safe to run alone too. Spec 7.2 (`check.sh`, `test_claude_login.py`).
 
-**Next:** `test_waiting.py` (sets `HOME` but not `HERMES_HOME`), `test_phone_taint.py` and `test_nested.py` were left
-alone because other open PRs change them; they need the same guard once those merge.
+**Next:** nothing. `test_waiting.py`, `test_phone_taint.py` and `test_nested.py`, left alone at first because other PRs
+changed them, now set their own temporary `HOME` and `HERMES_HOME` before importing anything (checked 2026-11-24).
 
 **Needs a real phone:** nothing.
 

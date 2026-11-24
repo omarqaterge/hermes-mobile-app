@@ -42,10 +42,9 @@ don't time it; the installer beats and the app reads it as `LOST` after 120 s of
 blocks nothing, and the probe's marker ends a run whose `DONE` was missed: `SetupLines`, spec 4.7); the false "Sent" toast for a message queued offline, two quick model picks reaching Hermes out of order,
 and the plain-browser read-aloud seek clearing the player (each with a test that failed first).
 
-Still open:
-
-- A failed or timed-out sub-agent card still shows its last tool line (hidden only for done and completed).
-- The helper download thread in `MainActivity.java` catches `Exception`, not `Error`.
+Fixed on `redesign` since (2026-11-24): a sub-agent's last tool line shows only while it is live (`SubAgents.tsx`), and
+the helper download thread in `MainActivity.java` catches `Throwable`, so an `Error` no longer leaves an install
+"downloading" for ever.
 
 **Next in the web page**
 
