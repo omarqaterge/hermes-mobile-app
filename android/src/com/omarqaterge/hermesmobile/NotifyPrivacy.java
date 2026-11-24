@@ -17,8 +17,15 @@ final class NotifyPrivacy {
     static final String WORKING = "Working";
     static final String ASK_OPEN_APP = "Hermes has a question, open Hermux to answer";
     static final String LEARNED = "Learned something new";
+    static final String APPROVAL_LOCKED = "Hermux needs your approval";
 
     private NotifyPrivacy() {}
+
+    /** Whether an approval notification's own content must be redacted (tainted chat or phone-data read while locked,
+     *  so nothing leaks even when Android's "Show all notification content" lock-screen setting is on). */
+    static boolean redactApproval(boolean phoneData, boolean keyguardLocked) {
+        return phoneData && keyguardLocked;
+    }
 
     /**
      * Whether this session counts as having read phone data. Fails closed: null, empty, or invalid

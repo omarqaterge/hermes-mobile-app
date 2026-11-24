@@ -45,6 +45,7 @@ FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified 
 
 _lock = threading.Lock()
 _last_text: dict = {}  # session_id -> legacy fallback text (tests may assign directly)
+_last_text_owner: dict = {}  # session_id -> (turn_key, text) written by _remember_reply (so turns never steal or wipe each other)
 _turn_replies: dict = {}  # (session_id, turn_key) -> (source, text); post_llm_call beats stream_end
 _ended_turns: dict = {}  # (session_id, turn_key) -> True; bounded to 256 so late workers/streams can't write or wipe
 _subagents: dict = {}  # sub-agent session id -> the session that started it ("" unknown), newest last; see _note_subagent
@@ -261,12 +262,39 @@ def _post(event: dict) -> bool:
     return result == "ok"
 
 
+def _fallback_text(event: dict) -> tuple:
+    """Title and body for a Termux:API fallback notification. When the event is from a phone-data chat or is a
+    phone-data approval, returns plain generic text with no command, description, hex or chat content."""
+    kind = str(event.get("kind") or "")
+    phone_data = bool(event.get("phone_data")) or (
+        kind == "approval" and (
+            event.get("command") == PHONE_DATA_COMMAND
+            or str(event.get("what") or "").startswith("phone_data:")
+            or str(event.get("body") or "").startswith("phone_data:")
+        )
+    )
+    if phone_data:
+        if kind == "approval":
+            return "Approval needed", "Open Hermux to review an approval request"
+        if kind == "ask":
+            return "Hermux asks", "Hermes has a question, open Hermux to answer"
+        if kind == "error":
+            return "Hermux", "Open Hermux to check a failed turn"
+        if kind == "cron":
+            return "Hermux", "Open Hermux to check a scheduled job"
+        if kind == "learning":
+            return "Hermux", "Learned something new"
+        return "Hermux", "Open Hermux to view this message"
+    return event.get("title", "Hermux"), event.get("body", "")
+
+
 def _termux_fallback(event: dict) -> None:
     session = event.get("session") or ""
     action = f"am start -n {APP_COMPONENT}" + (f" --es session {session}" if session else "")
+    title, content = _fallback_text(event)
     try:
-        subprocess.Popen([NOTIFY_BIN, "--id", f"hm-{event.get('kind')}-{session}", "--title", event.get("title", "Hermux"),
-                          "--content", event.get("body", ""), "--action", action, "--priority", "high"],
+        subprocess.Popen([NOTIFY_BIN, "--id", f"hm-{event.get('kind')}-{session}", "--title", title,
+                          "--content", content, "--action", action, "--priority", "high"],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
     except Exception:
@@ -1004,6 +1032,15 @@ def _reply_text(val) -> str:
     return ""
 
 
+def _last_owner(session_id: str):
+    """The turn key that wrote _last_text[session_id], or None if absent or overwritten directly by a legacy caller/test.
+    Call with _lock held."""
+    rec = _last_text_owner.get(session_id)
+    if rec is None or _last_text.get(session_id) != rec[1]:
+        return None
+    return rec[0]
+
+
 def _remember_reply(session_id, text, *, turn_id=None, source: str = "post_llm_call") -> None:
     """Remember a turn's reply text keyed by (session_id, turn_id) and source.
     `post_llm_call` always wins; `stream_end` only fills an empty slot and never overwrites or writes after end."""
@@ -1022,13 +1059,19 @@ def _remember_reply(session_id, text, *, turn_id=None, source: str = "post_llm_c
             _turn_replies.pop(next(iter(_turn_replies)))
         if source == "post_llm_call" or session_id not in _last_text:
             _last_text[session_id] = s
+            _last_text_owner[session_id] = (tkey, s)
             while len(_last_text) > 200:
-                _last_text.pop(next(iter(_last_text)))
+                gone = next(iter(_last_text))
+                _last_text.pop(gone, None)
+                _last_text_owner.pop(gone, None)
+            while len(_last_text_owner) > 200:
+                _last_text_owner.pop(next(iter(_last_text_owner)), None)
 
 
 def _clear_reply(session_id, turn_id=None, *, from_tool: bool = False) -> None:
-    """Clear stored reply text. When `from_tool` is True (pre_tool_call), never wipe an already-ended turn or a
-    different turn's stored reply (guards against late timed-out parallel tool workers)."""
+    """Clear stored reply text for this turn without wiping another keyed turn's reply.
+    When `from_tool` is True (pre_tool_call), also ignores already-ended turns and inactive untagged turns
+    (guards against late timed-out parallel tool workers)."""
     if not session_id:
         return
     tkey = str(turn_id) if turn_id is not None else ""
@@ -1038,27 +1081,37 @@ def _clear_reply(session_id, turn_id=None, *, from_tool: bool = False) -> None:
                 return
             if tkey:
                 _turn_replies.pop((session_id, tkey), None)
-                if not any(s == session_id for s, _ in _turn_replies):
+                if _last_owner(session_id) in (None, "", tkey) or not any(s == session_id for s, _ in _turn_replies):
                     _last_text.pop(session_id, None)
+                    _last_text_owner.pop(session_id, None)
                 return
             if session_id not in _active:
                 return
             if any(s == session_id and k for s, k in _turn_replies):
                 return
             _turn_replies.pop((session_id, ""), None)
-            _last_text.pop(session_id, None)
+            if _last_owner(session_id) in (None, ""):
+                _last_text.pop(session_id, None)
+                _last_text_owner.pop(session_id, None)
             return
         if tkey:
             _turn_replies.pop((session_id, tkey), None)
             _turn_replies.pop((session_id, ""), None)
+            if _last_owner(session_id) in (None, "", tkey):
+                _last_text.pop(session_id, None)
+                _last_text_owner.pop(session_id, None)
         else:
-            for k in [k for k in _turn_replies if k[0] == session_id]:
-                _turn_replies.pop(k, None)
-        _last_text.pop(session_id, None)
+            # A turn with no turn_id clears only the untagged slot (and unowned/untagged _last_text),
+            # never wiping a keyed turn's reply text.
+            _turn_replies.pop((session_id, ""), None)
+            if _last_owner(session_id) in (None, ""):
+                _last_text.pop(session_id, None)
+                _last_text_owner.pop(session_id, None)
 
 
 def _take_reply(session_id, turn_id=None) -> str:
-    """Pop and return the reply text for a finishing turn, marking its turn_id ended so late workers/streams are ignored."""
+    """Pop and return the reply text for a finishing turn, marking its turn_id ended so late workers/streams are ignored.
+    A turn with no turn_id (or a different turn_id) never steals another keyed turn's reply text."""
     if not session_id:
         return ""
     tkey = str(turn_id) if turn_id is not None else ""
@@ -1070,15 +1123,17 @@ def _take_reply(session_id, turn_id=None) -> str:
             entry = _turn_replies.pop((session_id, tkey), None)
             if entry is None:
                 entry = _turn_replies.pop((session_id, ""), None)
-            fallback = _last_text.pop(session_id, "")
+            fallback = ""
+            if _last_owner(session_id) in (None, "", tkey):
+                fallback = _last_text.pop(session_id, "")
+                _last_text_owner.pop(session_id, None)
             return entry[1] if entry is not None else fallback
-        picked = ""
-        for k in [k for k in _turn_replies if k[0] == session_id]:
-            e = _turn_replies.pop(k)
-            if e[0] == "post_llm_call" or not picked:
-                picked = e[1]
-        fallback = _last_text.pop(session_id, "")
-        return picked or fallback
+        entry = _turn_replies.pop((session_id, ""), None)
+        fallback = ""
+        if _last_owner(session_id) in (None, ""):
+            fallback = _last_text.pop(session_id, "")
+            _last_text_owner.pop(session_id, None)
+        return entry[1] if entry is not None else fallback
 
 
 _EXIT_REASON_WORDS = (
@@ -1121,13 +1176,14 @@ def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
         _dbg(f"review-start {session_id} {turn_id}")
         _bg_status(session_id, turn_id)
         return None
-    if turn_id and isinstance(user_message, str) and user_message.lstrip().startswith(REVIEW_PREFIX):
-        _remember(_review_turns, turn_id)
+    if isinstance(user_message, str) and user_message.lstrip().startswith(REVIEW_PREFIX):
+        if turn_id:
+            _remember(_review_turns, turn_id)
         _dbg(f"review-start {session_id} {turn_id}")
         _bg_status(session_id, turn_id)
         return None
     if session_id and session_id not in _subagents:
-        _clear_reply(session_id, None)  # a new turn starts clean, so an empty/failed turn never reuses an old reply
+        _clear_reply(session_id, turn_id)  # a new turn starts clean without wiping another keyed turn's reply
         if _note_start(session_id):
             _event("turn", "start", chat=_alias(session_id))
     return None
@@ -1388,10 +1444,15 @@ def _on_pre_approval_request(command=None, description=None, session_key=None, s
         timeout = int(_get_approval_timeout())
     except Exception:
         timeout = 60
+    extra = {}
+    task_id = kw.get("task_id", "")
+    extra_ids = (session_key,) if session_key and session_key != session_id else ()
+    if command == PHONE_DATA_COMMAND or _chat_has_read_phone_data(session_id or session_key, task_id, extra_ids=extra_ids):
+        extra["phone_data"] = True  # only tightens privacy (hides approval details on the lock screen)
     _send("approval", "Approval needed", body, sid, urgent=True, key=session_key or "", timeout=timeout,
           what=description or "", command=command or "",
           request_id=_approval_request_id(session_key, command, kw.get("request_id")),
-          allow_session=kw.get("allow_session") is not False)
+          allow_session=kw.get("allow_session") is not False, **extra)
     # A coalesced request waits on one already listed, and its end isn't always reported: only the first one counts.
     if not kw.get("coalesced"):
         _wait_begin(sid, _approval_kind(command), timeout)
@@ -1818,37 +1879,113 @@ def _inherit_read(sids, profiles=None) -> bool:
     return known
 
 
-def _chat_has_read_phone_data(session_id, task_id="") -> bool:
-    """Synchronous check of whether this chat (including compression lineage, branch inheritance via _inherit_read,
-    sub-agent links, and detached background tasks) has read phone data. Costs nothing while no chat has read;
-    fails closed on missing chat id when any chat has read, damaged/full record, or module error."""
+def _subagent_ancestors(ids) -> list:
+    """Parent chats of any sub-agent in `ids`, from this process's `_subagents` table (depth up to 16)."""
+    seed = [str(i or "").strip() for i in (ids or ()) if str(i or "").strip()]
+    if not seed:
+        return []
+    with _lock:
+        links = dict(_subagents)
+    seen = set(seed)
+    out = []
+    for cur in seed:
+        for _ in range(16):
+            parent = links.get(cur) or ""
+            if not parent or parent in seen:
+                break
+            seen.add(parent)
+            out.append(parent)
+            cur = parent
+    return out
+
+
+def _subagent_descendants(ids) -> list:
+    """Sub-agents (at any depth, up to 16) spawned by chats in `ids`, from this process's `_subagents` table."""
+    seed = [str(i or "").strip() for i in (ids or ()) if str(i or "").strip()]
+    if not seed:
+        return []
+    with _lock:
+        items = list(_subagents.items())
+    by_parent: dict = {}
+    for child, parent in items:
+        if parent:
+            by_parent.setdefault(parent, []).append(child)
+    seen = set(seed)
+    frontier = list(seed)
+    out = []
+    for _ in range(16):
+        if not frontier or len(out) >= 256:
+            break
+        nxt = []
+        for p in frontier:
+            for c in by_parent.get(p, ()):
+                if c not in seen and len(out) < 256:
+                    seen.add(c)
+                    out.append(c)
+                    nxt.append(c)
+        frontier = nxt
+    return out
+
+
+def _chat_has_read_phone_data(session_id, task_id="", extra_ids=()) -> bool:
+    """Synchronous check of whether this chat (including `extra_ids`, compression lineage, branch inheritance via
+    `_inherit_read`, in-memory and stored sub-agent lineage in both directions, and detached background tasks) has read
+    phone data. Costs nothing while no chat has read; fails closed on missing chat id when any chat has read,
+    damaged/full record, or module error."""
+    extra_clean = [str(x or "").strip() for x in (extra_ids or ()) if str(x or "").strip()]
     try:
         pt = _phone_taint()
         if not pt.any_read():
             return False
         ids = list(pt.chat_ids(session_id, task_id))
         started_by = _detached_from(session_id, task_id)
-        scope = list(dict.fromkeys([*ids, *(started_by or [])]))
-        if not scope:
+        base = list(dict.fromkeys([*ids, *extra_clean, *(started_by or [])]))
+        if not base:
             return True
+        # Follow in-memory sub-agent links upward (a sub-agent inherits its parent's taint).
+        scope = list(dict.fromkeys([*pt.ancestors(base), *_subagent_ancestors(base)]))
         if pt.has_read(scope):
             new = pt.adopt(scope)
             if new:
                 _report_taint(new)
             return True
+        lineage = list(scope)
         for sid in list(scope):
-            more = [i for i in _phone_data().compression_ancestors(sid, budget=1.0) if i not in scope]
+            more = [i for i in _phone_data().compression_ancestors(sid, budget=1.0) if i not in lineage]
             if more:
+                lineage.extend(more)
                 new = pt.adopt(list(scope) + more)
                 if new:
                     _report_taint(new)
-                if pt.has_read(scope):
+                if pt.has_read(lineage):
                     return True
-        _inherit_read(scope)
-        return bool(pt.has_read(scope))
+        # Follow sub-agent links downward (in-memory first, then state.db stopping as soon as any descendant is tainted):
+        # a parent whose sub-agent (or nested/compressed sub-agent) read phone data counts as tainted; branches are never
+        # followed downward.
+        mem_desc = list(dict.fromkeys([*pt.descendants(lineage), *_subagent_descendants(lineage)]))
+        if mem_desc and pt.has_read(mem_desc):
+            pt.mark(scope)
+            _report_taint(scope)
+            return True
+        db_desc = _phone_data().subagent_descendants(lineage, budget=1.0, stop_if=pt.has_read)
+        if db_desc and pt.has_read(db_desc):
+            pt.mark(scope)
+            _report_taint(scope)
+            return True
+        _inherit_read(lineage)
+        if pt.has_read(lineage):
+            new = pt.adopt(lineage)
+            if new:
+                _report_taint(new)
+            return True
+        return False
     except Exception:
         try:
-            fallback_ids = [x for x in (_ui_session_id(), str(session_id or task_id or "").strip()) if x]
+            fallback_ids = list(dict.fromkeys(
+                x for x in (_ui_session_id(), str(session_id or task_id or "").strip(), *extra_clean) if x))
+            if fallback_ids:
+                fallback_ids = list(dict.fromkeys(
+                    fallback_ids + _subagent_ancestors(fallback_ids) + _subagent_descendants(fallback_ids)))
             return _read_before(fallback_ids) if fallback_ids else True
         except Exception:
             return True

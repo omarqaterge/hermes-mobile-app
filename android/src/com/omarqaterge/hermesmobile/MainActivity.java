@@ -1244,8 +1244,8 @@ public class MainActivity extends Activity {
     android.content.BroadcastReceiver unlockedReceiver;
 
     static boolean keyguardLocked(Context c) {
-        android.app.KeyguardManager km = c.getSystemService(android.app.KeyguardManager.class);
-        return km != null && km.isKeyguardLocked();
+        android.app.KeyguardManager km = c == null ? null : c.getSystemService(android.app.KeyguardManager.class);
+        return km == null || km.isKeyguardLocked();
     }
 
     static boolean lockAssistOn(Context c) {
@@ -1301,6 +1301,7 @@ public class MainActivity extends Activity {
     void askUnlock() {
         if (!keyguardLocked(this)) return;
         android.app.KeyguardManager km = getSystemService(android.app.KeyguardManager.class);
+        if (km == null) return;
         km.requestDismissKeyguard(this, new android.app.KeyguardManager.KeyguardDismissCallback() {
             @Override
             public void onDismissSucceeded() {
