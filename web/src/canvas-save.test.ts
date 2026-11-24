@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   api: vi.fn(),
-  confirmDialog: vi.fn()
+  confirmDialog: vi.fn(),
+  lockView: vi.fn(() => false),
+  askUnlock: vi.fn()
 }))
 
 vi.mock('./api', async () => {
@@ -17,14 +19,22 @@ vi.mock('./api', async () => {
 vi.mock('./dialog', () => ({
   confirmDialog: (...args: unknown[]) => mocks.confirmDialog(...args)
 }))
+vi.mock('./lockview', async () => {
+  const actual = await vi.importActual<typeof import('./lockview')>('./lockview')
+  return {
+    ...actual,
+    lockView: () => mocks.lockView(),
+    askUnlock: (...args: unknown[]) => mocks.askUnlock(...args)
+  }
+})
 
 import { ApiError } from './api'
-import { canvasSaveBlockReason, openFileInCanvas, saveToFile } from './canvas'
+import { canvasOpenBlockReason, canvasSaveBlockReason, openFileInCanvas, saveToFile } from './canvas'
 import { getState, setState, type ActiveSession } from './store'
 
-const chat = (): ActiveSession => ({
-  runtimeId: 'rt-cv',
-  storedId: 's-cv',
+const chat = (storedId = 's-cv'): ActiveSession => ({
+  runtimeId: `rt-${storedId}`,
+  storedId,
   profile: 'default',
   title: 'Canvas save',
   info: { model: 'm', provider: 'p' } as ActiveSession['info'],
@@ -41,10 +51,46 @@ const chat = (): ActiveSession => ({
   goal: null
 })
 
-describe('canvasSaveBlockReason', () => {
-  it('blocks Hermes config, secrets, plugin, shell init and system paths (including traversal)', () => {
+describe('canvasOpenBlockReason', () => {
+  it('blocks secret and internal files (case-insensitively) and allows read-only paths outside save roots', () => {
     for (const p of [
+      '/root/.hermes/.env',
+      '/root/.hermes/auth.json',
+      '/root/.hermes/profiles/work/auth.json',
+      '/root/.hermes/profiles/work/mobile/auto.json',
+      '/root/.hermes/mobile/canvas/s/d.json',
+      '/root/.hermes-mobile/key',
+      '/root/.ssh/id_ed25519',
+      '/root/.android/adbkey',
+      '/root/.gnupg/secring.gpg',
+      '/root/.netrc',
+      '/root/.aws/credentials',
+      '/root/app/.ENV.LOCAL',
+      '/root/.AWS/Credentials',
+      '/tmp/bad\0file'
+    ]) {
+      expect(canvasOpenBlockReason(p), p).not.toBeNull()
+    }
+    for (const p of [
+      '/tmp/log.txt',
+      '/etc/hosts',
+      '/storage/1234-5678/notes.md',
       '/root/.hermes/config.yaml',
+      '/sdcard/Download/note.txt'
+    ]) {
+      expect(canvasOpenBlockReason(p), p).toBeNull()
+    }
+  })
+})
+
+describe('canvasSaveBlockReason', () => {
+  it('blocks paths outside save roots first, and blocks Hermes/secrets/code-exec/shell files case-insensitively', () => {
+    for (const p of [
+      '/tmp/notes.txt',
+      '/storage/1234-5678/doc.md',
+      '/etc/passwd',
+      '/root/.hermes/config.yaml',
+      '/root/.Hermes/Config.YAML',
       '/root/.hermes/profiles/work/config.yaml',
       '/root/.hermes/.env',
       '/root/.hermes/mobile/auto.json',
@@ -52,13 +98,30 @@ describe('canvasSaveBlockReason', () => {
       '/root/.hermes-mobile/key',
       '/data/data/com.termux/files/home/.hermes-mobile/key',
       '/root/projects/app/.env',
-      '/root/projects/app/.env.local',
+      '/root/projects/app/.ENV.LOCAL',
       '/root/.ssh/authorized_keys',
+      '/root/.SSH/config',
+      '/root/.android/adbkey',
+      '/root/.gnupg/gpg.conf',
+      '/root/.netrc',
+      '/root/.aws/config',
+      '/root/.gitconfig',
+      '/root/.GitConfig',
+      '/root/.config/git/config',
+      '/root/.config/fish/config.fish',
+      '/root/.Config/Fish/config.fish',
       '/root/bin/hermes-services',
+      '/root/.local/bin/tool',
+      '/root/.termux/termux.properties',
       '/root/.bashrc',
-      '/etc/passwd',
+      '/root/.BashRC',
+      '/root/.shinit',
+      '/root/.cshrc',
+      '/root/.tcshrc',
+      '/root/.kshrc',
       '/root/notes/../.hermes/config.yaml',
       '~/.hermes/config.yaml',
+      '/root/bad\0.txt',
       'relative/file.txt'
     ]) {
       expect(canvasSaveBlockReason(p), p).not.toBeNull()
@@ -66,7 +129,7 @@ describe('canvasSaveBlockReason', () => {
   })
 
   it('allows normal user files under home and /sdcard', () => {
-    for (const p of ['/sdcard/Documents/plan.md', '/sdcard/Download/notes.txt', '/root/notes.md', '/root/projects/site/app.py']) {
+    for (const p of ['/sdcard/Documents/plan.md', '/sdcard/Download/notes.txt', '/storage/emulated/0/note.md', '/root/notes.md', '/root/projects/site/app.py']) {
       expect(canvasSaveBlockReason(p), p).toBeNull()
     }
   })
@@ -76,6 +139,9 @@ describe('saveToFile', () => {
   beforeEach(() => {
     mocks.api.mockReset()
     mocks.confirmDialog.mockReset()
+    mocks.lockView.mockReset()
+    mocks.lockView.mockReturnValue(false)
+    mocks.askUnlock.mockReset()
     setState({ conn: 'open', profile: 'default', active: chat(), opening: null, toasts: [] })
   })
 
@@ -136,5 +202,66 @@ describe('saveToFile', () => {
       { profile: false }
     )
     expect(getState().toasts.at(-1)?.text).toBe('Saved to /sdcard/Documents/note.md')
+  })
+
+  it('blocks saveToFile when lockView is on before saving or after the overwrite dialog', async () => {
+    mocks.api.mockImplementation(async (method: string, path: string, body?: { force?: boolean }) => {
+      if (method === 'GET' && path.includes('/canvas?')) return { docs: [] }
+      if (method === 'POST' && path.endsWith('/open-file')) {
+        return {
+          id: 'd-lock', title: 'note.md', type: 'markdown', lang: '', rev: 1, updated: 1, by: 'user',
+          chars: 5, path: '/sdcard/Documents/note.md', created: 1, content: 'hello'
+        }
+      }
+      if (method === 'POST' && path.endsWith('/save-file') && !body?.force) {
+        throw new ApiError('conflict: changed', 409)
+      }
+      return { path: '/sdcard/Documents/note.md', chars: 5 }
+    })
+    expect(await openFileInCanvas('/sdcard/Documents/note.md')).toBe(true)
+    mocks.api.mockClear()
+
+    // Already locked before first call: asks unlock, sends nothing.
+    mocks.lockView.mockReturnValue(true)
+    await saveToFile('d-lock')
+    expect(mocks.askUnlock).toHaveBeenCalledTimes(1)
+    expect(mocks.api).not.toHaveBeenCalled()
+
+    // Unlocks, hits 409, locks during confirmDialog: asks unlock, sends no force-save.
+    mocks.lockView.mockReturnValue(false)
+    mocks.askUnlock.mockClear()
+    mocks.confirmDialog.mockImplementationOnce(async () => {
+      mocks.lockView.mockReturnValue(true)
+      return true
+    })
+    await saveToFile('d-lock')
+    expect(mocks.api).toHaveBeenCalledTimes(1)
+    expect(mocks.askUnlock).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts force-save when the active chat changes during the overwrite dialog', async () => {
+    mocks.api.mockImplementation(async (method: string, path: string, body?: { force?: boolean }) => {
+      if (method === 'GET' && path.includes('/canvas?')) return { docs: [] }
+      if (method === 'POST' && path.endsWith('/open-file')) {
+        return {
+          id: 'd-sw', title: 'note.md', type: 'markdown', lang: '', rev: 1, updated: 1, by: 'user',
+          chars: 5, path: '/sdcard/Documents/note.md', created: 1, content: 'hello'
+        }
+      }
+      if (method === 'POST' && path.endsWith('/save-file') && !body?.force) {
+        throw new ApiError('conflict: changed', 409)
+      }
+      return { path: '/sdcard/Documents/note.md', chars: 5 }
+    })
+    expect(await openFileInCanvas('/sdcard/Documents/note.md')).toBe(true)
+    mocks.api.mockClear()
+
+    mocks.confirmDialog.mockImplementationOnce(async () => {
+      setState({ active: chat('s-other') })
+      return true
+    })
+    await saveToFile('d-sw')
+    const saveCalls = mocks.api.mock.calls.filter(([, p]) => String(p).endsWith('/save-file'))
+    expect(saveCalls).toHaveLength(1)
   })
 })

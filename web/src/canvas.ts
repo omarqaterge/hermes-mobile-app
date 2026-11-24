@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from 'react'
 import { api, ApiError } from './api'
 import { confirmDialog } from './dialog'
+import { askUnlock, lockView } from './lockview'
 import { getState, subscribe, toast } from './store'
 import { screenChat } from './chatview'
 import { galleryToolDone } from './gallery'
@@ -302,14 +303,17 @@ export async function openFileInCanvas(path: string): Promise<boolean> {
   }
 }
 
-const PROTECTED_HOME_FILES = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout'])
+const SHELL_INIT_FILES = new Set([
+  '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile',
+  '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout',
+  '.shinit', '.cshrc', '.tcshrc', '.kshrc'
+])
+const PROTECTED_HOME_FILES = new Set([...SHELL_INIT_FILES, '.gitconfig', '.netrc'])
+const OPEN_SECRET_HOME_DIRS = new Set(['.hermes-mobile', '.ssh', '.android', '.gnupg', '.aws'])
+const OPEN_SECRET_HOME_FILES = new Set(['.netrc'])
+const SAVE_BLOCKED_HOME_DIRS = new Set([...OPEN_SECRET_HOME_DIRS, 'bin', '.termux'])
+const HERMES_SECRET_FILES = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
 const ENV_NAME = /^\.env(?:\.|$)/i
-const HERMES_DIR = /(?:^|\/)\.hermes(?:\/|$)/
-const HERMES_MOBILE_DIR = /(?:^|\/)\.hermes-mobile(?:\/|$)/
-const SSH_DIR = /(?:^|\/)\.ssh(?:\/|$)/
-const HOME_BIN_DIR = /^\/(?:root|home\/[^/]+|Users\/[^/]+)\/bin(?:\/|$)/
-const HOME_FILE = /^\/(?:root|home\/[^/]+|Users\/[^/]+)\/([^/]+)$/
-const SYSTEM_PREFIX = /^\/(?:etc|usr|bin|sbin|lib|lib64|var|proc|sys|dev|boot|opt|run|system|vendor|apex|data\/data\/com\.termux)(?:\/|$)/
 
 function normalizePosix(path: string): string {
   const expanded = path.startsWith('~/') ? `/root/${path.slice(2)}` : path === '~' ? '/root' : path
@@ -322,41 +326,110 @@ function normalizePosix(path: string): string {
   return '/' + parts.join('/')
 }
 
+/** Return the home-directory prefix segment count (1 for /root, 2 for /home/<u> or /Users/<u>) when `low` is under a
+ *  user home, or 0 otherwise. */
+function homePrefixLen(low: string[]): number {
+  if (low[0] === 'root') return 1
+  if ((low[0] === 'home' || low[0] === 'users') && low.length >= 2) return 2
+  return 0
+}
+
+/** Whether `low` is strictly inside an allowed save root (user home, /sdcard, /storage/emulated/0). */
+function isInSaveRoot(low: string[]): boolean {
+  const h = homePrefixLen(low)
+  if (h > 0) return low.length > h
+  if (low[0] === 'sdcard') return low.length > 1
+  if (low[0] === 'storage' && low[1] === 'emulated' && low[2] === '0') return low.length > 3
+  return false
+}
+
+/** Reason why opening `path` in the canvas is always refused, or null when allowed (the plugin enforces the same
+ *  rules plus realpath/profile/hardlink checks on disk). */
+export function canvasOpenBlockReason(path: string): string | null {
+  const raw = path.trim()
+  if (!raw) return null
+  if (raw.includes('\0')) return 'Invalid file path.'
+  if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path.'
+  const p = normalizePosix(raw)
+  const low = p.split('/').filter(Boolean).map(s => s.toLowerCase())
+  const name = low[low.length - 1] || ''
+  if (ENV_NAME.test(name)) return 'Hermux won’t open secrets or key files in the canvas.'
+  if (low.some(s => OPEN_SECRET_HOME_DIRS.has(s))) return 'Hermux won’t open secrets or key files in the canvas.'
+  const h = homePrefixLen(low)
+  if (h > 0) {
+    const rel = low.slice(h)
+    if (rel.length === 1 && OPEN_SECRET_HOME_FILES.has(rel[0])) return 'Hermux won’t open secrets or key files in the canvas.'
+  }
+  const hi = low.indexOf('.hermes')
+  if (hi >= 0) {
+    const inside = low.slice(hi + 1)
+    // Applies both directly under .hermes/ and under .hermes/profiles/<name>/
+    const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
+    if (HERMES_SECRET_FILES.has(name) || sub[0] === 'mobile') {
+      return 'Hermux won’t open secrets or internal files in the canvas.'
+    }
+  }
+  return null
+}
+
 /** Reason why saving back to `path` from the canvas is refused, or null when allowed (the plugin enforces the same
- *  rules plus realpath/symlink checks on disk). */
+ *  rules plus realpath/symlink/profile checks on disk). Checks the save allow-list first, then deny rules case-insensitively. */
 export function canvasSaveBlockReason(path: string): string | null {
   const raw = path.trim()
   if (!raw) return null
+  if (raw.includes('\0')) return 'Invalid file path.'
   if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path to save.'
   const p = normalizePosix(raw)
-  const name = p.split('/').pop() || ''
-  if (HERMES_DIR.test(p) || HERMES_MOBILE_DIR.test(p)) {
+  const low = p.split('/').filter(Boolean).map(s => s.toLowerCase())
+  const name = low[low.length - 1] || ''
+  if (!isInSaveRoot(low)) {
+    return 'This file is outside the folders Hermux can save to from the canvas.'
+  }
+  if (low.includes('.hermes') || low.includes('.hermes-mobile')) {
     return 'Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.'
   }
   if (ENV_NAME.test(name)) {
     return 'Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.'
   }
-  if (SSH_DIR.test(p) || HOME_BIN_DIR.test(p) || SYSTEM_PREFIX.test(p)) {
-    return 'This file is outside the folders Hermux can save to from the canvas.'
-  }
-  const hf = HOME_FILE.exec(p)
-  if (hf && PROTECTED_HOME_FILES.has(hf[1])) {
-    return 'Hermux won’t overwrite shell start-up files from the canvas.'
+  const h = homePrefixLen(low)
+  if (h > 0) {
+    const rel = low.slice(h)
+    if (rel.length >= 1 && SAVE_BLOCKED_HOME_DIRS.has(rel[0])) {
+      return 'This file is outside the folders Hermux can save to from the canvas.'
+    }
+    if (rel.length >= 2 && ((rel[0] === '.local' && rel[1] === 'bin') || (rel[0] === '.config' && (rel[1] === 'git' || rel[1] === 'fish')))) {
+      return 'This file is outside the folders Hermux can save to from the canvas.'
+    }
+    if (rel.length === 1 && PROTECTED_HOME_FILES.has(rel[0])) {
+      if (SHELL_INIT_FILES.has(rel[0])) return 'Hermux won’t overwrite shell start-up files from the canvas.'
+      return 'This file is outside the folders Hermux can save to from the canvas.'
+    }
   }
   return null
 }
 
 export async function saveToFile(id: string): Promise<void> {
+  const session = state.session
+  if (!session) return
   const doc = state.loaded[id] ?? state.docs.find(d => d.id === id)
   const blocked = doc?.path ? canvasSaveBlockReason(doc.path) : null
   if (blocked) {
     toast(blocked, 'error', 6000)
     return
   }
+  if (lockView()) {
+    askUnlock('Unlock the phone to save files')
+    return
+  }
   await flushSave()
+  if (state.session !== session || chatId() !== session) return
+  if (lockView()) {
+    askUnlock('Unlock the phone to save files')
+    return
+  }
   if (state.save === 'conflict' || state.save === 'error') return
   try {
-    const r = await call<{ path: string }>('POST', `${P}/save-file`, { session: state.session, id })
+    const r = await call<{ path: string }>('POST', `${P}/save-file`, { session, id })
     toast(`Saved to ${r.path}`)
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
@@ -368,8 +441,13 @@ export async function saveToFile(id: string): Promise<void> {
         danger: true
       })
       if (!ok) return
+      if (state.session !== session || chatId() !== session) return
+      if (lockView()) {
+        askUnlock('Unlock the phone to save files')
+        return
+      }
       try {
-        const r = await call<{ path: string }>('POST', `${P}/save-file`, { session: state.session, id, force: true })
+        const r = await call<{ path: string }>('POST', `${P}/save-file`, { session, id, force: true })
         toast(`Saved to ${r.path}`)
       } catch (e2) {
         toast(e2 instanceof Error ? e2.message : String(e2), 'error', 6000)

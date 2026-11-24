@@ -160,28 +160,50 @@ const FILE_TEXT = {
   'config.yaml': 'approvals:\n  mode: manual\n',
   '.env': 'OPENAI_API_KEY=sk-mock\n'
 }
-const SHELL_INIT_MOCK = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout'])
+const SHELL_INIT_MOCK = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout', '.shinit', '.cshrc', '.tcshrc', '.kshrc'])
+const OPEN_SECRET_HOME_DIRS_MOCK = new Set(['.hermes-mobile', '.ssh', '.android', '.gnupg', '.aws'])
+const SAVE_BLOCKED_HOME_DIRS_MOCK = new Set([...OPEN_SECRET_HOME_DIRS_MOCK, 'bin', '.termux'])
+const HERMES_SECRET_FILES_MOCK = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
 function canvasPathError(rawPath, forSave) {
   const s = String(rawPath || '').trim()
+  if (s.includes('\0')) return { status: 403, detail: 'refused: invalid path' }
   if (!s || (!s.startsWith('/') && s !== '~' && !s.startsWith('~/'))) return { status: 400, detail: 'give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)' }
   const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
   const p = path.posix.normalize(expanded)
-  const name = path.posix.basename(p)
-  const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
-  if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
-  const inRoot = allowed.some(r => p === r || p.startsWith((r === '/' ? '' : r) + '/'))
-  if (!inRoot) return { status: 403, detail: `refused: this file is outside the folders Hermux can ${forSave ? 'save to' : 'open'}` }
-  if (/(?:^|\/)\.hermes-mobile(?:\/|$)/.test(p) || /(?:^|\/)\.ssh(?:\/|$)/.test(p) || /^\.env(?:\.|$)/i.test(name)) {
+  const segs = p.split('/').filter(Boolean)
+  const low = segs.map(x => x.toLowerCase())
+  const name = low[low.length - 1] || ''
+  if (forSave) {
+    const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
+    if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
+    const inRoot = allowed.some(r => p !== r && p.startsWith((r === '/' ? '' : r) + '/'))
+    if (!inRoot) return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+  }
+  if (/^\.env(?:\.|$)/i.test(name)) {
     return { status: 403, detail: forSave ? 'refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.' : 'refused: Hermux won’t open secrets or key files in the canvas' }
   }
-  if (/(?:^|\/)\.hermes(?:\/|$)/.test(p)) {
+  const h = low[0] === 'root' ? 1 : (low[0] === 'home' || low[0] === 'users') && low.length >= 2 ? 2 : 0
+  const relHome = h > 0 ? low.slice(h) : []
+  if (low.some(x => OPEN_SECRET_HOME_DIRS_MOCK.has(x)) || (relHome.length === 1 && relHome[0] === '.netrc')) {
+    return { status: 403, detail: forSave ? 'refused: this file is outside the folders Hermux can save to' : 'refused: Hermux won’t open secrets or key files in the canvas' }
+  }
+  const hi = low.indexOf('.hermes')
+  if (hi >= 0) {
     if (forSave) return { status: 403, detail: 'refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.' }
-    if (['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'].includes(name.toLowerCase()) || /(?:^|\/)\.hermes\/mobile(?:\/|$)/.test(p)) {
+    const inside = low.slice(hi + 1)
+    const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
+    if (HERMES_SECRET_FILES_MOCK.has(name) || sub[0] === 'mobile') {
       return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
     }
   }
-  if (forSave && (/^\/(?:root|home\/[^/]+|Users\/[^/]+)\/bin(?:\/|$)/.test(p) || (path.posix.dirname(p) === '/root' && SHELL_INIT_MOCK.has(name)))) {
-    return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+  if (forSave && relHome.length) {
+    if (SAVE_BLOCKED_HOME_DIRS_MOCK.has(relHome[0])) return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+    if (relHome.length >= 2 && ((relHome[0] === '.local' && relHome[1] === 'bin') || (relHome[0] === '.config' && (relHome[1] === 'git' || relHome[1] === 'fish')))) {
+      return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+    }
+    if (relHome.length === 1 && (SHELL_INIT_MOCK.has(relHome[0]) || relHome[0] === '.gitconfig')) {
+      return { status: 403, detail: SHELL_INIT_MOCK.has(relHome[0]) ? 'refused: Hermux won’t overwrite shell start-up files from the canvas' : 'refused: this file is outside the folders Hermux can save to' }
+    }
   }
   return null
 }

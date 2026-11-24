@@ -469,10 +469,24 @@ module.exports = async t => {
       await p.getByRole('button', { name: /^Library/ }).click()
       await p.getByRole('button', { name: 'Files', exact: true }).click()
     }
+    // Open Files → Hermux → .env: Open in canvas is disabled for always-refused secrets.
     await openFiles()
     await p.getByRole('button', { name: 'Hermux', exact: true }).click()
+    await p.getByRole('button', { name: /^\.env\b/ }).click()
+    const envOpenBtn = p.getByRole('button', { name: 'Open in canvas', exact: true })
+    await envOpenBtn.waitFor({ timeout: 5000 })
+    check(await envOpenBtn.isDisabled(), 'canvas open-file: Open in canvas is disabled for /root/.hermes/.env')
+    await p.evaluate(() => window.hermesBack())
+    await envOpenBtn.waitFor({ state: 'detached', timeout: 3000 })
+
+    // If /canvas/open-file is refused by the server, Files stays open and the preview stays visible.
+    await p.route('**/api/plugins/hermes-mobile/canvas/open-file', r => r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ detail: 'refused: test refusal' }) }), { times: 1 })
     await p.getByRole('button', { name: /config\.yaml/ }).click()
-    await p.getByRole('button', { name: 'Open in canvas', exact: true }).click()
+    const openBtn = p.getByRole('button', { name: 'Open in canvas', exact: true })
+    await openBtn.click()
+    await p.getByText('refused: test refusal').waitFor({ timeout: 3000 })
+    check(await openBtn.isVisible(), 'canvas open-file: server refusal leaves the user in Files with the preview open')
+    await openBtn.click()
     const panel = p.getByRole('dialog', { name: 'Canvas' })
     await panel.getByText('config.yaml', { exact: true }).waitFor({ timeout: 5000 })
     const savesBefore = calls().filter(c => c.path === '/api/plugins/hermes-mobile/canvas/save-file').length
