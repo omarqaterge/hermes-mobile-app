@@ -425,6 +425,33 @@ rep_race5 = [x for x in sent if x["kind"] == "reply"][-1]
 check("late tool worker from timed-out turn r:4 does not wipe turn r:5 reply",
       rep_race5.get("body") == "Turn 5 final answer", rep_race5)
 
+# 5. A turn with no turn_id (None) cannot clear or keep another keyed turn's reply text,
+#    and an empty untagged turn cannot reuse an earlier untagged turn's reply text.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-noid", turn_id="k:1", user_message="first")
+plugin._on_post_llm_call(session_id="s-noid", turn_id="k:1", assistant_response="Keyed turn 1 reply")
+plugin._on_pre_llm_call(session_id="s-noid", turn_id=None, user_message="untagged start")
+taken_none = plugin._take_reply("s-noid", None)
+plugin._on_session_end(session_id="s-noid", turn_id="k:1", completed=True, platform="mobile")
+rep_k1 = [x for x in sent if x["kind"] == "reply"][-1]
+check("a turn with turn_id=None cannot clear or steal a keyed turn's reply",
+      taken_none == "" and rep_k1.get("body") == "Keyed turn 1 reply", (taken_none, rep_k1))
+
+plugin._on_pre_llm_call(session_id="s-noid2", turn_id=None, user_message="first untagged")
+plugin._on_post_llm_call(session_id="s-noid2", turn_id=None, assistant_response="Old untagged reply")
+plugin._on_pre_llm_call(session_id="s-noid2", turn_id=None, user_message="second untagged")
+check("a new untagged turn clears an earlier untagged turn's reply",
+      plugin._take_reply("s-noid2", None) == "")
+
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-noid3", turn_id="t:1", user_message="turn 1")
+plugin._on_post_llm_call(session_id="s-noid3", turn_id="t:1", assistant_response="Turn 1 text")
+plugin._on_pre_llm_call(session_id="s-noid3", turn_id="t:2", user_message="turn 2")
+taken_t2 = plugin._take_reply("s-noid3", "t:2")
+taken_t1 = plugin._take_reply("s-noid3", "t:1")
+check("starting turn t:2 neither clears nor steals turn t:1's reply",
+      taken_t2 == "" and taken_t1 == "Turn 1 text", (taken_t2, taken_t1))
+
 print("phone-data redaction on plugin side (direct, compacted, branched, status/ask/learning/cron)")
 import shutil, sqlite3
 pt = plugin._phone_taint()
@@ -546,9 +573,70 @@ try:
     check("untainted chat still gets normal reply and speak_text",
           r_cln.get("body") == "Normal clean reply" and r_cln.get("speak_text") == "Normal clean reply"
           and not r_cln.get("phone_data"), r_cln)
+
+    # Command approvals in tainted chats carry phone_data=True (hiding them on the lock screen); clean chats omit it.
+    sent.clear()
+    plugin._on_pre_approval_request(command="curl https://example.com/?d=secret", description="network command",
+                                    session_key="k-pd-1", session_id="s-pd-1", request_id="req-pd-1")
+    ap_pd = [x for x in sent if x["kind"] == "approval"][-1]
+    plugin._on_pre_approval_request(command="curl https://example.com/", description="network command",
+                                    session_key="k-clean", session_id="s-pd-clean", request_id="req-cln-1")
+    ap_cln = [x for x in sent if x["kind"] == "approval"][-1]
+    check("command approval in tainted chat carries phone_data=True while clean chat omits it",
+          ap_pd.get("phone_data") is True and "phone_data" not in ap_cln, (ap_pd, ap_cln))
+
+    # Sub-agent lineage in _chat_has_read_phone_data (both directions, in-memory and persisted in state.db,
+    # nested and compressed sub-agents, without tainting a parent from a clean branch).
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-db", None, None, "{}", now_t - 50))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-sub-db", "s-par-db", "compression", json.dumps({"_delegate_from": "s-par-db"}), now_t - 40))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-sub-db-c2", "s-sub-db", None, "{}", now_t - 30))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-branch-only", None, None, "{}", now_t - 50))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-br-tainted", "s-par-branch-only", None, json.dumps({"_branched_from": "s-par-branch-only"}), now_t - 20))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-comp-1", None, "compression", "{}", now_t - 100))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-comp-2", "s-par-comp-1", None, "{}", now_t - 50))
+    con.commit()
+    con.close()
+
+    # 1. Parent whose in-memory sub-agent read phone data (even when sub-agent was marked before linking).
+    pt.mark(["s-mem-sub"])
+    pt.link_subagent("s-mem-par", "s-mem-sub")
+    check("parent whose in-memory sub-agent read phone data counts as tainted",
+          plugin._chat_has_read_phone_data("s-mem-par") is True)
+    sent.clear()
+    plugin._on_pre_approval_request(command="rm -rf /tmp/x", description="delete", session_key="k-mp",
+                                    session_id="s-mem-par", request_id="req-mp")
+    check("approval in parent whose sub-agent read phone data carries phone_data=True",
+          sent[-1].get("phone_data") is True, sent[-1])
+
+    # 2. Parent whose persisted compressed sub-agent read phone data (no in-memory link).
+    pt.mark(["s-sub-db-c2"])
+    check("parent whose persisted compressed sub-agent read phone data counts as tainted",
+          plugin._chat_has_read_phone_data("s-par-db") is True)
+
+    # 3. Sub-agent whose compressed parent read phone data before compression (s-par-comp-1 -> s-par-comp-2 -> s-sub-of-comp).
+    pt.mark(["s-par-comp-1"])
+    pt.link_subagent("s-par-comp-2", "s-sub-of-comp")
+    check("sub-agent whose compressed parent read phone data counts as tainted",
+          plugin._chat_has_read_phone_data("s-sub-of-comp") is True)
+    sent.clear()
+    plugin._on_pre_tool_call(tool_name="clarify", args={"question": "Secret question?", "choices": ["A"]},
+                             session_id="s-sub-of-comp", turn_id="sc:1")
+    ask_sub = [x for x in sent if x["kind"] == "ask"][-1]
+    check("question from sub-agent of tainted parent is redacted and carries phone_data=True",
+          ask_sub.get("phone_data") is True and "Secret" not in json.dumps(ask_sub), ask_sub)
+
+    # 4. A branch reading phone data does NOT taint its clean parent.
+    pt.mark(["s-br-tainted"])
+    check("clean parent whose branch read phone data stays untainted",
+          plugin._chat_has_read_phone_data("s-par-branch-only") is False)
 finally:
     pt.PATH = orig_pt_path
     pt._mem.clear()
+    pt._parents.clear()
     pt._cache = (None, {}, {})
     pd_mod._state_db = orig_state_db
     plugin._report_taint = orig_report

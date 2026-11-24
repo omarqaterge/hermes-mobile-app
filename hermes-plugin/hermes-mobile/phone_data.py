@@ -398,6 +398,80 @@ def compression_ancestors(sid: str, limit: int = MAX_CHATS, budget: float = ANCE
     return out
 
 
+def _is_delegate_row(raw: Any) -> bool:
+    """Whether a sessions.model_config JSON value marks a delegated sub-agent row."""
+    try:
+        cfg = json.loads(raw) if isinstance(raw, str) else None
+    except (ValueError, RecursionError):
+        return False
+    return isinstance(cfg, dict) and bool(cfg.get("_delegate_from"))
+
+
+def _is_continuation_row(raw: Any) -> bool:
+    """Whether a child row's model_config can belong to a compression continuation (never a branch or sub-agent)."""
+    if raw is None or raw == "":
+        return True
+    if not isinstance(raw, str):
+        return False
+    try:
+        cfg = json.loads(raw)
+    except (ValueError, RecursionError):
+        return False
+    return isinstance(cfg, dict) and not cfg.get("_delegate_from") and not cfg.get("_branched_from")
+
+
+def subagent_descendants(sids: Any, limit: int = 64, budget: float = 1.0, db=None) -> list:
+    """Delegated sub-agents (and their nested sub-agents and compression continuations) spawned by any session in `sids`,
+    read from `state.db`. Never follows branches (`_branched_from`), so a branch reading phone data never taints its parent.
+    Read-only and bounded by depth 16, `limit` rows and `budget` seconds. Never raises."""
+    out: list = []
+    try:
+        import sqlite3
+        raw_sids = [sids] if isinstance(sids, str) else list(sids or ())
+        seed = list(dict.fromkeys(str(s or "").strip() for s in raw_sids if str(s or "").strip()))
+        db_path = Path(db) if db else _state_db()
+        if not seed or not db_path.exists():
+            return out
+        end = time.monotonic() + budget
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=max(0.05, min(2.0, budget)))
+        try:
+            con.set_progress_handler(lambda: 1 if time.monotonic() > end else 0, 1000)
+            frontier = list(seed)
+            seen = set(seed)
+            subagents = set()
+            for _ in range(16):
+                if not frontier or len(out) >= limit:
+                    break
+                left = end - time.monotonic()
+                if left <= 0:
+                    break
+                con.execute(f"PRAGMA busy_timeout={int(min(2.0, left) * 1000)}")
+                marks = ",".join("?" * len(frontier))
+                rows = con.execute(
+                    f"SELECT c.id, c.parent_session_id, c.model_config, p.end_reason "
+                    f"FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
+                    f"WHERE c.parent_session_id IN ({marks}) LIMIT ?",
+                    (*frontier, limit * 2)).fetchall()
+                nxt: list = []
+                for cid, pid, raw_cfg, p_end_reason in rows:
+                    if not isinstance(cid, str) or not cid or cid in seen or len(out) >= limit:
+                        continue
+                    is_sub = _is_delegate_row(raw_cfg) or (
+                        pid in subagents and p_end_reason == "compression" and _is_continuation_row(raw_cfg)
+                    )
+                    if is_sub:
+                        seen.add(cid)
+                        subagents.add(cid)
+                        out.append(cid)
+                        nxt.append(cid)
+                frontier = nxt
+        finally:
+            con.close()
+    except Exception:
+        pass
+    return out
+
+
 def _chats(session_id: str = "", task_id: str = "") -> list:
     """The stored id of this chat and of the chats that spawned it (phone_taint's subagent links), the chat first: the
     app keeps its own record of which chats have read, and a subagent's read marks its parents too. Each id is followed
