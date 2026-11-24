@@ -12,7 +12,7 @@ import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './app
 import { lineageOf, noteLineage, noteListRow } from './lineage'
 import { detachedRefusal, detachedWork, hermesCommand, hermesSlash, lockSafeCommand, loosensApprovals, yoloOffArg } from './slashwords'
 import { confirmLooseApprovals } from './access-confirm'
-import { currentApprovalsMode, doneOffToast, readProfileConfig, recheckApprovalsMode, setApprovalsStartupWait } from './approvals-mode'
+import { accessUnsureOff, autoRestoreOffNotice, currentApprovalsMode, doneOffToast, readProfileConfig, recheckApprovalsMode, setApprovalsStartupWait } from './approvals-mode'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -934,7 +934,7 @@ onChatOpen('access', ({ chat, kind }) => {
   else if (want === 'auto')
     // Hermes still has /yolo on: without the plugin's entry the chat would be in Full access while the screen says Auto.
     void setPluginAuto(chat.storedId, true).catch(() =>
-      setAccess(chat, 'off', false).then(() => accessNotice(chat, 'Auto access couldn’t be set again, so this chat is in Off: Hermux asks before risky commands. Tap Auto to try again.'), () => {})
+      setAccess(chat, 'off', false).then(() => accessNotice(chat, autoRestoreOffNotice(lockView() ? null : currentApprovalsMode(chat.profile))), () => {})
     )
 })
 
@@ -1056,11 +1056,10 @@ async function settleAccess(a: ActiveSession): Promise<Access> {
     )
   }
   updateActive(x => (x.runtimeId === a.runtimeId ? { info: { ...x.info, yolo: got !== 'off' }, autoAccess: got === 'auto' } : {}))
-  accessNotice(a, ACCESS_UNSURE[got])
+  accessNotice(a, got === 'off' ? accessUnsureOff(lockView() ? null : currentApprovalsMode(a.profile)) : ACCESS_UNSURE[got])
   return got
 }
-const ACCESS_UNSURE: Record<Access, string> = {
-  off: 'Couldn’t change this chat’s access, so it is back to Off: Hermux asks before risky commands.',
+const ACCESS_UNSURE: Record<Exclude<Access, 'off'>, string> = {
   auto: 'Couldn’t confirm this chat’s access, so it is in Auto access: dangerous commands are blocked. Tap Auto to set it again.',
   full: 'Couldn’t confirm this chat’s access: it may be in Full access. Tap Auto to set it again.'
 }

@@ -10,6 +10,7 @@ import {
   approvalsModeNote,
   autoButtonLabel,
   autoButtonText,
+  currentApprovalsMode,
   defaultAccessSub,
   doneOffToast,
   isLooseApprovals,
@@ -87,6 +88,10 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
     const want = v as Access
     if (want === mode) return
     if (want === 'full' && !(await confirmFullAccess())) return
+    if (want !== 'off' && lockView()) {
+      askUnlock('Unlock the phone to change Auto')
+      return
+    }
     try {
       let a = getState().active
       if (!a) {
@@ -95,7 +100,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
       }
       if (!a) throw new Error('No chat to change')
       const got = await setAccess(a, want)
-      toast(got === 'off' ? doneOffToast(shownHermesMode) : DONE[got])
+      toast(got === 'off' ? doneOffToast(lockView() ? null : currentApprovalsMode(a.profile)) : DONE[got])
     } catch (e) {
       toast(errText(e), 'error')
     }

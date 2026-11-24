@@ -8,9 +8,12 @@ vi.mock('./api', () => ({
 
 import {
   accessSummary,
+  accessUnsureOff,
   approvalsModeNote,
   autoButtonLabel,
   autoButtonText,
+  autoRestoreOffNotice,
+  configApprovalsUpdate,
   currentApprovalsMode,
   defaultAccessSub,
   doneOffToast,
@@ -48,6 +51,8 @@ describe('approvals mode wording', () => {
     expect(autoButtonLabel('off', 'manual')).toBe('Auto is off')
     expect(offOptionSub('manual')).toBe('Hermux asks before risky commands')
     expect(doneOffToast('manual')).toBe('Auto off: Hermux asks before risky commands again')
+    expect(accessUnsureOff('manual')).toContain('Hermux asks before risky commands')
+    expect(autoRestoreOffNotice('manual')).toContain('Hermux asks before risky commands')
     expect(accessSummary('off', 'manual')).toBe('Auto off')
     expect(defaultAccessSub('off', 'manual')).toBe('Off')
   })
@@ -60,6 +65,10 @@ describe('approvals mode wording', () => {
     expect(offOptionSub(null)).toContain('approvals setting')
     expect(doneOffToast(null)).not.toContain('asks before risky commands')
     expect(doneOffToast(null)).toContain('approvals setting')
+    expect(accessUnsureOff(null)).not.toContain('asks before risky commands')
+    expect(accessUnsureOff(null)).toContain('approvals setting')
+    expect(autoRestoreOffNotice(null)).not.toContain('asks before risky commands')
+    expect(autoRestoreOffNotice(null)).toContain('approvals setting')
     expect(accessSummary('off', null)).toBe('')
     expect(defaultAccessSub('off', null)).toContain('approvals setting')
   })
@@ -71,6 +80,9 @@ describe('approvals mode wording', () => {
     expect(offOptionSub('smart')).toContain('low-risk commands by itself')
     expect(offOptionSub('smart')).not.toContain('Hermux asks before risky commands')
     expect(doneOffToast('smart')).toContain('low-risk commands by itself')
+    expect(accessUnsureOff('smart')).toContain('low-risk commands by itself')
+    expect(accessUnsureOff('smart')).not.toContain('asks before risky commands')
+    expect(autoRestoreOffNotice('smart')).toContain('low-risk commands by itself')
     expect(accessSummary('off', 'smart')).toBe('Smart approvals')
     expect(defaultAccessSub('off', 'smart')).toContain('low-risk commands by itself')
     expect(approvalsModeNote('smart').value).toBe('Smart')
@@ -82,6 +94,9 @@ describe('approvals mode wording', () => {
     expect(autoButtonLabel('off', 'off')).toContain('every command without asking')
     expect(offOptionSub('off')).toContain('every command without asking')
     expect(doneOffToast('off')).toContain('every command without asking')
+    expect(accessUnsureOff('off')).toContain('every command without asking')
+    expect(accessUnsureOff('off')).not.toContain('asks before risky commands')
+    expect(autoRestoreOffNotice('off')).toContain('every command without asking')
     expect(accessSummary('off', 'off')).toBe('Approvals off')
     expect(defaultAccessSub('off', 'off')).toContain('every command without asking')
     expect(approvalsModeNote('off').value).toBe('Off')
@@ -190,5 +205,21 @@ describe('openSettingsOn over the lock screen', () => {
     expect(takeSettingsStart()).toBeNull()
     window.hermesLockView?.(false)
     expect(takeSettingsStart()).toBeNull()
+  })
+})
+
+describe('configApprovalsUpdate', () => {
+  it('detects direct approvals.mode and parent approvals object updates', () => {
+    expect(configApprovalsUpdate({ approvals: { mode: 'off' } })).toEqual({ touches: true, loose: 'off' })
+    expect(configApprovalsUpdate({ approvals: { mode: ' SMART ', timeout: 300 } })).toEqual({ touches: true, loose: 'smart' })
+    expect(configApprovalsUpdate({ approvals: { mode: 'manual', timeout: 300 } })).toEqual({ touches: true, loose: null })
+    expect(configApprovalsUpdate({ 'approvals.mode': 'off' })).toEqual({ touches: true, loose: 'off' })
+    expect(configApprovalsUpdate({ approvals: { mode: null } })).toEqual({ touches: true, loose: null })
+    expect(configApprovalsUpdate({ approvals: null })).toEqual({ touches: true, loose: null })
+  })
+
+  it('ignores unrelated config updates', () => {
+    expect(configApprovalsUpdate({ approvals: { timeout: 60 } })).toEqual({ touches: false, loose: null })
+    expect(configApprovalsUpdate({ timezone: 'UTC' })).toEqual({ touches: false, loose: null })
   })
 })

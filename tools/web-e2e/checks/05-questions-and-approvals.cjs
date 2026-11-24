@@ -879,4 +879,43 @@ module.exports = async t => {
     await mock({ approvalsMode: null, profile: 'work' })
     await p.close()
   }
+
+  // Saving the parent `approvals` object in Advanced settings with mode "off" still warns and rechecks approvals.mode.
+  {
+    const { browser } = t
+    await mock({ approvalsMode: 'manual', bots: false })
+    const putsBefore = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/config').length
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    p.on('pageerror', e => check(false, `approvals parent key pageerror: ${e.message}`))
+    await p.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-1', profile: 'default' })))
+    await p.goto(WEB + '/')
+    await p.getByText('answer s-1', { exact: true }).waitFor({ timeout: 10000 })
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    await p.getByRole('button', { name: /^Behaviour/ }).click()
+    await p.getByRole('button', { name: /^Advanced settings/ }).click()
+    await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
+    await p.getByPlaceholder(/Search \d+ settings/).fill('approvals')
+    const parentRow = p.getByRole('button', { name: /^approvals\b.*Command approval settings/ })
+    await parentRow.waitFor({ timeout: 5000 })
+    await parentRow.click()
+    const sheet = p.getByRole('dialog')
+    await sheet.getByRole('textbox').fill(JSON.stringify({ mode: 'off', timeout: 300 }, null, 2))
+    const puts0 = putsBefore()
+    await sheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByRole('alertdialog').getByText('Turn off approvals?').waitFor({ timeout: 3000 })
+    await p.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+    await p.getByRole('alertdialog').waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === puts0, 'approvals parent key: Cancel writes no PUT /api/config')
+    await sheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByRole('alertdialog').getByRole('button', { name: 'Turn off approvals', exact: true }).click()
+    await sheet.waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === puts0 + 1, 'approvals parent key: confirming writes PUT /api/config')
+    // Back to chat: recheckApprovalsMode updated the Auto chip to "Approvals off".
+    for (let i = 0; i < 3; i++) await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByRole('button', { name: /Hermux approves every command without asking.*\. Change how much Hermux may do without asking$/ }).waitFor({ timeout: 5000 })
+    check(true, 'approvals parent key: recheckApprovalsMode updates the Auto chip after saving parent approvals object')
+    await mock({ approvalsMode: 'manual' })
+    await p.close()
+  }
 }

@@ -3,18 +3,22 @@
 // a mode the screen shows truthfully, never a safer one than Hermes runs.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-const put = vi.hoisted(() => ({ calls: [] as { mode: string }[], fail: false }))
+const put = vi.hoisted(() => ({ calls: [] as { mode: string }[], fail: false, approvalsMode: null as string | null }))
 vi.mock('./api', () => ({
   api: vi.fn(async (method: string, path: string, body?: { mode?: string }) => {
     if (method === 'PUT' && path.endsWith('/auto')) {
       put.calls.push({ mode: String(body?.mode ?? '') })
       if (put.fail) throw new Error('plugin down')
     }
+    if (method === 'GET' && path.startsWith('/api/config')) {
+      return put.approvalsMode ? { approvals: { mode: put.approvalsMode } } : {}
+    }
     return {}
   })
 }))
 
 import { accessOf, client, setAccess } from './gateway'
+import { readProfileConfig, resetApprovalsModeForTest } from './approvals-mode'
 import { runChatOpen } from './chatopen'
 import { getState, setState, type ActiveSession } from './store'
 
@@ -43,6 +47,9 @@ describe('access after a failed switch', () => {
     answers = []
     put.calls = []
     put.fail = false
+    put.approvalsMode = null
+    resetApprovalsModeForTest()
+    window.hermesLockView?.(false)
     localStorage.clear()
     vi.spyOn(client, 'request').mockImplementation(((method: string, params: { key?: string; value?: string }) => {
       if (method !== 'config.set' || params.key !== 'yolo') return Promise.resolve({})
@@ -109,5 +116,42 @@ describe('access after a failed switch', () => {
     expect(yolo.map(y => y.value)).toEqual(['1'])
     expect(shown()).toBe('auto')
     expect(notices()).toEqual([])
+  })
+
+  test('settleAccess off notice reflects approvals.mode (smart, off, manual, unknown) and hides mode in lockView', async () => {
+    const a1 = open(false)
+    put.approvalsMode = 'smart'
+    await readProfileConfig('default')
+    answers = ['fail', 'ok']
+    await expect(setAccess(a1, 'full')).rejects.toThrow('timed out')
+    const n1 = (notices()[0] as { text: string }).text
+    expect(n1).toContain('low-risk commands by itself')
+    expect(n1).not.toContain('asks before risky commands')
+
+    const a2 = open(false)
+    put.approvalsMode = 'off'
+    await readProfileConfig('default')
+    answers = ['fail', 'ok']
+    await expect(setAccess(a2, 'full')).rejects.toThrow('timed out')
+    const n2 = (notices()[0] as { text: string }).text
+    expect(n2).toContain('every command without asking')
+    expect(n2).not.toContain('asks before risky commands')
+
+    const a3 = open(true)
+    window.hermesLockView?.(true)
+    answers = ['fail', 'ok']
+    await expect(setAccess(a3, 'off')).rejects.toThrow('timed out')
+    const n3 = (notices()[0] as { text: string }).text
+    expect(n3).toContain('follows the approvals setting')
+    expect(n3).not.toContain('every command without asking')
+    expect(n3).not.toContain('asks before risky commands')
+    window.hermesLockView?.(false)
+
+    const a4 = open(false)
+    put.approvalsMode = 'manual'
+    await readProfileConfig('default')
+    answers = ['fail', 'ok']
+    await expect(setAccess(a4, 'full')).rejects.toThrow('timed out')
+    expect((notices()[0] as { text: string }).text).toContain('Hermux asks before risky commands')
   })
 })

@@ -19,10 +19,10 @@ import { checkHermes, compat, mismatchLine, useHermesBuild } from '../hermes-upd
 import { EmbeddedShell, MemoryScreen, ScreenShell, Sheet, Status, useLoader } from './Screens'
 import { useBackHandler } from '../backstack'
 import { getLiveBargeIn, getLivePause, setLiveBargeIn, setLivePause } from '../live'
-import { lockAssist, lockAssistAvailable, setLockAssist } from '../lockview'
+import { askUnlock, lockAssist, lockAssistAvailable, lockView, setLockAssist } from '../lockview'
 import { Collapse, IconChip, Row, Section, SelectRow, Segmented, SliderRow, ToggleRow, type Option } from './ui'
 import { DefaultAccessRow } from './AutoAccess'
-import { accessSummary, approvalsModeNote, isLooseApprovals, recheckApprovalsMode, useApprovalsMode } from '../approvals-mode'
+import { accessSummary, approvalsModeNote, configApprovalsUpdate, isLooseApprovals, recheckApprovalsMode, useApprovalsMode } from '../approvals-mode'
 import { SETTINGS_PAGE_NAME, searchSettings, type SettingsEntry, type SettingsPageId } from '../settings-search'
 import { setGlass, setMotionLevel, useGlass, useMotionLevel, type MotionLevel } from '../motion'
 import { setModelBarMode, useTray, type ModelBarMode } from '../tray'
@@ -437,7 +437,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
 // ── Config (schema-driven, every option Hermes has) ──────────
 
 interface Field {
-  type: 'string' | 'number' | 'boolean' | 'list' | 'select'
+  type: 'string' | 'number' | 'boolean' | 'list' | 'select' | 'object' | 'dict'
   description?: string
   category?: string
   options?: string[]
@@ -510,18 +510,23 @@ function ConfigTab({ scope, setScope, initialQuery = '' }: { scope: string; setS
   )
 
   const save = async (key: string, value: unknown, all: boolean) => {
-    if (key === 'approvals.mode' && typeof value === 'string') {
-      const m = value.trim().toLowerCase()
-      if ((m === 'off' || m === 'smart') && !(await confirmLooseApprovals(m, all))) return false
+    const payload = nest(key, value)
+    const appr = configApprovalsUpdate(payload)
+    if (appr.loose) {
+      if (!(await confirmLooseApprovals(appr.loose, all))) return false
+      if (lockView()) {
+        askUnlock('Unlock the phone to change settings')
+        return false
+      }
     }
     haptic()
-    const ok = await forProfiles(all ? '*' : scope, p => api('PUT', `/api/config?${qs({ profile: p })}`, { config: nest(key, value) }, { profile: false }))
+    const ok = await forProfiles(all ? '*' : scope, p => api('PUT', `/api/config?${qs({ profile: p })}`, { config: payload }, { profile: false }))
     if (ok) {
       toastNewChats(`Saved${all ? ' for all bots' : ''}`)
       reload()
       if (key === 'model' || key.startsWith('model.')) void loadProfiles()
       if (key.startsWith('agent.reasoning') || key === 'model' || key.startsWith('model.')) void loadDefaultModel(true)
-      if (key === 'approvals.mode') recheckApprovalsMode(all ? undefined : scope)
+      if (appr.touches || key === 'approvals') recheckApprovalsMode(all ? undefined : scope)
     }
     return ok
   }
@@ -586,7 +591,8 @@ function deepSet(obj: Record<string, unknown>, path: string, value: unknown): Re
 }
 
 function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; field: Field; value: unknown; scope: string; onClose: () => void; onSave: (v: unknown, all: boolean) => Promise<boolean> }) {
-  const isJson = field.type === 'list' || (value != null && typeof value === 'object')
+  const isObject = field.type === 'object' || field.type === 'dict' || (value != null && typeof value === 'object' && !Array.isArray(value))
+  const isJson = field.type === 'list' || isObject || (value != null && typeof value === 'object')
   const [text, setText] = useState(value == null ? '' : isJson ? JSON.stringify(value, null, 2) : String(value))
   const [all, setAll] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -597,10 +603,11 @@ function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; f
       return n
     }
     if (isJson) {
-      if (!text.trim()) return []
+      if (!text.trim()) return isObject ? {} : []
       try {
         return JSON.parse(text)
       } catch {
+        if (isObject) throw new Error('Enter valid JSON')
         // Convenience: one item per line for simple string lists.
         return text
           .split('\n')
