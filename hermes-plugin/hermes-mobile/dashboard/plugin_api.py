@@ -1604,13 +1604,14 @@ def _canvas():
 
 
 def _cv(fn, *a, **k):
-    """Run a canvas call, turning its errors into HTTP errors (409 for edit conflicts)."""
+    """Run a canvas call, turning its errors into HTTP errors (409 for conflicts, 403 for refused paths)."""
     c = _canvas()
     try:
         return fn(c)(*a, **k)
     except c.CanvasError as e:
         msg = str(e)
-        raise HTTPException(status_code=409 if msg.startswith("conflict") else 400, detail=msg)
+        status = 409 if msg.startswith("conflict") else 403 if msg.startswith("refused") else 400
+        raise HTTPException(status_code=status, detail=msg)
 
 
 class CanvasCreate(BaseModel):
@@ -1638,6 +1639,7 @@ class CanvasRef(BaseModel):
     rev: int = 0
     title: str = ""
     path: str = ""
+    force: bool = False
 
 
 @router.get("/canvas")
@@ -1683,7 +1685,7 @@ async def canvas_open_file(body: CanvasRef):
 
 @router.post("/canvas/save-file")
 async def canvas_save_file(body: CanvasRef):
-    return _cv(lambda c: c.save_file, body.session, body.id)
+    return _cv(lambda c: c.save_file, body.session, body.id, force=body.force)
 
 
 @router.delete("/canvas/doc")

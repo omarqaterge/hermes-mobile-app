@@ -32,6 +32,7 @@ allSessions.unshift({ id: 's-card', title: 'Card chat', preview: 'x', message_co
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
 
 const canvasDocs = {} // session -> [doc]
+let canvasFileChanged = new Set() // paths simulated as changed on disk since open-file (returns 409 until force: true)
 const libraryItems = [] // the Library (plugin library.py), newest first
 // An old Library copy saved without a chat (no source): the gallery lists it as a saved copy.
 libraryItems.push({ id: 'lib-old', title: 'Old notes', type: 'markdown', lang: '', category: 'Unsorted', saved: Math.floor(Date.now() / 1000) - 86400, chars: 16, content: 'Kept from before', source: null })
@@ -152,7 +153,38 @@ function poolList() {
     .map(provider => ({ provider, raw: by[provider], entries: by[provider].map((x, i) => poolEntry(i + 1, x.id, x.label, x.auth_type, x.source, x.key)) }))
 }
 
-const FILE_TEXT = { 'table.csv': 'a,b\n1,2', 'page.html': '<h1>Hi</h1>', 'code.py': 'print("x")' }
+const FILE_TEXT = {
+  'table.csv': 'a,b\n1,2',
+  'page.html': '<h1>Hi</h1>',
+  'code.py': 'print("x")',
+  'config.yaml': 'approvals:\n  mode: manual\n',
+  '.env': 'OPENAI_API_KEY=sk-mock\n'
+}
+const SHELL_INIT_MOCK = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout'])
+function canvasPathError(rawPath, forSave) {
+  const s = String(rawPath || '').trim()
+  if (!s || (!s.startsWith('/') && s !== '~' && !s.startsWith('~/'))) return { status: 400, detail: 'give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)' }
+  const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
+  const p = path.posix.normalize(expanded)
+  const name = path.posix.basename(p)
+  const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
+  if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
+  const inRoot = allowed.some(r => p === r || p.startsWith((r === '/' ? '' : r) + '/'))
+  if (!inRoot) return { status: 403, detail: `refused: this file is outside the folders Hermux can ${forSave ? 'save to' : 'open'}` }
+  if (/(?:^|\/)\.hermes-mobile(?:\/|$)/.test(p) || /(?:^|\/)\.ssh(?:\/|$)/.test(p) || /^\.env(?:\.|$)/i.test(name)) {
+    return { status: 403, detail: forSave ? 'refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.' : 'refused: Hermux won’t open secrets or key files in the canvas' }
+  }
+  if (/(?:^|\/)\.hermes(?:\/|$)/.test(p)) {
+    if (forSave) return { status: 403, detail: 'refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.' }
+    if (['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'].includes(name.toLowerCase()) || /(?:^|\/)\.hermes\/mobile(?:\/|$)/.test(p)) {
+      return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
+    }
+  }
+  if (forSave && (/^\/(?:root|home\/[^/]+|Users\/[^/]+)\/bin(?:\/|$)/.test(p) || (path.posix.dirname(p) === '/root' && SHELL_INIT_MOCK.has(name)))) {
+    return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+  }
+  return null
+}
 const server = http.createServer((req, res) => {
   let body = ''
   req.on('data', c => (body += c))
@@ -269,6 +301,9 @@ const server = http.createServer((req, res) => {
           cfgSaved = deepMerge(cfgSaved, { approvals: { mode: b.approvalsMode } })
         }
       }
+      if (b.canvasFileChanged !== undefined) {
+        canvasFileChanged = new Set(Array.isArray(b.canvasFileChanged) ? b.canvasFileChanged : b.canvasFileChanged ? [b.canvasFileChanged] : [])
+      }
       if (b.up) refuseUntil = 0 // Hermes is back now (ends a drop early)
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
@@ -284,7 +319,11 @@ const server = http.createServer((req, res) => {
       const join = n => (dir === '/' ? '' : dir) + '/' + n
       const entries = depth < 4 ? ['a', 'b'].map(n => ({ name: n, path: join(n), is_directory: true })) : []
       entries.push({ name: 'note.txt', path: join('note.txt'), is_directory: false, size: 5 })
-      for (const [n, text] of Object.entries(FILE_TEXT)) entries.push({ name: n, path: join(n), is_directory: false, size: text.length })
+      if (dir === '/root/.hermes') {
+        entries.push({ name: 'config.yaml', path: join('config.yaml'), is_directory: false, size: FILE_TEXT['config.yaml'].length })
+        entries.push({ name: '.env', path: join('.env'), is_directory: false, size: FILE_TEXT['.env'].length })
+      }
+      for (const n of ['table.csv', 'page.html', 'code.py']) entries.push({ name: n, path: join(n), is_directory: false, size: FILE_TEXT[n].length })
       for (const n of ['song.mp3', 'doc.pdf']) entries.push({ name: n, path: join(n), is_directory: false, size: 1000 })
       return send({ path: dir, parent: dir === '/' ? null : dir.replace(/\/[^/]+$/, '') || '/', entries })
     }
@@ -711,11 +750,21 @@ const server = http.createServer((req, res) => {
       const d = (canvasDocs[s] || []).find(x => x.id === id)
       const sub = p.split('/').pop()
       if (sub === 'open-file') {
+        const err = canvasPathError(b.path, false)
+        if (err) return send({ detail: err.detail }, err.status)
         // The phone's file (the mock has none): text made up from its name, linked to the path.
         const name = String(b.path || '').split('/').pop() || 'file'
         const ext = (name.split('.').pop() || '').toLowerCase()
-        const text = `Contents of ${name}\n`
-        const nd = { id: `d${Date.now()}`, title: name, type: { md: 'markdown', html: 'html', json: 'json', csv: 'csv', svg: 'svg' }[ext] || 'text', lang: '', rev: 1, updated: Date.now() / 1000, by: 'user', chars: text.length, path: b.path, created: Date.now() / 1000, content: text }
+        const text = FILE_TEXT[name] ?? `Contents of ${name}\n`
+        const existing = (canvasDocs[s] || []).find(x => x.path === b.path)
+        if (existing) {
+          existing.content = text
+          existing.chars = text.length
+          existing.rev++
+          existing.updated = Date.now() / 1000
+          return send(existing)
+        }
+        const nd = { id: `d${Date.now()}`, title: name, type: { md: 'markdown', html: 'html', json: 'json', csv: 'csv', svg: 'svg', yaml: 'code', yml: 'code' }[ext] || 'text', lang: ext === 'yaml' || ext === 'yml' ? 'yaml' : '', rev: 1, updated: Date.now() / 1000, by: 'user', chars: text.length, path: b.path, created: Date.now() / 1000, content: text }
         ;(canvasDocs[s] ||= []).push(nd)
         histOf(s, nd)
         return send(nd)
@@ -741,7 +790,14 @@ const server = http.createServer((req, res) => {
         canvasHist.get(`${s}/${d.id}`).push({ rev: d.rev, at: d.updated, by: 'user', note: `restored revision ${b.rev}`, content: d.content })
         return send(d)
       }
-      if (sub === 'save-file') return d.path ? send({ path: d.path, chars: d.content.length }) : send({ detail: "this document isn't linked to a file" }, 400)
+      if (sub === 'save-file') {
+        if (!d.path) return send({ detail: "this document isn't linked to a file" }, 400)
+        const err = canvasPathError(d.path, true)
+        if (err) return send({ detail: err.detail }, err.status)
+        if (!b.force && canvasFileChanged.has(d.path)) return send({ detail: 'conflict: the file on disk changed since you opened it' }, 409)
+        canvasFileChanged.delete(d.path)
+        return send({ path: d.path, chars: d.content.length })
+      }
     }
     return send({})
   })

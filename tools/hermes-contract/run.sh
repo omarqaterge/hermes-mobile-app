@@ -18,6 +18,7 @@ cleanup() {
 trap cleanup EXIT
 # HM_E2E_MOCK_PORT: another port for the mock when something holds 9119 (an adb forward, say).
 export HM_E2E_MOCK_PORT=${HM_E2E_MOCK_PORT:-9119}
+export HM_CONTRACT_NOTE="$work/userhome/note.txt"
 HM_E2E_LOG="$work/mock-calls.jsonl" node ../web-e2e/mock.cjs > "$work/mock.log" 2>&1 & MOCK=$!
 export HM_CONTRACT_KEY=contract-event-key
 ./start-hermes.sh "$work" "$port"
@@ -26,6 +27,6 @@ export HM_CONTRACT_KEY=contract-event-key
 python3 ../hermes-commands.py "$work/hermes-agent" --check
 kill -0 "$MOCK" || { echo "the mock didn't start:"; cat "$work/mock.log"; exit 1; }
 status=0
-HM_CONTRACT_NOTE="$work/note.txt" node contract.cjs "http://127.0.0.1:$HM_E2E_MOCK_PORT" "http://127.0.0.1:$port" || status=$?
+node contract.cjs "http://127.0.0.1:$HM_E2E_MOCK_PORT" "http://127.0.0.1:$port" || status=$?
 if [ "$status" != 0 ]; then echo "--- dashboard.log (last 40 lines)"; tail -40 "$work/dashboard.log"; fi
 exit "$status"

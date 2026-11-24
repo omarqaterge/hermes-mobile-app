@@ -2,7 +2,8 @@
 // The panel UI is components/Canvas.tsx; the agent writes through its `canvas` tool, and the tool events in
 // gateway.ts call canvasToolDone() so the panel opens/refreshes the moment Hermes writes.
 import { useSyncExternalStore } from 'react'
-import { api } from './api'
+import { api, ApiError } from './api'
+import { confirmDialog } from './dialog'
 import { getState, subscribe, toast } from './store'
 import { screenChat } from './chatview'
 import { galleryToolDone } from './gallery'
@@ -301,13 +302,81 @@ export async function openFileInCanvas(path: string): Promise<boolean> {
   }
 }
 
+const PROTECTED_HOME_FILES = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout'])
+const ENV_NAME = /^\.env(?:\.|$)/i
+const HERMES_DIR = /(?:^|\/)\.hermes(?:\/|$)/
+const HERMES_MOBILE_DIR = /(?:^|\/)\.hermes-mobile(?:\/|$)/
+const SSH_DIR = /(?:^|\/)\.ssh(?:\/|$)/
+const HOME_BIN_DIR = /^\/(?:root|home\/[^/]+|Users\/[^/]+)\/bin(?:\/|$)/
+const HOME_FILE = /^\/(?:root|home\/[^/]+|Users\/[^/]+)\/([^/]+)$/
+const SYSTEM_PREFIX = /^\/(?:etc|usr|bin|sbin|lib|lib64|var|proc|sys|dev|boot|opt|run|system|vendor|apex|data\/data\/com\.termux)(?:\/|$)/
+
+function normalizePosix(path: string): string {
+  const expanded = path.startsWith('~/') ? `/root/${path.slice(2)}` : path === '~' ? '/root' : path
+  const parts: string[] = []
+  for (const seg of expanded.split('/')) {
+    if (!seg || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return '/' + parts.join('/')
+}
+
+/** Reason why saving back to `path` from the canvas is refused, or null when allowed (the plugin enforces the same
+ *  rules plus realpath/symlink checks on disk). */
+export function canvasSaveBlockReason(path: string): string | null {
+  const raw = path.trim()
+  if (!raw) return null
+  if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path to save.'
+  const p = normalizePosix(raw)
+  const name = p.split('/').pop() || ''
+  if (HERMES_DIR.test(p) || HERMES_MOBILE_DIR.test(p)) {
+    return 'Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.'
+  }
+  if (ENV_NAME.test(name)) {
+    return 'Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.'
+  }
+  if (SSH_DIR.test(p) || HOME_BIN_DIR.test(p) || SYSTEM_PREFIX.test(p)) {
+    return 'This file is outside the folders Hermux can save to from the canvas.'
+  }
+  const hf = HOME_FILE.exec(p)
+  if (hf && PROTECTED_HOME_FILES.has(hf[1])) {
+    return 'Hermux won’t overwrite shell start-up files from the canvas.'
+  }
+  return null
+}
+
 export async function saveToFile(id: string): Promise<void> {
+  const doc = state.loaded[id] ?? state.docs.find(d => d.id === id)
+  const blocked = doc?.path ? canvasSaveBlockReason(doc.path) : null
+  if (blocked) {
+    toast(blocked, 'error', 6000)
+    return
+  }
   await flushSave()
+  if (state.save === 'conflict' || state.save === 'error') return
   try {
     const r = await call<{ path: string }>('POST', `${P}/save-file`, { session: state.session, id })
     toast(`Saved to ${r.path}`)
   } catch (e) {
-    toast(e instanceof Error ? e.message : String(e), 'error')
+    if (e instanceof ApiError && e.status === 409) {
+      const ok = await confirmDialog({
+        title: 'Overwrite changed file?',
+        message: `${doc?.path || 'The original file'} changed on disk since you opened it. Saving from the canvas will overwrite those changes.`,
+        confirmLabel: 'Overwrite',
+        icon: 'warning',
+        danger: true
+      })
+      if (!ok) return
+      try {
+        const r = await call<{ path: string }>('POST', `${P}/save-file`, { session: state.session, id, force: true })
+        toast(`Saved to ${r.path}`)
+      } catch (e2) {
+        toast(e2 instanceof Error ? e2.message : String(e2), 'error', 6000)
+      }
+      return
+    }
+    toast(e instanceof Error ? e.message : String(e), 'error', 6000)
   }
 }
 

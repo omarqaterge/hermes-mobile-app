@@ -108,7 +108,9 @@ scanning with push protection is on, and a release is built only from a commit o
 ## Guard rails, and where to see them
 
 - **Content can't call the app.** Every call from the page into Android needs a key that changes on each page load.
-  Canvas pages run in a sandboxed frame with no access to the app, offline unless you switch them online. Cards are
+  Canvas pages run in a sandboxed frame with no access to the app, offline unless you switch them online. Saving a
+  canvas document back to disk is restricted to your home and phone storage, refuses Hermux's own settings, secrets,
+  plugin and shell start-up files (and symlinks), and warns before overwriting a file that changed on disk. Cards are
   drawn by the app and can only call read-only tools ([security model](spec/02-03-security-model.md)).
 - **Chat text is sanitised.** Markdown from the model passes `rehype-sanitize`.
 - **Remote debugging is off by default.** Turning it on needs Android's Developer options and your screen lock, and it

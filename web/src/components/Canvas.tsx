@@ -7,6 +7,7 @@ import { confirmDialog, promptDialog } from '../dialog'
 import { useBackHandler } from '../backstack'
 import { api } from '../api'
 import {
+  canvasSaveBlockReason,
   closeCanvas,
   closeDoc,
   createDoc,
@@ -270,6 +271,7 @@ function shareText(title: string, text: string): void {
 }
 
 function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; onClose: () => void; onHistory: () => void }) {
+  const saveBlocked = doc.path ? canvasSaveBlockReason(doc.path) : null
   const run = (fn: () => void) => () => {
     haptic()
     onClose()
@@ -285,7 +287,16 @@ function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; on
         <Row icon="copy" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
         <Row icon="external" tone="green" title="Share…" onClick={run(() => shareText(doc.title, text))} />
         <Row icon="download" tone="purple" title={`Save a copy to Downloads`} sub={`${doc.title}.${ext(doc)}`} onClick={run(() => void exportCopy(doc, text))} />
-        {doc.path && <Row icon="save" tone="gold" title="Save to the original file" sub={doc.path} onClick={run(() => void saveToFile(doc.id))} />}
+        {doc.path && (
+          <Row
+            icon="save"
+            tone={saveBlocked ? 'gray' : 'gold'}
+            title="Save to the original file"
+            sub={saveBlocked || doc.path}
+            disabled={Boolean(saveBlocked)}
+            onClick={run(() => void saveToFile(doc.id))}
+          />
+        )}
       </Section>
       <Section>
         <Row icon="folderOpen" tone="blue" title="Open a file from the phone…" sub="Pick a text file in Files, then “Open in canvas”" chevron onClick={run(() => { closeCanvas(); openLibrary('files') })} />

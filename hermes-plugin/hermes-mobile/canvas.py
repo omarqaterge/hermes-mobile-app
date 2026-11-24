@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import re
 import secrets
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -255,6 +257,114 @@ def clear_session(session: str) -> None:
             d.rmdir()
 
 
+_SHELL_INIT_FILES = frozenset({
+    ".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile",
+    ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout",
+})
+_HERMES_SECRET_FILES = frozenset({
+    "auth.json", ".anthropic_oauth.json", "google_token.json",
+    "google_client_secret.json", "google_oauth_pending.json",
+})
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _home_dir() -> Path:
+    return Path(os.path.realpath(os.path.expanduser("~")))
+
+
+def _allowed_roots() -> List[Path]:
+    """Folders Files may open/save: the user's home and Android shared storage."""
+    roots: List[Path] = []
+    seen: set[str] = set()
+    home = os.path.expanduser("~")
+    for candidate in (home, "/sdcard", "/storage/emulated/0"):
+        if candidate != home and not os.path.exists(candidate):
+            continue
+        r = Path(os.path.realpath(candidate))
+        s = str(r)
+        if s not in seen:
+            seen.add(s)
+            roots.append(r)
+    return roots
+
+
+def _hermes_homes() -> List[Path]:
+    """Every Hermes home directory that may hold config, secrets, plugins or internal state."""
+    roots: List[Path] = []
+    seen: set[str] = set()
+
+    def add(p: Path) -> None:
+        r = Path(os.path.realpath(str(p)))
+        s = str(r)
+        if s not in seen:
+            seen.add(s)
+            roots.append(r)
+
+    add(_home_dir() / ".hermes")
+    if ROOT.parent.name == "mobile":
+        add(ROOT.parent.parent)
+    for env_name in ("HERMES_HOME", "HERMES_MOBILE_ROOT"):
+        val = (os.environ.get(env_name) or "").strip()
+        if val:
+            p = Path(os.path.realpath(os.path.expanduser(val)))
+            add(p)
+            if p.parent.name == "profiles":
+                add(p.parent.parent)
+    return roots
+
+
+def _is_env_file(name: str) -> bool:
+    low = name.lower()
+    return low == ".env" or low.startswith(".env.")
+
+
+def _check_allowed_path(real: Path, verb: str = "open") -> None:
+    if not any(_is_within(real, r) for r in _allowed_roots()):
+        raise CanvasError(f"refused: this file is outside the folders Hermux can {verb}")
+
+
+def _check_open_path(real: Path) -> None:
+    _check_allowed_path(real, "open")
+    home = _home_dir()
+    if _is_within(real, home / ".hermes-mobile") or _is_within(real, home / ".ssh") or _is_env_file(real.name):
+        raise CanvasError("refused: Hermux won’t open secrets or key files in the canvas")
+    for hh in _hermes_homes():
+        if _is_within(real, hh):
+            if real.name.lower() in _HERMES_SECRET_FILES or _is_within(real, hh / "mobile"):
+                raise CanvasError("refused: Hermux won’t open secrets or internal files in the canvas")
+
+
+def _check_save_path(raw_path: str) -> Path:
+    p = os.path.expanduser((raw_path or "").strip())
+    if not os.path.isabs(p):
+        raise CanvasError("give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)")
+    if Path(p).is_symlink():
+        raise CanvasError("refused: won’t save through a symbolic link")
+    real = Path(os.path.realpath(p))
+    _check_allowed_path(real, "save to")
+    home = _home_dir()
+    if _is_within(real, home / ".hermes-mobile") or any(_is_within(real, hh) for hh in _hermes_homes()):
+        raise CanvasError("refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.")
+    if _is_env_file(real.name):
+        raise CanvasError("refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.")
+    if _is_within(real, home / ".ssh") or _is_within(real, home / "bin"):
+        raise CanvasError("refused: this file is outside the folders Hermux can save to")
+    if real.parent == home and real.name in _SHELL_INIT_FILES:
+        raise CanvasError("refused: Hermux won’t overwrite shell start-up files from the canvas")
+    return real
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def _phone_path(p: str) -> Path:
     """Paths as the agent/app write them (/root/…, ~/…, /sdcard/…) → a real path inside this environment."""
     p = os.path.expanduser(p.strip())
@@ -266,6 +376,7 @@ def _phone_path(p: str) -> Path:
 def open_file(session: str, path: str, by: str = "agent") -> Dict[str, Any]:
     """Load a text file from the phone into a new canvas document linked to that path."""
     real = _phone_path(path)
+    _check_open_path(real)
     if not real.is_file():
         raise CanvasError(f"no such file: {path}")
     if real.stat().st_size > MAX_FILE_BYTES:
@@ -274,25 +385,65 @@ def open_file(session: str, path: str, by: str = "agent") -> Dict[str, Any]:
     if b"\x00" in raw[:4096]:
         raise CanvasError("that looks like a binary file, not text")
     text = raw.decode("utf-8", errors="replace")
-    # Same file already open? Refresh it instead of piling up copies.
-    for m in list_docs(session):
-        if m.get("path") == str(real):
-            return write(session, m["id"], text, by=by, note="reloaded from file")
-    t, lang = guess_type(real.name, text)
-    return create(session, real.name, text, type=t, lang=lang, by=by, path=str(real))
+    digest = _sha256_bytes(raw)
+    # Same file already open? Refresh it (and its disk hash) instead of piling up copies.
+    with _locked(session) as d:
+        for p in sorted(d.glob("*.json")):
+            try:
+                existing = _read(p)
+            except Exception:
+                continue
+            if existing.get("path") == str(real):
+                existing["file_sha256"] = digest
+                if text != existing["content"]:
+                    _commit(d, existing, text, by, "reloaded from file")
+                else:
+                    _write(d / f"{existing['id']}.json", existing)
+                return get(session, existing["id"], with_versions=False)
+        if len(list(d.glob("*.json"))) >= MAX_DOCS:
+            raise CanvasError(f"this canvas already has {MAX_DOCS} documents: close one first")
+        t, lang = guess_type(real.name, text)
+        title = real.name.strip() or "Untitled"
+        doc = {"id": _slug(title), "title": title[:120], "type": t, "lang": lang, "rev": 0, "content": "",
+               "versions": [], "created": _now(), "updated": _now(), "path": str(real), "file_sha256": digest}
+        _commit(d, doc, text, by, "created")
+        return get(session, doc["id"], with_versions=False)
 
 
-def save_file(session: str, doc_id: str) -> Dict[str, Any]:
-    """Write the document back to the file it was opened from."""
-    doc = _load(_dir(session), doc_id)
-    if not doc.get("path"):
-        raise CanvasError("this document isn't linked to a file")
-    real = _phone_path(doc["path"])
-    real.parent.mkdir(parents=True, exist_ok=True)
-    tmp = real.with_name(f".{real.name}.hm.tmp")
-    tmp.write_text(doc["content"], encoding="utf-8")
-    os.replace(tmp, real)
-    return {"path": str(real), "chars": len(doc["content"])}
+def save_file(session: str, doc_id: str, force: bool = False) -> Dict[str, Any]:
+    """Write the document back to the file it was opened from. Refuses paths outside allowed folders and
+    protected Hermes/secrets/system files; refuses to overwrite a file changed on disk unless `force=True`."""
+    with _locked(session) as d:
+        doc = _load(d, doc_id)
+        if not doc.get("path"):
+            raise CanvasError("this document isn't linked to a file")
+        real = _check_save_path(doc["path"])
+        if not real.parent.is_dir():
+            raise CanvasError("the folder for this file no longer exists")
+        if real.exists() and not real.is_file():
+            raise CanvasError("refused: target is not a regular file")
+        if not force:
+            expected = doc.get("file_sha256")
+            if expected is None and doc.get("versions"):
+                expected = _sha256_bytes(str(doc["versions"][0].get("content", "")).encode("utf-8"))
+            if not real.exists():
+                raise CanvasError("conflict: the original file was removed or moved since you opened it")
+            current = _sha256_bytes(real.read_bytes())
+            if expected is None or current != expected:
+                raise CanvasError("conflict: the file on disk changed since you opened it")
+        data = doc["content"].encode("utf-8")
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{real.name}.", suffix=".hm.tmp", dir=str(real.parent))
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp_name, real)
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_name)
+            raise
+        doc["file_sha256"] = _sha256_bytes(data)
+        _write(d / f"{doc['id']}.json", doc)
+        return {"path": str(real), "chars": len(doc["content"])}
 
 
 # ── the agent's tool ─────────────────────────────────────────
