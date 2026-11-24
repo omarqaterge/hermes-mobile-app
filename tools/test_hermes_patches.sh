@@ -7,19 +7,22 @@ here=$(cd "$(dirname "$0")/.." && pwd)
 pin=$(cat "$here/web/vendor/hermes-shared/.hermes-commit")
 src=${1:-}
 shallow=
+clone_tmp=
 if [ -z "$src" ]; then
   # Only the two commits this needs (the pin, then upstream main), without history: in a blob-less clone each patch
   # check fetched the files it reads one at a time, over a minute in CI. Fetching a commit by id takes its full id,
   # which phone/bootstrap.sh has (tools/test_bootstrap_pin.sh keeps the two pins the same).
   full=$(sed -n 's/^HERMES_COMMIT=\([0-9a-f]\{40\}\).*/\1/p' "$here/phone/bootstrap.sh")
-  src=$(mktemp -d)/hermes-agent
+  clone_tmp=$(mktemp -d)
+  src=$clone_tmp/hermes-agent
   git init -q "$src"
   git -C "$src" remote add origin https://github.com/NousResearch/hermes-agent.git
   git -C "$src" fetch -q --depth=1 origin "$full"
   shallow=--depth=1
 fi
 work=$(mktemp -d)
-trap 'git -C "$src" worktree remove --force "$work/pinned" 2>/dev/null; git -C "$src" worktree remove --force "$work/main" 2>/dev/null; rm -rf "$work"' EXIT
+# The clone this script made (about 186 MB) goes too; a clone given on the command line is kept.
+trap 'git -C "$src" worktree remove --force "$work/pinned" 2>/dev/null; git -C "$src" worktree remove --force "$work/main" 2>/dev/null; rm -rf "$work"; [ -z "$clone_tmp" ] || rm -rf "$clone_tmp"' EXIT
 script="$here/phone/hermes-patches.sh"
 
 git -C "$src" worktree add -q --detach "$work/pinned" "$pin"

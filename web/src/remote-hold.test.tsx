@@ -1,18 +1,27 @@
 // @vitest-environment happy-dom
 // A remote image, video or audio in a reply waits for a tap in every chat, not only after a phone_data read.
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeAll, describe, expect, test } from 'vitest'
 import { Media } from './components/Media'
 
 beforeAll(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
+// Every root is unmounted after each test, so no React work is left to run after happy-dom tears the window down.
+const roots: Root[] = []
+afterEach(async () => {
+  await act(async () => roots.splice(0).forEach(r => r.unmount()))
+  document.body.replaceChildren()
+})
+
 async function draw(src: string) {
   const host = document.createElement('div')
   document.body.append(host)
-  await act(async () => createRoot(host).render(<Media src={src} alt="x" />))
+  const root = createRoot(host)
+  roots.push(root)
+  await act(async () => root.render(<Media src={src} alt="x" />))
   return host
 }
 
