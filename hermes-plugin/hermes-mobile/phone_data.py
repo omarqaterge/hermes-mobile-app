@@ -362,12 +362,16 @@ def stored_ancestors(sid: str, limit: int = 16, budget: float = 1.0, db=None):
     return None if got is None else [p for p, _t in got]
 
 
+MAX_CONFIG_BYTES = 200_000   # matches plugin_api.NESTED_CONFIG_MAX: never read unbounded model_config blobs
+MAX_ID_BYTES = 200           # matches plugin_api.NESTED_ID_MAX
+
+
 def compression_ancestors(sid: str, limit: int = MAX_CHATS, budget: float = ANCESTRY_BUDGET_S) -> list:
     """The stored ids a context compression rotated away from, nearest first: a chat that read in segment S1 and was
     compressed to S2 is known to the app as S1 only. Walks `parent_session_id` upward while the parent ended by
-    compression (the same relation the dashboard's sent-counts walks downward). Read-only; [] when there is no database,
-    no such session or anything fails. The whole lookup stops after `budget` seconds (3), busy waits included, and returns what
-    it found; callers run it off the tool-call thread."""
+    compression AND the child row is a real continuation (`_is_continuation_row`, never a branch or sub-agent).
+    Read-only; [] when there is no database, no such session or anything fails. The whole lookup stops after `budget`
+    seconds (3), busy waits included, and returns what it found; callers run it off the tool-call thread."""
     out: list = []
     try:
         import sqlite3
@@ -378,16 +382,32 @@ def compression_ancestors(sid: str, limit: int = MAX_CHATS, budget: float = ANCE
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=max(0.05, min(2.0, budget)))
         try:
             con.set_progress_handler(lambda: 1 if time.monotonic() > end else 0, 1000)
+            try:
+                con.execute("SELECT model_config FROM sessions LIMIT 0")
+                has_cfg = True
+            except sqlite3.OperationalError:
+                has_cfg = False
             cur = sid
             for _ in range(limit):
                 left = end - time.monotonic()
                 if left <= 0:
                     break
                 con.execute(f"PRAGMA busy_timeout={int(min(2.0, left) * 1000)}")
-                row = con.execute(
-                    "SELECT p.id FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
-                    "WHERE c.id = ? AND p.end_reason = 'compression'", (cur,)).fetchone()
-                if not row or not isinstance(row[0], str) or not row[0] or row[0] == sid or row[0] in out:
+                if has_cfg:
+                    row = con.execute(
+                        "SELECT p.id, c.model_config FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
+                        "WHERE c.id = ? AND p.end_reason = 'compression' "
+                        "AND length(CAST(p.id AS BLOB)) <= ? "
+                        "AND COALESCE(length(CAST(c.model_config AS BLOB)), 0) <= ?",
+                        (cur, MAX_ID_BYTES, MAX_CONFIG_BYTES)).fetchone()
+                else:
+                    row = con.execute(
+                        "SELECT p.id, NULL FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
+                        "WHERE c.id = ? AND p.end_reason = 'compression' "
+                        "AND length(CAST(p.id AS BLOB)) <= ?",
+                        (cur, MAX_ID_BYTES)).fetchone()
+                if (not row or not isinstance(row[0], str) or not row[0] or row[0] == sid or row[0] in out
+                        or not _is_continuation_row(row[1])):
                     break
                 out.append(row[0])
                 cur = row[0]
@@ -420,10 +440,12 @@ def _is_continuation_row(raw: Any) -> bool:
     return isinstance(cfg, dict) and not cfg.get("_delegate_from") and not cfg.get("_branched_from")
 
 
-def subagent_descendants(sids: Any, limit: int = 64, budget: float = 1.0, db=None) -> list:
+def subagent_descendants(sids: Any, limit: int = 64, budget: float = 1.0, db=None, stop_if=None) -> list:
     """Delegated sub-agents (and their nested sub-agents and compression continuations) spawned by any session in `sids`,
-    read from `state.db`. Never follows branches (`_branched_from`), so a branch reading phone data never taints its parent.
-    Read-only and bounded by depth 16, `limit` rows and `budget` seconds. Never raises."""
+    read from `state.db`. Filters `_delegate_from` (and `end_reason = 'compression'` for sub-agent continuations) and
+    bounds `id` / `model_config` byte lengths in SQL before `LIMIT`, ordered newest first so many branches cannot crowd
+    out a sub-agent. Never follows branches (`_branched_from`). When `stop_if` is given, returns immediately as soon as
+    `stop_if([cid])` is truthy so truncation cannot hide a tainted descendant. Read-only and bounded; never raises."""
     out: list = []
     try:
         import sqlite3
@@ -436,25 +458,41 @@ def subagent_descendants(sids: Any, limit: int = 64, budget: float = 1.0, db=Non
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=max(0.05, min(2.0, budget)))
         try:
             con.set_progress_handler(lambda: 1 if time.monotonic() > end else 0, 1000)
+            try:
+                con.execute("SELECT started_at FROM sessions LIMIT 0")
+                order_col = "c.started_at DESC, c.rowid DESC"
+            except sqlite3.OperationalError:
+                order_col = "c.rowid DESC"
+            cap = max(limit, 512) if stop_if is not None else limit
             frontier = list(seed)
             seen = set(seed)
             subagents = set()
-            for _ in range(16):
-                if not frontier or len(out) >= limit:
+            for depth in range(16):
+                if not frontier or len(out) >= cap:
                     break
                 left = end - time.monotonic()
                 if left <= 0:
                     break
                 con.execute(f"PRAGMA busy_timeout={int(min(2.0, left) * 1000)}")
                 marks = ",".join("?" * len(frontier))
+                # Depth 0 nodes are the seed chat / its compression segments: only delegated sub-agents count.
+                # Deeper frontier nodes are all already sub-agents, so compression continuations count too.
+                kind_sql = (
+                    "c.model_config LIKE '%_delegate_from%'"
+                    if depth == 0
+                    else "(c.model_config LIKE '%_delegate_from%' OR p.end_reason = 'compression')"
+                )
                 rows = con.execute(
                     f"SELECT c.id, c.parent_session_id, c.model_config, p.end_reason "
                     f"FROM sessions c JOIN sessions p ON p.id = c.parent_session_id "
-                    f"WHERE c.parent_session_id IN ({marks}) LIMIT ?",
-                    (*frontier, limit * 2)).fetchall()
+                    f"WHERE c.parent_session_id IN ({marks}) AND {kind_sql} "
+                    f"AND length(CAST(c.id AS BLOB)) <= ? "
+                    f"AND COALESCE(length(CAST(c.model_config AS BLOB)), 0) <= ? "
+                    f"ORDER BY {order_col} LIMIT ?",
+                    (*frontier, MAX_ID_BYTES, MAX_CONFIG_BYTES, cap - len(out))).fetchall()
                 nxt: list = []
                 for cid, pid, raw_cfg, p_end_reason in rows:
-                    if not isinstance(cid, str) or not cid or cid in seen or len(out) >= limit:
+                    if not isinstance(cid, str) or not cid or cid in seen or len(out) >= cap:
                         continue
                     is_sub = _is_delegate_row(raw_cfg) or (
                         pid in subagents and p_end_reason == "compression" and _is_continuation_row(raw_cfg)
@@ -463,6 +501,8 @@ def subagent_descendants(sids: Any, limit: int = 64, budget: float = 1.0, db=Non
                         seen.add(cid)
                         subagents.add(cid)
                         out.append(cid)
+                        if stop_if is not None and stop_if([cid]):
+                            return out
                         nxt.append(cid)
                 frontier = nxt
         finally:

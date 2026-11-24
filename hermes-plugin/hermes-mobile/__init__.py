@@ -262,12 +262,39 @@ def _post(event: dict) -> bool:
     return result == "ok"
 
 
+def _fallback_text(event: dict) -> tuple:
+    """Title and body for a Termux:API fallback notification. When the event is from a phone-data chat or is a
+    phone-data approval, returns plain generic text with no command, description, hex or chat content."""
+    kind = str(event.get("kind") or "")
+    phone_data = bool(event.get("phone_data")) or (
+        kind == "approval" and (
+            event.get("command") == PHONE_DATA_COMMAND
+            or str(event.get("what") or "").startswith("phone_data:")
+            or str(event.get("body") or "").startswith("phone_data:")
+        )
+    )
+    if phone_data:
+        if kind == "approval":
+            return "Approval needed", "Open Hermux to review an approval request"
+        if kind == "ask":
+            return "Hermux asks", "Hermes has a question, open Hermux to answer"
+        if kind == "error":
+            return "Hermux", "Open Hermux to check a failed turn"
+        if kind == "cron":
+            return "Hermux", "Open Hermux to check a scheduled job"
+        if kind == "learning":
+            return "Hermux", "Learned something new"
+        return "Hermux", "Open Hermux to view this message"
+    return event.get("title", "Hermux"), event.get("body", "")
+
+
 def _termux_fallback(event: dict) -> None:
     session = event.get("session") or ""
     action = f"am start -n {APP_COMPONENT}" + (f" --es session {session}" if session else "")
+    title, content = _fallback_text(event)
     try:
-        subprocess.Popen([NOTIFY_BIN, "--id", f"hm-{event.get('kind')}-{session}", "--title", event.get("title", "Hermux"),
-                          "--content", event.get("body", ""), "--action", action, "--priority", "high"],
+        subprocess.Popen([NOTIFY_BIN, "--id", f"hm-{event.get('kind')}-{session}", "--title", title,
+                          "--content", content, "--action", action, "--priority", "high"],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
     except Exception:
@@ -1419,9 +1446,8 @@ def _on_pre_approval_request(command=None, description=None, session_key=None, s
         timeout = 60
     extra = {}
     task_id = kw.get("task_id", "")
-    if (command == PHONE_DATA_COMMAND
-            or _chat_has_read_phone_data(session_id or session_key, task_id)
-            or (session_key and session_key != session_id and _chat_has_read_phone_data(session_key, task_id))):
+    extra_ids = (session_key,) if session_key and session_key != session_id else ()
+    if command == PHONE_DATA_COMMAND or _chat_has_read_phone_data(session_id or session_key, task_id, extra_ids=extra_ids):
         extra["phone_data"] = True  # only tightens privacy (hides approval details on the lock screen)
     _send("approval", "Approval needed", body, sid, urgent=True, key=session_key or "", timeout=timeout,
           what=description or "", command=command or "",
@@ -1901,18 +1927,19 @@ def _subagent_descendants(ids) -> list:
     return out
 
 
-def _chat_has_read_phone_data(session_id, task_id="") -> bool:
-    """Synchronous check of whether this chat (including compression lineage, branch inheritance via _inherit_read,
-    in-memory and stored sub-agent lineage in both directions, and detached background tasks) has read phone data.
-    Costs nothing while no chat has read; fails closed on missing chat id when any chat has read, damaged/full record,
-    or module error."""
+def _chat_has_read_phone_data(session_id, task_id="", extra_ids=()) -> bool:
+    """Synchronous check of whether this chat (including `extra_ids`, compression lineage, branch inheritance via
+    `_inherit_read`, in-memory and stored sub-agent lineage in both directions, and detached background tasks) has read
+    phone data. Costs nothing while no chat has read; fails closed on missing chat id when any chat has read,
+    damaged/full record, or module error."""
+    extra_clean = [str(x or "").strip() for x in (extra_ids or ()) if str(x or "").strip()]
     try:
         pt = _phone_taint()
         if not pt.any_read():
             return False
         ids = list(pt.chat_ids(session_id, task_id))
         started_by = _detached_from(session_id, task_id)
-        base = list(dict.fromkeys([*ids, *(started_by or [])]))
+        base = list(dict.fromkeys([*ids, *extra_clean, *(started_by or [])]))
         if not base:
             return True
         # Follow in-memory sub-agent links upward (a sub-agent inherits its parent's taint).
@@ -1932,14 +1959,16 @@ def _chat_has_read_phone_data(session_id, task_id="") -> bool:
                     _report_taint(new)
                 if pt.has_read(lineage):
                     return True
-        # Follow sub-agent links downward (in-memory and in state.db): a parent whose sub-agent (or nested/compressed
-        # sub-agent) read phone data counts as tainted; branches are never followed downward.
-        desc = list(dict.fromkeys([
-            *pt.descendants(lineage),
-            *_subagent_descendants(lineage),
-            *_phone_data().subagent_descendants(lineage, budget=1.0),
-        ]))
-        if desc and pt.has_read(desc):
+        # Follow sub-agent links downward (in-memory first, then state.db stopping as soon as any descendant is tainted):
+        # a parent whose sub-agent (or nested/compressed sub-agent) read phone data counts as tainted; branches are never
+        # followed downward.
+        mem_desc = list(dict.fromkeys([*pt.descendants(lineage), *_subagent_descendants(lineage)]))
+        if mem_desc and pt.has_read(mem_desc):
+            pt.mark(scope)
+            _report_taint(scope)
+            return True
+        db_desc = _phone_data().subagent_descendants(lineage, budget=1.0, stop_if=pt.has_read)
+        if db_desc and pt.has_read(db_desc):
             pt.mark(scope)
             _report_taint(scope)
             return True
@@ -1952,7 +1981,8 @@ def _chat_has_read_phone_data(session_id, task_id="") -> bool:
         return False
     except Exception:
         try:
-            fallback_ids = [x for x in (_ui_session_id(), str(session_id or task_id or "").strip()) if x]
+            fallback_ids = list(dict.fromkeys(
+                x for x in (_ui_session_id(), str(session_id or task_id or "").strip(), *extra_clean) if x))
             if fallback_ids:
                 fallback_ids = list(dict.fromkeys(
                     fallback_ids + _subagent_ancestors(fallback_ids) + _subagent_descendants(fallback_ids)))
