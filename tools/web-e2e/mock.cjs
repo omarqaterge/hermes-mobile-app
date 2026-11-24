@@ -37,7 +37,8 @@ function canvasPathError(rawPath, forSave) {
   if (forSave && s.split('/').includes('..')) return { status: 403, detail: 'refused: invalid path' }
   const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
   const keepDoubleSlash = expanded.startsWith('//') && !expanded.startsWith('///')
-  const norm = path.posix.normalize(expanded)
+  // Like Python's pathlib and canvas.ts, a trailing slash doesn't count, so /root/ is the bare root (refused on save).
+  const norm = path.posix.normalize(expanded).replace(/\/+$/, '') || '/'
   const p = keepDoubleSlash ? '/' + norm : norm
   const segs = p.split('/').filter(Boolean)
   const low = segs.map(foldSegmentMock)

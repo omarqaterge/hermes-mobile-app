@@ -15,6 +15,11 @@
     { "path": "~", "open": "allow", "save": "refuse", "note": "bare tilde root refused on save" },
     { "path": "/sdcard", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "bare /sdcard root refused on save" },
     { "path": "/storage/emulated/0", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "bare /storage/emulated/0 root refused on save" },
+    { "path": "{HOME}/", "open": "allow", "save": "refuse", "note": "bare home root with a trailing slash refused on save" },
+    { "path": "~//", "open": "allow", "save": "refuse", "note": "bare tilde root with trailing slashes refused on save" },
+    { "path": "{HOME}/./", "open": "allow", "save": "refuse", "note": "bare home root spelled with ./ refused on save" },
+    { "path": "/sdcard/", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "bare /sdcard root with a trailing slash refused on save" },
+    { "path": "///storage/emulated/0/", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "bare /storage/emulated/0 root behind /// and a trailing slash refused on save" },
 
     { "path": "/{HOME}/notes.md", "open": "allow", "save": "refuse", "note": "POSIX leading // home path refused on save (distinct from /)" },
     { "path": "//root/notes.md", "open": "allow", "save": "refuse", "note": "POSIX leading //root path refused on save" },
