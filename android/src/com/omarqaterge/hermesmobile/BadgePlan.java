@@ -35,6 +35,12 @@ final class BadgePlan {
         return "reply".equals(kind) ? 1 : 0;
     }
 
+    /** Derives the card tag for an inline RemoteInput answer; errorCard is honoured only when kind is "reply". */
+    static String answerTag(String kind, String session, boolean errorCard) {
+        String prefix = "ask".equals(kind) ? "ask:" : ("reply".equals(kind) && errorCard ? "error:" : "reply:");
+        return prefix + (session == null ? "" : session);
+    }
+
     static final class Plan {
         /** Active reply tags to cancel (nothing unseen, or the chat was already seen). */
         final List<String> cancelTags;
