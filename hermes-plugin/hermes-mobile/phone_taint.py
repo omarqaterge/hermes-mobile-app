@@ -96,6 +96,33 @@ def ancestors(ids: Any) -> List[str]:
     return _with_parents(_norm(ids))
 
 
+def descendants(ids: Any) -> List[str]:
+    """Sub-agents (at any depth, up to 16) spawned by these chats in this process's subagent links, excluding the input ids."""
+    seed = _norm(ids)
+    if not seed:
+        return []
+    with _lock:
+        items = list(_parents.items())
+    by_parent: Dict[str, List[str]] = {}
+    for child, parent in items:
+        by_parent.setdefault(parent, []).append(child)
+    seen = set(seed)
+    frontier = list(seed)
+    out: List[str] = []
+    for _ in range(16):
+        if not frontier or len(out) >= 256:
+            break
+        nxt: List[str] = []
+        for p in frontier:
+            for c in by_parent.get(p, ()):
+                if c not in seen and len(out) < 256:
+                    seen.add(c)
+                    out.append(c)
+                    nxt.append(c)
+        frontier = nxt
+    return out
+
+
 def _read_state() -> Tuple[Optional[Dict[str, float]], Dict[str, float]]:
     """The saved chats and, for those this version first recorded, when each first read (`since`). Chats: {} when there
     is no file; None when the file exists but is damaged (not JSON, no `chats` object, a time that is not a number,

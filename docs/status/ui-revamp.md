@@ -486,6 +486,54 @@ here but not installed on a phone, and going back has not been tried on one.
   read-aloud, scheduled-job cards, HyperOS badge behaviour on `Learning`/`Scheduled jobs`/`error` cards, and
   `RemoteInput` dismissal on a real phone.
 
+- **Notification and plugin follow-ups (F13, `fix-followups-notifications`, PR against `redesign`).**
+  Follow-ups from security reviews of PR #230:
+  - **Lock-screen privacy for tainted-chat approvals:** `_on_pre_approval_request` marks approvals from tainted chats
+    with `phone_data: true` (only tightening); `HermesService.phoneDataEvent` separates `phone_data_read` (actual
+    `phone_data` tool reads, stripping spoofed flags on ordinary approvals) from `phone_data` (chat taint); all three
+    `hideOnLockScreen` call sites (approval pop-up, status chip, 20 s / 40 s re-alert) use `isPhoneData` on the matching
+    channel so command approvals in tainted chats stay private on the lock screen while unlocked chip titles and the
+    island panel keep command wording and buttons distinct from phone-data reads.
+  - **`answerFromNotification` robustness & `RemoteInput` `fillIn` hardening:** `answerAction` encodes `kind`, `session`
+    and `error_card` in the base `Intent`'s data URI (`BadgePlan.answerUri` / `parseAnswerUri`) instead of mutable extras
+    so `FLAG_MUTABLE` `fillIn` cannot overwrite `kind`, `session`, `panel`, `error_card` or inject `text`;
+    `answerFromNotification` null-checks `i.getStringExtra("text")` before trimming, locks `pending.answered` +
+    `syncPending` + guarded `postStatus` on `HermesService.this`, and guards `nm.cancel`, `dropEmptySummary`
+    (`cancelCard`) and `postGrouped` (and null-checks `nm` in `dismissAnsweredCard`).
+  - **Plugin edge cases:** `_on_pre_llm_call` passes `turn_id` to `_clear_reply` and tracks `_last_text_owner`
+    (`_last_owner`), so a turn with `turn_id=None` neither clears nor steals another keyed turn's reply while still
+    clearing earlier untagged replies; `_chat_has_read_phone_data` follows sub-agent lineage in both directions
+    (`phone_taint.ancestors`/`descendants`, `_subagent_ancestors`/`_subagent_descendants`, and
+    `phone_data.subagent_descendants` over `state.db` including compressed sub-agents, never following branches
+    downward).
+  - **Security-review follow-ups on PR #232:**
+    - Approval notifications for phone-data reads and tainted chats now also redact their own title and body to
+      `NotifyPrivacy.APPROVAL_LOCKED` ("Hermux needs your approval") and omit "Allow once" / "Allow session" (keeping
+      "Deny" only; tapping the card still unlocks and opens the panel or app) whenever `MainActivity.keyguardLocked`
+      is true (failing closed when `KeyguardManager` is null, with `askUnlock` null-checking `km`; via
+      `NotifyPrivacy.redactApproval` in `buildApprovalCard` for `onEvent` `case "approval"` / `reAlertApproval` /
+      `refreshApprovalPopups` and in `approvalNotification`), so details stay hidden even under Android's "Show all
+      notification content" lock-screen setting and no blind approval is possible. On lock/unlock transitions
+      `tickApproval` (`lastApprovalLocked`) calls `refreshApprovalPopups` to silently (`setOnlyAlertOnce(true)`)
+      re-post every active pending tainted `approval:<session>` card redacted on lock and restored on unlock (alongside
+      the 1 s chip tick), and cancels expired `approval:<session>` cards when `pending.expire` drops a session's last
+      pending approval.
+    - `_termux_fallback` (`_fallback_text`) redacts `phone_data` events (approvals to "Open Hermux to review an approval
+      request", other kinds to plain generic text) instead of passing commands or descriptions to `termux-notification`.
+    - `phone_data.subagent_descendants` filters `_delegate_from` / sub-agent compression continuations (excluding
+      `_branched_from` in SQL at depth ≥ 1) and bounds `id` / `model_config` byte lengths (`MAX_ID_BYTES`,
+      `MAX_CONFIG_BYTES`) in SQL before `LIMIT`, orders newest first, and stops immediately via `stop_if`;
+      `compression_ancestors` checks `_is_continuation_row` so a clean branch of a compressed parent is not linked to
+      the parent's later sub-agents; `_on_pre_approval_request` checks both `session_id` and `session_key` in one
+      `_chat_has_read_phone_data` call (`extra_ids`); version coupling with older apps lacking `phone_data_read`
+      (fail-closed) is documented in spec 4.4.
+  Verified with `tools/check.sh plugin android` (`tools/java-check.sh` including `tools/test_badge_and_reply.sh`,
+  `tools/api-check.sh`, `tools/test_island_state.sh`, `tools/test_notify_choice.sh`, `tools/test_notification_unlock.sh`,
+  all plugin tests including `tools/test_chip.py`, `tools/test_phone_taint.py`, `tools/test_phone_data.py`,
+  `tools/test_approval.py`, `check_spec.py`, `changelog.py check`, `check-no-emoji.py`); no real phone or emulator.
+  Needs a phone: lock-screen private approval rendering for a command approval in a tainted chat and `RemoteInput`
+  inline reply after the URI change.
+
 - **Canvas save and approvals wording follow-ups (`fix-followups-web`, PR against `redesign`).**
   - **Canvas open/save-file guards (`canvas.py`, `plugin_api.py`, `canvas.ts`, `Canvas.tsx`, `Screens.tsx`, `tools/canvas-path-vectors.json`):** `open_file` allows read-only opens of text files Files can browse (including outside save roots such as `/tmp`, `/storage/<UUID>`, `/etc/hosts`) via parent-`O_NOFOLLOW` bounded reads, while refusing NUL-byte/`~user` paths, `/proc`/`/sys`/`/dev`, `proot-distro`/`chroot-distro`, `etc/ssh`, and secret/internal segments at any depth case-insensitively (`.hermes-mobile`, `.ssh`, `.android`, `.gnupg`, `.netrc`, `.aws`, `.termux`, `.env*`, Hermes/profile secrets and `mobile/` under any `.hermes` segment plus resolved `_hermes_homes()` including symlinked profiles, and hard links inside Hermes folders). `save_file` uses parent-dir-fd `O_DIRECTORY | O_NOFOLLOW` traversal (falling back before any write only when `openat`/`dir_fd` itself is unsupported) to refuse leaf or intermediate symlinks, `..` segments, paths outside case-sensitive home/`/sdcard`/`/storage/emulated/0` roots, and protected segments at any depth case-insensitively (`.hermes`, `.hermes-mobile`, profiles, plugin dir, secrets, `.gitconfig`, `.config/git`, `.config/fish`, `bin`, `.local/bin`, `.termux`, shell rc files) with HTTP 403, preserves `mode & 0o777` via `os.fchmod`, converts filesystem `OSError` to plain-word `CanvasError`, and returns HTTP 409 on disk change unless `force: true`. All `/canvas*` routes in `plugin_api.py` are plain `def` and `_canvas()` guards module load with a lock and registers `hm_canvas` only after `exec_module`. Shared parity vectors in `tools/canvas-path-vectors.json` are checked by both `tools/test_canvas.py` and `web/src/canvas-save.test.ts`. Files disables "Open in canvas" for always-refused files (`canvasOpenBlockReason`) and awaits `openFileInCanvas` before closing; `Canvas.tsx` disables "Save to the original file" via case-sensitive allow-list-first `canvasSaveBlockReason`, and `saveToFile` captures `state.session` and checks `lockView()` before both save calls.
   - **Advanced settings approvals payload guard (`Settings.tsx`, `approvals-mode.ts`):** Checked against the pinned Hermes's real `/api/config/schema` (887 flattened leaf fields: `string`, `number`, `list`, `boolean`, `select`; no parent `approvals` or `object`/`dict` fields exist today, and `approvals.mode` is the only key controlling interactive approval mode). Kept `configApprovalsUpdate` and the post-confirm `lockView()` check in `ConfigTab.save` as a cheap guard tested by `approvals-mode.test.ts` (and kept `ConfigSheet` unchanged).

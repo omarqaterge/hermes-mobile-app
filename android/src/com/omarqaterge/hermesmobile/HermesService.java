@@ -1539,6 +1539,14 @@ public class HermesService extends Service {
                 final JSONObject ev = phoneDataEvent(e);
                 body = ev.optString("body", "");
                 boolean ticking = pendingApproval != null;
+                boolean lockedNow = MainActivity.keyguardLocked(this);
+                if (!ticking) lastApprovalLocked = lockedNow;
+                else if (lastApprovalLocked != null && lockedNow != lastApprovalLocked) {
+                    // The phone locked or unlocked since the last tick: bring the cards already showing in line now, or
+                    // the next tick sees no change and a card posted in between keeps the wrong (open or hidden) text.
+                    lastApprovalLocked = lockedNow;
+                    main.post(() -> refreshApprovalPopups(lockedNow));
+                }
                 pending.arrived(PendingAsk.APPROVAL, session, ev.optString("request_id", ""), ev,
                         System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L);
                 syncPending();
@@ -1547,13 +1555,9 @@ public class HermesService extends Service {
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
-                Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
-                hideOnLockScreen(b, ev.optBoolean("phone_data", false));
-                // Answer right from the popup, like the in-app sheet.
-                if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
-                if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
-                b.addAction(approveAction(ev, "deny", "Deny"));
-                postGrouped(nm, tag(kind, session), b.build());
+                boolean phoneData = isPhoneData(ev, session);
+                boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, lockedNow);
+                postGrouped(nm, tag(kind, session), buildApprovalCard(ev, session, title, body, phoneData, lockedPrivate, false));
                 return;
             }
             case "ask": {
@@ -1957,7 +1961,7 @@ public class HermesService extends Service {
             JSONObject a = e.payload;
             out.add(new IslandState.Approval(e.session, e.id, IslandState.chatLine(chatTitle(e.session), a.optString("profile", "")),
                     a.optString("what", ""), a.optString("command", ""), a.optString("body", ""), a.optBoolean("allow_session", true),
-                    a.optBoolean("phone_data", false), a.optBoolean("phone_data_unreadable", false), e.deadline,
+                    a.optBoolean("phone_data_read", false), a.optBoolean("phone_data_unreadable", false), e.deadline,
                     Math.max(1, a.optLong("timeout", 60)) * 1000L));
         }
         return out;
@@ -2393,9 +2397,11 @@ public class HermesService extends Service {
         float frac = left / (float) total;
         int barColor = frac > 0.5f ? GOLD : frac > 0.2f ? AMBER : RED;
 
-        String what = clip(a.optString("what", ""), 280);
-        String cmd = clip(a.optString("command", ""), 400);
-        if (what.isEmpty() && cmd.isEmpty()) what = clip(a.optString("body", "a command"), 400);
+        boolean phoneData = isPhoneData(a, a.optString("session", null));
+        boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
+        String what = lockedPrivate ? "" : clip(a.optString("what", ""), 280);
+        String cmd = lockedPrivate ? "" : clip(a.optString("command", ""), 400);
+        if (!lockedPrivate && what.isEmpty() && cmd.isEmpty()) what = clip(a.optString("body", "a command"), 400);
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
         if (!what.isEmpty()) {
             t.append(what.substring(0, 1).toUpperCase() + what.substring(1));
@@ -2412,7 +2418,8 @@ public class HermesService extends Service {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_shield)
                 .setColor(barColor)
-                .setContentTitle(a.optBoolean("phone_data", false) ? "Hermux wants to read your phone" : "Hermux wants to run a command")
+                .setContentTitle(lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED
+                        : (a.optBoolean("phone_data_read", false) ? "Hermux wants to read your phone" : "Hermux wants to run a command"))
                 .setContentText(t)
                 .setSubText((sub != null ? sub + " · " : "") + (sending ? SENDING_ANSWER : "expires in " + secs + "s"))
                 .setOngoing(true)
@@ -2432,26 +2439,48 @@ public class HermesService extends Service {
             b.setStyle(new Notification.BigTextStyle().bigText(t));
         }
         if (!sending) { // while the answer is on its way, no second one
-            if (!a.optBoolean("phone_data_unreadable", false))
-                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow once", GREEN), approveIntent(a, "once"))).build());
-            if (a.optBoolean("allow_session", true))
-                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
+            if (!lockedPrivate) { // never offer blind Allow while redacted on the lock screen; Deny stays one tap
+                if (!a.optBoolean("phone_data_unreadable", false))
+                    b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow once", GREEN), approveIntent(a, "once"))).build());
+                if (a.optBoolean("allow_session", true))
+                    b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
+            }
             b.addAction(new Notification.Action.Builder(null, colored("Deny", RED), approveIntent(a, "deny")).build());
         }
-        hideOnLockScreen(b, a.optBoolean("phone_data", false));
+        hideOnLockScreen(b, CH_STATUS, phoneData);
         promote(b, secs + "s");
         return b.build();
     }
 
-    /** A phone-data approval (kind, search text, wording) never shows on the lock screen: private, with a public version
-     *  that only says Hermux needs an answer. For a phone that locks after the notification was posted. Other
-     *  notifications are unchanged. */
-    void hideOnLockScreen(Notification.Builder b, boolean phoneData) {
+    /** Builds an approval pop-up card. When {@code lockedPrivate} is true (tainted or phone-data approval while locked),
+     *  the title/body are replaced with {@link NotifyPrivacy#APPROVAL_LOCKED} and Allow actions are omitted (Deny only)
+     *  so the user can never blindly approve an unseen command; tapping the card still unlocks and opens the app.
+     *  {@code silent} sets {@code setOnlyAlertOnce(true)} for in-place lock/unlock updates without a new heads-up. */
+    Notification buildApprovalCard(JSONObject ev, String session, String titleText, String bodyText,
+                                   boolean phoneData, boolean lockedPrivate, boolean silent) {
+        Notification.Builder b = alertBuilder(CH_ALERT,
+                lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED : titleText,
+                lockedPrivate ? "" : clip(bodyText, 600), session, true);
+        if (silent) b.setOnlyAlertOnce(true);
+        hideOnLockScreen(b, CH_ALERT, phoneData);
+        if (!lockedPrivate) {
+            if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
+            if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
+        }
+        b.addAction(approveAction(ev, "deny", "Deny"));
+        return b.build();
+    }
+
+    /** Any approval for a phone-data read or a chat that has read phone data never shows its command, description,
+     *  kind or search text on the lock screen: private, with a generic public version on the same channel (in addition
+     *  to redacting the notification's own text and omitting Allow actions while the phone is locked via
+     *  NotifyPrivacy.redactApproval). */
+    void hideOnLockScreen(Notification.Builder b, String channel, boolean phoneData) {
         if (!phoneData) return;
         b.setVisibility(Notification.VISIBILITY_PRIVATE);
-        b.setPublicVersion(new Notification.Builder(this, CH_ALERT)
+        b.setPublicVersion(new Notification.Builder(this, channel)
                 .setSmallIcon(R.drawable.ic_stat_shield)
-                .setContentTitle("Hermux needs your approval")
+                .setContentTitle(NotifyPrivacy.APPROVAL_LOCKED)
                 .build());
     }
 
@@ -2462,35 +2491,92 @@ public class HermesService extends Service {
 
     long approvalDeadline;
     long lastReAlert = -1;
+    Boolean lastApprovalLocked;
 
     void reAlertApproval() {
         JSONObject e = pendingApproval;
         if (e == null) return;
         String session = e.optString("session", null);
+        boolean phoneData = isPhoneData(e, session);
+        boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
         NotificationManager nm = getSystemService(NotificationManager.class);
-        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermux"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
-        hideOnLockScreen(b, e.optBoolean("phone_data", false));
-        if (!e.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(e, "once", "Allow once"));
-        if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
-        b.addAction(approveAction(e, "deny", "Deny"));
+        Notification card = buildApprovalCard(e, session, e.optString("title", "Hermux"),
+                "Still waiting for your answer: " + clip(e.optString("body", ""), 600), phoneData, lockedPrivate, false);
         nm.cancel(tag("approval", session), 2); // a fresh post is what re-triggers the heads-up
-        postGrouped(nm, tag("approval", session), b.build());
+        postGrouped(nm, tag("approval", session), card);
+    }
+
+    /** Silently re-posts every active pending tainted approval pop-up card on a lock/unlock transition so a card posted
+     *  while unlocked is redacted immediately when the phone locks (even under "Show all notification content", after
+     *  40 s, on a short timeout, or for a second queued chat) and restored with its details and Allow buttons on unlock. */
+    void refreshApprovalPopups(boolean lockedNow) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        java.util.HashSet<String> active = null;
+        try {
+            android.service.notification.StatusBarNotification[] live = nm.getActiveNotifications();
+            if (live != null) {
+                active = new java.util.HashSet<>();
+                for (android.service.notification.StatusBarNotification sbn : live) {
+                    if (sbn.getId() == 2 && sbn.getTag() != null) active.add(sbn.getTag());
+                }
+            }
+        } catch (Exception ignored) {
+            // fail closed below when the active notification list cannot be read
+        }
+        java.util.LinkedHashMap<String, JSONObject> latest = new java.util.LinkedHashMap<>();
+        java.util.HashSet<String> taintedSessions = new java.util.HashSet<>();
+        for (PendingAsk.Entry<JSONObject> en : pending.all(PendingAsk.APPROVAL)) {
+            latest.put(en.session, en.payload);
+            if (isPhoneData(en.payload, en.session)) taintedSessions.add(en.session);
+        }
+        boolean canPost = !MainActivity.visible && NotifyChoice.needsMe(this);
+        for (java.util.Map.Entry<String, JSONObject> item : latest.entrySet()) {
+            String ses = item.getKey();
+            if (!taintedSessions.contains(ses)) continue;
+            String cardTag = tag("approval", ses);
+            if (active != null && !active.contains(cardTag)) continue;
+            if (!canPost) {
+                if (lockedNow) cancelCard(nm, cardTag);
+                continue;
+            }
+            JSONObject ev = item.getValue();
+            boolean lockedPrivate = NotifyPrivacy.redactApproval(true, lockedNow);
+            Notification card = buildApprovalCard(ev, ses, ev.optString("title", "Hermux"),
+                    ev.optString("body", ""), true, lockedPrivate, true);
+            try {
+                postGrouped(nm, cardTag, card);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     /** The approval event as the notification shows it. For a phone-data read (the description starts "phone_data:") the
      *  app writes the wording itself from the decoded args, so the raw hex never reaches a notification, and offers only
-     *  Allow once and Deny. Any other approval comes back unchanged. {@code phone_data} marks such an event;
-     *  {@code phone_data_unreadable} means the text didn't parse, so there is no Allow at all. */
+     *  Allow once and Deny. {@code phone_data_read} marks such a read request; {@code phone_data_unreadable} means the
+     *  text didn't parse, so there is no Allow at all. Any other approval keeps {@code phone_data} (a taint hint from the
+     *  plugin that hides the approval on the lock screen) while clearing {@code phone_data_read} and {@code phone_data_unreadable}. */
     static JSONObject phoneDataEvent(JSONObject e) {
         // Only the plugin's own request counts: the description names the read AND Hermes's label for the tool is the
         // command. A shell command that mentions phone_data: anywhere else is an ordinary approval, shown as it is.
         String raw = PhoneDataWording.rawOf(e.optString("what", ""), e.optString("command", ""));
-        if (raw == null) return e;
+        if (raw == null) {
+            if (!e.has("phone_data_read") && !e.has("phone_data_unreadable")) return e;
+            try {
+                JSONObject c = new JSONObject(e.toString());
+                c.remove("phone_data_read");
+                c.remove("phone_data_unreadable");
+                return c;
+            } catch (Exception ignored) {
+                return e;
+            }
+        }
         try {
             JSONObject c = new JSONObject(e.toString());
             String text = PhoneDataWording.notificationText(raw);
             c.put("what", text).put("body", text).put("command", "").put("allow_session", false).put("allow_permanent", false)
-                    .put("phone_data", true).put("phone_data_unreadable", PhoneDataWording.wording(raw) == null);
+                    .put("phone_data", true).put("phone_data_read", true)
+                    .put("phone_data_unreadable", PhoneDataWording.wording(raw) == null);
             return c;
         } catch (Exception ex) {
             JSONObject safe = new JSONObject();
@@ -2498,7 +2584,7 @@ public class HermesService extends Service {
                 String text = PhoneDataWording.WARNING;
                 safe.put("session", e.optString("session", "")).put("key", e.optString("key", "")).put("request_id", e.optString("request_id", ""))
                         .put("profile", e.optString("profile", "")).put("timeout", e.optLong("timeout", 60)).put("what", text).put("body", text)
-                        .put("allow_session", false).put("phone_data", true).put("phone_data_unreadable", true);
+                        .put("allow_session", false).put("phone_data", true).put("phone_data_read", true).put("phone_data_unreadable", true);
             } catch (Exception ignored) {
                 // a JSONObject accepts these keys; nothing to do
             }
@@ -2509,22 +2595,42 @@ public class HermesService extends Service {
     /** Ticks the approval countdown once a second until answered or expired. */
     void tickApproval() {
         synchronized (this) {
-            if (pendingApproval == null) return;
+            if (pendingApproval == null) {
+                lastApprovalLocked = null;
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (now > approvalDeadline + 3000) {
+                java.util.LinkedHashSet<String> before = new java.util.LinkedHashSet<>();
+                for (PendingAsk.Entry<JSONObject> en : pending.all(PendingAsk.APPROVAL)) before.add(en.session);
+                pending.expire(now, 3000); // expired; the plugin's clear normally beats this
+                java.util.HashSet<String> after = new java.util.HashSet<>();
+                for (PendingAsk.Entry<JSONObject> en : pending.all(PendingAsk.APPROVAL)) after.add(en.session);
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                for (String ses : before) {
+                    if (!after.contains(ses)) cancelCard(nm, tag("approval", ses));
+                }
+                syncPending();
+                if (pendingApproval == null) lastApprovalLocked = null;
+                postStatus();
+                updateWake();
+                if (pendingApproval != null) main.postDelayed(this::tickApproval, 1000); // another request still waits
+                return;
+            }
+            boolean lockedNow = MainActivity.keyguardLocked(this);
+            if (lastApprovalLocked != null && lockedNow != lastApprovalLocked) {
+                lastApprovalLocked = lockedNow;
+                refreshApprovalPopups(lockedNow);
+            } else if (lastApprovalLocked == null) {
+                lastApprovalLocked = lockedNow;
+            }
             // HyperOS drops the heads-up after ~5 s: pop it up again at 20 s and 40 s while unanswered.
-            long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
+            long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - now);
             long sec = elapsed / 1000;
             boolean needs = NotifyChoice.needsMe(this);
             if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && needs) {
                 lastReAlert = sec;
                 reAlertApproval();
-            }
-            if (System.currentTimeMillis() > approvalDeadline + 3000) {
-                pending.expire(System.currentTimeMillis(), 3000); // expired; the plugin's clear normally beats this
-                syncPending();
-                postStatus();
-                updateWake();
-                if (pendingApproval != null) main.postDelayed(this::tickApproval, 1000); // another request still waits
-                return;
             }
             if (needs) postStatus(); // the countdown on the chip; with "needs me" off the chip doesn't show it
         }
@@ -2682,8 +2788,8 @@ public class HermesService extends Service {
         // A phone-data read is never allowed from a notification: this event arrived on /event, which the agent can
         // also post to, so only the page (whose request came from Hermes itself) may mint the one-use grant. Allow
         // opens the app on that chat, where the sheet asks.
-        boolean phoneData = e.optBoolean("phone_data", false);
-        if (phoneData && !"deny".equals(choice)) {
+        boolean phoneDataRead = e.optBoolean("phone_data_read", false);
+        if (phoneDataRead && !"deny".equals(choice)) {
             Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             if (!session.isEmpty()) open.putExtra("session", session);
             return PendingIntent.getActivity(this, approvalCode("phonedata", session, e.optString("request_id", ""), choice), open,
@@ -2700,7 +2806,7 @@ public class HermesService extends Service {
                 .putExtra("request_id", e.optString("request_id", ""))
                 .putExtra("profile", e.optString("profile", ""))
                 .putExtra("choice", choice)
-                .putExtra("phone_data", phoneData);
+                .putExtra("phone_data", phoneDataRead);
         return PendingIntent.getService(this, approvalCode("approve", session, e.optString("request_id", ""), choice), i,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
@@ -2796,7 +2902,7 @@ public class HermesService extends Service {
         if (live == null) return "gone";
         if (!deny) {
             if (deadline <= System.currentTimeMillis()) return "expired"; // Hermes has stopped waiting: no late Allow
-            if (live.optBoolean("phone_data", false) || live.optBoolean("phone_data_unreadable", false)) return "phone data";
+            if (live.optBoolean("phone_data_read", false) || live.optBoolean("phone_data_unreadable", false)) return "phone data";
             if ("session".equals(choice) && !live.optBoolean("allow_session", true)) return "no session choice";
             if (MainActivity.keyguardLocked(this)) return "locked";
             if (ApprovalLock.needed(this) && !ApprovalLock.takeGrant(grant, ApprovalLock.grantFor(session, request, choice), System.currentTimeMillis()))
@@ -2858,9 +2964,9 @@ public class HermesService extends Service {
         }, "hermes-approve").start();
     }
 
-    /** A text field on the notification (RemoteInput). Its PendingIntent must be mutable so Android can attach the
-     *  RemoteInput results; callers with a handle to a mutable PendingIntent can still supply fillIn() extras, so
-     *  answerFromNotification never trusts a raw tag string from the intent and derives the tag from kind/session. */
+    /** A text field on the notification (RemoteInput). Its PendingIntent must be FLAG_MUTABLE so Android can attach the
+     *  RemoteInput results; because Intent.fillIn(other, 0) overwrites extras while leaving non-null data intact, kind,
+     *  session and error_card are carried in the base Intent's data URI (BadgePlan.answerUri) rather than extras. */
     Notification.Action answerAction(String kind, String session, String label, java.util.List<CharSequence> choices) {
         return answerAction(kind, session, label, choices, false);
     }
@@ -2869,13 +2975,22 @@ public class HermesService extends Service {
         android.app.RemoteInput.Builder ri = new android.app.RemoteInput.Builder(REMOTE_TEXT).setLabel("ask".equals(kind) ? "Your answer" : "Message Hermux");
         if (choices != null && !choices.isEmpty()) ri.setChoices(choices.toArray(new CharSequence[0]));
         boolean isError = errorCard && "reply".equals(kind);
-        Intent i = new Intent(this, HermesService.class).setAction(ACTION_ANSWER)
-                .putExtra("kind", kind)
-                .putExtra("session", session == null ? "" : session)
-                .putExtra("error_card", isError);
+        Intent i = new Intent(this, HermesService.class)
+                .setAction(ACTION_ANSWER)
+                .setData(android.net.Uri.parse(BadgePlan.answerUri(kind, session, isError)));
         PendingIntent pi = PendingIntent.getService(this, ("answer:" + kind + ":" + (isError ? "err:" : "") + session).hashCode(), i,
                 PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return unlockFirst(new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false)).build();
+    }
+
+    /** Cancels one grouped card and drops the group summary if it was the last card; guarded so notification failures never crash the service. */
+    void cancelCard(NotificationManager nm, String tag) {
+        if (nm == null) return;
+        try {
+            nm.cancel(tag, 2);
+            dropEmptySummary(nm, tag);
+        } catch (Exception ignored) {
+        }
     }
 
     /** Replaces an active RemoteInput card without its text field so Android / HyperOS exits the active inline-reply
@@ -2883,6 +2998,7 @@ public class HermesService extends Service {
      *  and the 300 ms cleanup cannot race with clear or a newly arrived card. All notification calls are guarded so a
      *  failure on the main thread cannot kill the service. */
     void dismissAnsweredCard(NotificationManager nm, String tag, String channel, String session) {
+        if (nm == null) return;
         boolean posted = false;
         synchronized (HermesService.this) {
             boolean active = false;
@@ -2948,41 +3064,45 @@ public class HermesService extends Service {
     /** Hand a typed answer to the app's page (it holds the connection Hermes asked on). If the app isn't
      *  running, say so and offer to open the chat with the text already in the composer. */
     void answerFromNotification(Intent i) {
+        BadgePlan.AnswerTarget uriTarget = BadgePlan.parseAnswerUri(i.getDataString());
+        boolean remoteAction = uriTarget != null;
         Bundle res = android.app.RemoteInput.getResultsFromIntent(i);
-        boolean fromRemoteInput = res != null;
+        boolean fromRemoteInput = remoteAction || res != null;
         CharSequence cs = res == null ? null : res.getCharSequence(REMOTE_TEXT);
         String typed = cs == null ? "" : cs.toString().trim();
-        final String text = typed.isEmpty() && i.hasExtra("text") ? i.getStringExtra("text").trim() : typed; // a choice button
-        String kind = i.getStringExtra("kind");
-        String session = i.getStringExtra("session");
-        boolean fromPanel = i.getBooleanExtra("panel", false); // the island panel shows its own check
-        boolean errorCard = "reply".equals(kind) && i.getBooleanExtra("error_card", false);
+        String extraText = remoteAction ? null : i.getStringExtra("text");
+        final String text = !typed.isEmpty() ? typed : (extraText == null ? "" : extraText.trim()); // a choice button
+        String kind = remoteAction ? uriTarget.kind : i.getStringExtra("kind");
+        String session = remoteAction ? uriTarget.session : i.getStringExtra("session");
+        boolean fromPanel = !remoteAction && !fromRemoteInput && i.getBooleanExtra("panel", false); // the island panel shows its own check
+        boolean errorCard = remoteAction ? uriTarget.errorCard : ("reply".equals(kind) && i.getBooleanExtra("error_card", false));
         String t = BadgePlan.answerTag(kind, session, errorCard);
         String ch = "ask".equals(kind) ? CH_ALERT : CH_REPLY;
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (text.isEmpty()) {
             if (MainActivity.keyguardLocked(this)) return; // API 26-30 locked phone: keep the card without unlocking
             if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
-            else {
-                nm.cancel(t, 2);
-                dropEmptySummary(nm, t);
-            }
+            else cancelCard(nm, t);
             return;
         }
         if (openToUnlock(session, text, "answer " + kind)) return;
-        if ("ask".equals(kind) && pending.answered(PendingAsk.ASK, session, "")) {
-            syncPending(); // answered (or it failed and says so): the chip goes back to the status
-            postStatus();
+        if ("ask".equals(kind)) {
+            synchronized (HermesService.this) {
+                if (pending.answered(PendingAsk.ASK, session, "")) {
+                    syncPending(); // answered (or it failed and says so): the chip goes back to the status
+                    try {
+                        postStatus();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
         }
         MainActivity a = MainActivity.current;
         java.util.function.Consumer<Boolean> done = ok -> {
             noteOutcome(kind, session, "", ok ? IslandState.Outcome.SENT : IslandState.Outcome.FAILED, ok ? "" : (a == null ? "app not running" : "not delivered"));
             if (ok) {
                 if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
-                else {
-                    nm.cancel(t, 2);
-                    dropEmptySummary(nm, t);
-                }
+                else cancelCard(nm, t);
                 if ("ask".equals(kind) && !fromPanel) confirmChip(CONFIRM_SENT, true); // a card's answer: the chip says Sent
                 return;
             }
@@ -2997,7 +3117,12 @@ public class HermesService extends Service {
                             : "Hermux isn't connected. Tap to open the chat; your text is in the box.", session, false)
                     .setContentIntent(pi);
             makePrivate(b, CH_ALERT, NotifyPrivacy.publicTitle("error"), GOLD);
-            postGrouped(nm, tag("answer_fail", session), badged(b, 0));
+            if (nm != null) {
+                try {
+                    postGrouped(nm, tag("answer_fail", session), badged(b, 0));
+                } catch (Exception ignored) {
+                }
+            }
         };
         if (a == null) {
             done.accept(false);

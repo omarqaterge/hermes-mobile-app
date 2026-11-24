@@ -43,6 +43,24 @@ public class BadgePlanTest {
                 && "reply:c1".equals(BadgePlan.answerTag("other", "c1", true)),
                 "answerTag honours errorCard only when kind is reply");
 
+        // BadgePlan.answerUri / parseAnswerUri: immutable data URI carried on RemoteInput PendingIntents.
+        String uReply = BadgePlan.answerUri("reply", "chat:a/b?c=1&d=2#e", true);
+        BadgePlan.AnswerTarget pReply = BadgePlan.parseAnswerUri(uReply);
+        check(pReply != null && "reply".equals(pReply.kind) && "chat:a/b?c=1&d=2#e".equals(pReply.session) && pReply.errorCard,
+                "answerUri / parseAnswerUri round-trips reply target with special characters and error_card=true");
+        String uAsk = BadgePlan.answerUri("ask", "s-1", true);
+        BadgePlan.AnswerTarget pAsk = BadgePlan.parseAnswerUri(uAsk);
+        check(pAsk != null && "ask".equals(pAsk.kind) && "s-1".equals(pAsk.session) && !pAsk.errorCard,
+                "answerUri / parseAnswerUri keeps errorCard false when kind is ask");
+        check(BadgePlan.parseAnswerUri(null) == null
+                && BadgePlan.parseAnswerUri("") == null
+                && BadgePlan.parseAnswerUri("https://example.com/?kind=reply&session=s1&error_card=0") == null
+                && BadgePlan.parseAnswerUri("hermux://answer?kind=evil&session=s1&error_card=0") == null
+                && BadgePlan.parseAnswerUri("hermux://answer?kind=reply&session=s1&error_card=2") == null
+                && BadgePlan.parseAnswerUri("hermux://answer?kind=reply&session=s1&panel=1") == null
+                && BadgePlan.parseAnswerUri("hermux://answer?kind=reply&session=%ZZ&error_card=0") == null,
+                "parseAnswerUri rejects null, wrong scheme/authority, unknown kind/params, bad error_card and invalid percent-encoding");
+
         BadgePlan.Plan two = BadgePlan.plan(2, set("a", "b"), list("reply:a", "reply:b"));
         check(two.cancelTags.isEmpty()
                 && Integer.valueOf(1).equals(two.counts.get("reply:a"))
@@ -140,6 +158,12 @@ public class BadgePlanTest {
                 && "Hermux".equals(NotifyPrivacy.publicTitle("learning"))
                 && "Hermux".equals(NotifyPrivacy.publicTitle("done")),
                 "publicTitle returns generic lock-screen titles with no chat or reply content");
+        check(NotifyPrivacy.redactApproval(true, true)
+                && !NotifyPrivacy.redactApproval(true, false)
+                && !NotifyPrivacy.redactApproval(false, true)
+                && !NotifyPrivacy.redactApproval(false, false)
+                && "Hermux needs your approval".equals(NotifyPrivacy.APPROVAL_LOCKED),
+                "redactApproval redacts phone-data approvals only while keyguard is locked, using generic APPROVAL_LOCKED wording");
 
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
@@ -259,21 +283,99 @@ check("BadgePlan.plan(" in ub and "badged(b, 0)" in ub and "EXTRA_DISMISSING" in
       "updateBadge ignores EXTRA_DISMISSING cards, distributes counts with BadgePlan.plan, and zeroes stale summary")
 
 aa = body(svc, "Notification.Action answerAction(String kind, String session, String label, java.util.List<CharSequence> choices, boolean errorCard)")
-check('"error_card"' in aa and '"card_tag"' not in svc and "nothing else can fill it in" not in svc,
-      "answerAction passes boolean error_card instead of raw card_tag and comment accurately describes mutable PendingIntent")
+check("BadgePlan.answerUri(" in aa and ".setData(" in aa and ".putExtra(" not in aa
+      and '"card_tag"' not in svc and "nothing else can fill it in" not in svc,
+      "answerAction encodes kind/session/error_card in the Intent data URI (immune to FLAG_MUTABLE fillIn extras)")
 
 ans = body(svc, "void answerFromNotification(")
-check("fromRemoteInput" in ans and ans.count("dismissAnsweredCard(") >= 3
-      and "BadgePlan.answerTag(" in ans and '"error_card"' in ans
+check("BadgePlan.parseAnswerUri(" in ans and "fromRemoteInput" in ans and ans.count("dismissAnsweredCard(") >= 3
+      and "BadgePlan.answerTag(" in ans
+      and 'i.getStringExtra("text").trim()' not in ans
+      and "remoteAction ? null : i.getStringExtra(\"text\")" in ans
+      and "!remoteAction && !fromRemoteInput" in ans
+      and "synchronized (HermesService.this)" in ans and "pending.answered(" in ans
+      and ans.find("synchronized (HermesService.this)") < ans.find("pending.answered(")
+      and "cancelCard(nm, t)" in ans and "nm.cancel(" not in ans and "dropEmptySummary(" not in ans
+      and "try {" in ans and "postGrouped(" in ans
       and "MainActivity.keyguardLocked(this)" in ans
       and 'tag("answer_fail", session)' in ans and "makePrivate(b, CH_ALERT" in ans and "badged(b, 0)" in ans,
-      "answerFromNotification derives tag via BadgePlan.answerTag, keeps card on locked API 26-30 empty answer, and posts failure card as private 0-badge answer_fail")
+      "answerFromNotification reads RemoteInput target from data URI, null-checks text extra, locks pending.answered on HermesService.this, and guards all notification calls")
+
+cc = body(svc, "void cancelCard(")
+check("if (nm == null) return;" in cc and "nm.cancel(tag, 2)" in cc and "dropEmptySummary(nm, tag)" in cc and "catch (Exception ignored)" in cc,
+      "cancelCard null-checks nm and guards nm.cancel and dropEmptySummary")
+
+app_case = case_block("approval")
+app_chip = body(svc, "Notification approvalNotification(")
+app_card = body(svc, "Notification buildApprovalCard(")
+app_re = body(svc, "void reAlertApproval()")
+app_ref = body(svc, "void refreshApprovalPopups(")
+app_tick = body(svc, "void tickApproval()")
+app_ia = body(svc, "synchronized java.util.List<IslandState.Approval> islandApprovals()")
+app_intent = body(svc, "PendingIntent approveIntent(")
+app_refuse = body(svc, "private String panelRefusal(")
+pd_ev = body(svc, "static JSONObject phoneDataEvent(")
+main_src = open("android/src/com/omarqaterge/hermesmobile/MainActivity.java", encoding="utf-8").read()
+kg_fn = body(main_src, "static boolean keyguardLocked(")
+ask_un = body(main_src, "void askUnlock()")
+
+# Finding 1: redacted approvals omit Allow once / Allow session (keeping Deny only) across popup, chip, and re-alert.
+allow_in_card = app_card.find("if (!lockedPrivate)")
+allow_once_card = app_card.find('"Allow once"')
+allow_sess_card = app_card.find('"Allow session"')
+deny_card = app_card.find('"Deny"')
+allow_in_chip = app_chip.find("if (!lockedPrivate)")
+allow_once_chip = app_chip.find('"Allow once"')
+allow_sess_chip = app_chip.find('"Allow session"')
+deny_chip = app_chip.find('"Deny"')
+check("lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED" in app_card
+      and 'lockedPrivate ? "" :' in app_card
+      and "if (silent) b.setOnlyAlertOnce(true);" in app_card
+      and "hideOnLockScreen(b, CH_ALERT, phoneData)" in app_card
+      and 0 <= allow_in_card < allow_once_card < allow_sess_card < deny_card
+      and "NotifyPrivacy.redactApproval(phoneData, lockedNow)" in app_case
+      and "buildApprovalCard(ev, session, title, body, phoneData, lockedPrivate, false)" in app_case
+      and "NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this))" in app_chip
+      and 'lockedPrivate ? "" : clip(a.optString("what"' in app_chip
+      and 'lockedPrivate ? "" : clip(a.optString("command"' in app_chip
+      and "lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED" in app_chip
+      and 0 <= allow_in_chip < allow_once_chip < allow_sess_chip < deny_chip
+      and "hideOnLockScreen(b, CH_STATUS, phoneData)" in app_chip
+      and "NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this))" in app_re
+      and "buildApprovalCard(" in app_re,
+      "all approval notification sites (popup, status chip, re-alert) redact text and omit Allow actions while keyguardLocked (keeping Deny only), and also call hideOnLockScreen")
+
+# Finding 2: tickApproval tracks lock/unlock transitions to silently refresh every pending tainted popup, and cancels expired cards.
+check("lastApprovalLocked" in app_case
+      and "else if (lastApprovalLocked != null && lockedNow != lastApprovalLocked)" in app_case
+      and "main.post(() -> refreshApprovalPopups(lockedNow))" in app_case
+      and app_case.find("refreshApprovalPopups(lockedNow)") < app_case.find("pending.arrived(")
+      and "lastApprovalLocked != null && lockedNow != lastApprovalLocked" in app_tick
+      and "refreshApprovalPopups(lockedNow)" in app_tick
+      and "pending.all(PendingAsk.APPROVAL)" in app_ref
+      and "isPhoneData(en.payload, en.session)" in app_ref
+      and "buildApprovalCard(" in app_ref and ", true)" in app_ref
+      and "postGrouped(nm, cardTag, card)" in app_ref
+      and "pending.expire(now, 3000)" in app_tick
+      and 'cancelCard(nm, tag("approval", ses))' in app_tick
+      and "if (!after.contains(ses))" in app_tick,
+      "tickApproval (and a second approval arriving after a lock or unlock since the last tick) silently refreshes all pending tainted approval pop-ups on lock/unlock transitions and cancels expired approval cards when no newer approval waits for that session")
+
+# Finding 3: MainActivity.keyguardLocked fails closed when KeyguardManager is null, and askUnlock guards null km.
+check("km == null || km.isKeyguardLocked()" in kg_fn and "if (km == null) return;" in ask_un,
+      "MainActivity.keyguardLocked fails closed when KeyguardManager is null and askUnlock null-checks km")
+check('"phone_data_read"' in pd_ev and 'c.remove("phone_data_read")' in pd_ev and 'c.remove("phone_data_unreadable")' in pd_ev
+      and 'a.optBoolean("phone_data_read", false)' in app_chip
+      and 'a.optBoolean("phone_data_read", false)' in app_ia
+      and 'e.optBoolean("phone_data_read", false)' in app_intent
+      and 'live.optBoolean("phone_data_read", false)' in app_refuse,
+      "phoneDataEvent distinguishes phone_data_read (phone_data tool reads) from phone_data (tainted-chat privacy) across chip title, island panel, approveIntent and panelRefusal")
 
 dis = body(svc, "void dismissAnsweredCard(")
-check("setTimeoutAfter(1)" in dis and "EXTRA_DISMISSING" in dis and "addRemoteInput" not in dis
+check("if (nm == null) return;" in dis and "setTimeoutAfter(1)" in dis and "EXTRA_DISMISSING" in dis and "addRemoteInput" not in dis
       and "nm.notify(tag, 2," in dis and "if (!active)" in dis and "oursOrGone" in dis
       and dis.count("synchronized (HermesService.this)") >= 2 and dis.count("catch (Exception ignored)") >= 4,
-      "dismissAnsweredCard synchronizes active-check+notify and 300 ms cleanup on HermesService.this and guards notification calls")
+      "dismissAnsweredCard null-checks nm, synchronizes active-check+notify and 300 ms cleanup on HermesService.this and guards notification calls")
 
 total = fails + (0 if rc == 0 else 1)
 print("ALL PASSED" if total == 0 else f"{total} FAILED")
