@@ -540,6 +540,12 @@ here but not installed on a phone, and going back has not been tried on one.
   - **Live mode and lock-view reads in `AutoButton.pick` (`AutoAccess.tsx`) and `ACCESS_UNSURE` (`gateway.ts`):** `AutoButton.pick` re-checks `lockView()` after `confirmFullAccess()` and reads live `lockView()` and `currentApprovalsMode(a.profile)` after `setAccess(...)` instead of render-time `shownHermesMode`. `settleAccess` and the resume Auto-restore fallback use `accessUnsureOff` and `autoRestoreOffNotice`, reflecting the current `approvals.mode` and staying neutral when unknown or in `lockView()`.
   - **Checks:** `tools/hermes-contract/run.sh`, `tools/test_canvas.py` (including FastAPI `TestClient` 403/409/200 route checks), `web/src/canvas-save.test.ts`, `web/src/approvals-mode.test.ts`, `web/src/access-settle.test.ts`, `web/src/auto-access.test.tsx`, `tools/web-e2e/checks/05-questions-and-approvals.cjs`, and `tools/web-e2e/checks/16-canvas-panel.cjs`. Not checked on a real phone.
 
+- **Two test-tool fixes (`fix-test-tooling`, PR against `redesign`).** `web/src/remote-hold.test.tsx` now unmounts every
+  React root after each test, so no scheduled React work runs after happy-dom has torn the window down (the rare
+  `ReferenceError: window is not defined` under load, noted under task 02b). `tools/test_hermes_patches.sh` now removes
+  the Hermes clone it made itself on exit (about 186 MB a run; a checkout given on the command line is kept). Test
+  tools only; nothing a user sees changes.
+
 **Links:** [decision: the redesign stays on its branch](../decisions/redesign-branch-until-tried.md),
 [decision: no UI-coverage project before the revamp](../decisions/no-ui-test-work-before-revamp.md) (held until it
 started), [where the UI work stands](ui-revamp-overview.md), [UI inventory](../design/ui-inventory.md),
