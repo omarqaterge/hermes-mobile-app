@@ -2271,9 +2271,9 @@ public class HermesService extends Service {
             return PendingIntent.getActivity(this, ("phonedata" + session + choice).hashCode(), open,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         }
-        if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this, session)) {
-            // Android 12+ refuses to open an activity from a service a notification started (trampoline): the
-            // chat's first Allow opens the app on that chat directly, where the sheet asks for the fingerprint.
+        if (Build.VERSION.SDK_INT >= 31 && !"deny".equals(choice) && ApprovalLock.needed(this)) {
+            // Android 12+ refuses to open an activity from a service a notification started (trampoline): Allow opens
+            // the app on that chat directly, where the sheet asks for the fingerprint unless its live session is confirmed.
             Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
             if (!session.isEmpty()) open.putExtra("session", session);
             return PendingIntent.getActivity(this, ("confirm" + session + choice).hashCode(), open,
@@ -2301,8 +2301,9 @@ public class HermesService extends Service {
             return;
         }
         if (!"deny".equals(choice) && openToUnlock(session, null, "approval " + choice)) return;
-        // Confirm approvals with fingerprint: the chat's first Allow is confirmed in the app (its sheet asks).
-        if (!"deny".equals(choice) && ApprovalLock.needed(this, session)) {
+        // Confirm approvals with fingerprint: the notification can't tell the live session a confirmation is filed under,
+        // so Allow is answered in the app (its sheet asks unless that live session is confirmed).
+        if (!"deny".equals(choice) && ApprovalLock.needed(this)) {
             openToConfirm(session);
             return;
         }

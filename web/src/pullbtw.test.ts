@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
-import { expect, test } from 'vitest'
-import { PULL_GIVE, PULL_MAX_PX, PULL_TRIGGER_PX, rubber, shouldOpen } from './pullbtw'
+import { expect, test, vi } from 'vitest'
+
+const h = vi.hoisted(() => ({ locked: false, opened: 0 }))
+vi.mock('./lockview', () => ({ lockView: () => h.locked }))
+vi.mock('./btw', () => ({ btwOpen: () => false, openBtw: () => void h.opened++ }))
+vi.mock('./bridge', () => ({ haptic: () => {} }))
+
+import { installPullToBtw, PULL_GIVE, PULL_MAX_PX, PULL_TRIGGER_PX, rubber, shouldOpen } from './pullbtw'
+import { setState, type ActiveSession } from './store'
 
 test('the trigger is a firm pull: 230 px of finger travel (raised from 110, then 160)', () => {
   expect(PULL_TRIGGER_PX).toBe(230)
@@ -37,4 +44,29 @@ test('opens only when pulled far enough, from the bottom, in an open chat', () =
   expect(shouldOpen(300, true, true)).toBe(true)
   expect(shouldOpen(300, false, true)).toBe(false)
   expect(shouldOpen(300, true, false)).toBe(false)
+})
+
+test('the pull does nothing over the lock screen, and opens the side chat otherwise', () => {
+  setState({ active: { runtimeId: 'rt-pull' } as ActiveSession, drawer: false, screen: null, sheet: null } as never)
+  const el = document.createElement('div')
+  document.body.append(el)
+  const off = installPullToBtw(el)
+  const touch = (type: string, y: number) => {
+    const e = new Event(type, { cancelable: true })
+    Object.defineProperty(e, 'touches', { value: type === 'touchend' ? [] : [{ clientX: 100, clientY: y }] })
+    el.dispatchEvent(e)
+  }
+  const pull = () => {
+    touch('touchstart', 600)
+    for (let y = 590; y >= 600 - PULL_TRIGGER_PX - 20; y -= 10) touch('touchmove', y)
+    touch('touchend', 0)
+  }
+  h.locked = true
+  pull()
+  expect(h.opened).toBe(0)
+  expect(el.classList.contains('pulling')).toBe(false)
+  h.locked = false
+  pull()
+  expect(h.opened).toBe(1)
+  off()
 })

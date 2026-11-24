@@ -328,4 +328,33 @@ module.exports = async t => {
     check(full.length >= 1 && full.every(x => x.on === false), `phone data: Auto access gives no pass (${JSON.stringify(full)})`)
     await pg.close()
   }
+  {
+    // The confirmation belongs to the live session the approval came from (its session_id, Hermes's runtime id), not to the
+    // chat: a later approval in that live session doesn't ask. After a reconnect in which Hermes reaped the old live session,
+    // the chat resumes in a new one, and its first Allow asks again, under the new id. Nothing had to be forgotten for that.
+    const pg = await open({ on: true, secure: true, result: 'ok' })
+    const allowOnce = async text => {
+      await ask(pg, text)
+      await pg.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
+      await sleep(400)
+    }
+    await allowOnce('run the thing')
+    await pg.getByText('Ran the thing.').waitFor({ timeout: 5000 })
+    let c = await confirms(pg)
+    const live = rpcs('prompt.submit').filter(r => r.params.text === 'run the thing').slice(-1)[0]?.params.session_id
+    check(c.length === 1 && live && c[0].session === live, `approval lock: the confirmation is filed under the approval's live session (${JSON.stringify(c)}, ${live})`)
+    await allowOnce('run the long thing')
+    check((await confirms(pg)).length === 1, 'approval lock: a later approval in the same live session does not ask')
+    await mock({ drop: 1500, newRuntime: true })
+    await pg.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
+    await mock({ up: true })
+    await pg.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await sleep(800)
+    await allowOnce('run the thing')
+    c = await confirms(pg)
+    const next = rpcs('prompt.submit').filter(r => r.params.text === 'run the thing').slice(-1)[0]?.params.session_id
+    check(c.length === 2 && next && next !== live && c[1].session === next, `approval lock: the chat's new live session after a reconnect asks again, under its own id (${JSON.stringify(c.map(x => x.session))}, ${live} -> ${next})`)
+    await mock({ gen: 0 })
+    await pg.close()
+  }
 }

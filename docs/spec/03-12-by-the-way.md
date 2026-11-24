@@ -4,6 +4,8 @@
 
 A small side chat about the open chat, in a bottom sheet, that does not interrupt the main turn. Hermux sees the conversation so far.
 
+**Over the lock screen** nothing here acts: a side sheet open when the app is shown over the lock screen closes (`onLockView` in `btw.ts` calls `closeBtw`; its exchanges stay for after the unlock), and `openBtw`, `askBtw` and `clearBtw` ask for an unlock instead ("Unlock the phone to ask on the side"), the pull-up gesture doesn't start, and `/btw` waits in the composer like any command that acts (3.4). An answer already on its way still shows.
+
 **Opens from:** typing `/btw` or `/btw <question>` in the composer (handled in `sendPrompt` in `web/src/gateway.ts` before any other slash command, so it works while Hermux is answering; the question is asked at once); or the pull-up gesture below. **Closes with:** Back, a drag down on the top strip, or a tap outside. **Source:** `web/src/components/Btw.tsx` `BtwSheet`, `web/src/btw.ts` (`openBtw`, `askBtw`, `btwDone`, `closeBtw`, `clearBtw`), `web/src/pullbtw.ts` (`installPullToBtw`).
 
 **Layout, top to bottom (sheet, 70 % of the screen height):**

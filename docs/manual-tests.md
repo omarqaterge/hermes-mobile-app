@@ -174,10 +174,27 @@ check on a real phone:
       doesn't ask.
 - [ ] Cancel the prompt: nothing runs, the sheet stays, the toast says why. Deny never asks.
 - [ ] Leave the app with an approval waiting, tap Allow once on the notification (phone unlocked): the app opens on
-      the chat and Allow asks for the fingerprint. After that, notification Allows in that chat go straight through.
+      the chat and Allow asks for the fingerprint. After that, a notification Allow in that chat still opens the app
+      (the notification can't tell the chat's live session), and the sheet's Allow goes through without the fingerprint.
+      Try on Android 8–11 (the app opens from the service) and 12+ (the button opens the app itself).
 - [ ] Restart the app (close it from Recents): the next Allow asks again.
+- [ ] Confirm one Allow in a chat, restart Hermes (not the app), then ask for another approval in that chat: the chat
+      has a new live session, so Allow asks again.
 - [ ] Settings → Permissions → Confirm approvals with fingerprint: turning it off asks for the fingerprint first.
 - [ ] Android 8 or 9 phone if at hand: the screen-lock screen or "Use screen lock" fallback works.
+
+## Slash commands over the lock screen (owner only: needs "Talk to Hermes on the lock screen")
+
+- [ ] Over the lock screen, in a chat in Full access: a slash command asks for an unlock, and `/yolo off` works.
+- [ ] Over the lock screen, in a chat with approvals on: type `/approvals off`, `/cron run <a job>` and a quick command
+      from your config: each asks for an unlock and nothing changes (`/approvals` afterwards still says manual).
+      `/status`, `/help` and `/kanban list` still answer. Say whether the keyboard over the lock screen works at all on
+      your phone, and whether Live mode ever turns speech into a slash command.
+- [ ] Unlocked: `/approvals off` shows the Full access warning; Cancel leaves `/approvals` at manual, Allow sets it off.
+      Set it back with `/approvals manual`.
+- [ ] Open a chat with an answer, open the side chat (`/btw`) or start editing a message, then lock the phone and bring
+      the app back over the lock screen: the side chat and the edit box are closed, and no message has Edit or Retry.
+      After unlocking they are back.
 
 ## Connectors (Settings → Connectors)
 

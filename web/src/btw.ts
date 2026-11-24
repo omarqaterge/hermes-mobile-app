@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { rpc, errText } from './gateway'
+import { askUnlock, lockView, onLockView } from './lockview'
 import { getState } from './store'
 
 /** A /btw side chat: questions about the open chat that run on a snapshot of it, detached from the main turn. */
@@ -29,6 +30,8 @@ let seq = 0
 
 /** Open the mini chat for the current chat (a different chat starts a fresh one), optionally asking right away. */
 export function openBtw(question = ''): void {
+  // A side question runs an agent turn: over the lock screen it waits for an unlock, like everything that acts.
+  if (lockView()) return askUnlock('Unlock the phone to ask on the side')
   const sid = getState().active?.runtimeId || ''
   set({ open: true, session: sid, msgs: sid === state.session ? state.msgs : [] })
   if (question.trim()) void askBtw(question)
@@ -40,12 +43,19 @@ export function closeBtw(): void {
   set({ open: false })
 }
 
+// The side sheet keeps its own open state (it isn't the store's `sheet`, which lockview.ts closes): when the app is shown
+// over the lock screen, it closes too, so nothing of it is seen or used there. Its exchanges stay for after the unlock.
+onLockView(() => {
+  if (lockView() && state.open) closeBtw()
+})
+
 /**
  * Empty the side chat: its exchanges go, so the next question carries no earlier side answers. Hermes keeps nothing
  * of it between questions (each one runs on a fresh snapshot), so this is the whole reset. Answers still on their
  * way are dropped when they arrive (their task ids stay known, so they don't show up in the main chat).
  */
 export function clearBtw(): void {
+  if (lockView()) return askUnlock('Unlock the phone to ask on the side')
   set({ msgs: [] })
 }
 
@@ -53,6 +63,7 @@ export async function askBtw(question: string): Promise<void> {
   const a = getState().active
   const q = question.trim()
   if (!a || !q) return
+  if (lockView()) return askUnlock('Unlock the phone to ask on the side')
   const id = `btw${++seq}`
   // Each call sees a fresh snapshot of the main chat; earlier side answers ride along so follow-ups make sense.
   const prior = state.msgs.filter(m => m.a && !m.error).slice(-6)

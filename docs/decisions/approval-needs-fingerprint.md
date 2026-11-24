@@ -11,3 +11,7 @@ chat's live Hermes session (spec 3.6 defines it). Deny never asks. On by default
 approvals with fingerprint" under Permissions; turning it off asks too. A phone with no screen lock approves as before
 and shows a one-time hint. The notification's Allow follows the same rule: until the chat is confirmed it opens the app
 instead of answering. Don't add a path that allows a command without this check.
+
+**How it is kept (2026-11-21):** a confirmation is filed under the chat's live Hermes session (its runtime id), not the
+stored chat, so a new live session always asks and nothing has to be forgotten when one ends. The notification never
+names the live session, so its Allow always opens the app while this is on (spec 3.6).
