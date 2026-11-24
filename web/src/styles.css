@@ -1519,11 +1519,15 @@ textarea {
   }
   .sheet.request-sheet .sheet-scroll {
     flex: 1 1 auto;
-    min-height: 88px;
     overflow-y: auto;
     gap: 6px;
   }
-  .sheet.request-sheet .sheet-desc {
+  /* Only a command approval squeezes its description, so Deny and the command's start fit on first paint;
+     questions, passwords and phone-data reads keep their full text (they scroll with the sheet). */
+  .sheet.request-sheet .command-scroll {
+    min-height: 88px;
+  }
+  .sheet.request-sheet .command-scroll .sheet-desc {
     max-height: min(56px, 16vh);
     overflow-y: auto;
     flex-shrink: 0;

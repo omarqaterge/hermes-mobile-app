@@ -627,6 +627,21 @@ module.exports = async t => {
       await dlg.waitFor({ state: 'detached', timeout: 3000 })
       const ans = await lp.evaluate(() => window.__out.filter(m => m.id === 'srv-land-1' && 'result' in m))
       check(ans.length === 1 && ans[0].result.choice === 'deny', `${label}: Deny closes the sheet and answers Hermes`)
+      // A question in the same short viewport keeps its whole text: only command approvals squeeze the description.
+      const longQ = 'Which of these folders should I tidy first? ' + 'Here is more detail about each folder you may want to read. '.repeat(6)
+      await lp.evaluate(question => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        s.dispatchEvent(new MessageEvent('message', {
+          data: JSON.stringify({ jsonrpc: '2.0', id: 'srv-land-q', method: 'clarify', params: { session_id: 'rt-new', question } })
+        }))
+      }, longQ)
+      const qEl = lp.getByRole('dialog').getByText(/Which of these folders should I tidy first/)
+      await qEl.waitFor({ timeout: 5000 })
+      const qStyle = await qEl.evaluate(el => {
+        const d = el.closest('.sheet-desc') || el
+        return { maxHeight: getComputedStyle(d).maxHeight, height: d.getBoundingClientRect().height }
+      })
+      check(qStyle.maxHeight === 'none' && qStyle.height > 56, `${label}: a question keeps its full text, not a 56 px box (${JSON.stringify(qStyle)})`)
       await lp.close()
     }
   }

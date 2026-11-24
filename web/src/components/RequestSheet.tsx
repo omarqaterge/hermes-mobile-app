@@ -89,7 +89,7 @@ function Approval({ req }: { req: ServerRequest }) {
     <>
       <div className="sheet-title"><Icon n="warning" /> Approve {String(p.tool_name || 'command')}?</div>
       {/* A long warning or command scrolls; the answer buttons always stay on screen. */}
-      <div className="sheet-scroll">
+      <div className="sheet-scroll command-scroll">
         {p.description ? <div className="sheet-desc"><Linked text={tidyApprovalText(String(p.description))} /></div> : null}
         {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
         <AskedBy req={req} />
