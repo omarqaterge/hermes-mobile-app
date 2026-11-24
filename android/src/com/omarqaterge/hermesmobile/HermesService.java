@@ -1539,6 +1539,8 @@ public class HermesService extends Service {
                 final JSONObject ev = phoneDataEvent(e);
                 body = ev.optString("body", "");
                 boolean ticking = pendingApproval != null;
+                boolean lockedNow = MainActivity.keyguardLocked(this);
+                if (!ticking) lastApprovalLocked = lockedNow;
                 pending.arrived(PendingAsk.APPROVAL, session, ev.optString("request_id", ""), ev,
                         System.currentTimeMillis() + Math.max(1, e.optLong("timeout", 60)) * 1000L);
                 syncPending();
@@ -1548,16 +1550,8 @@ public class HermesService extends Service {
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
                 boolean phoneData = isPhoneData(ev, session);
-                boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
-                Notification.Builder b = alertBuilder(CH_ALERT,
-                        lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED : title,
-                        lockedPrivate ? "" : clip(body, 600), session, true);
-                hideOnLockScreen(b, CH_ALERT, phoneData);
-                // Answer right from the popup, like the in-app sheet.
-                if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
-                if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
-                b.addAction(approveAction(ev, "deny", "Deny"));
-                postGrouped(nm, tag(kind, session), b.build());
+                boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, lockedNow);
+                postGrouped(nm, tag(kind, session), buildApprovalCard(ev, session, title, body, phoneData, lockedPrivate, false));
                 return;
             }
             case "ask": {
@@ -2439,10 +2433,12 @@ public class HermesService extends Service {
             b.setStyle(new Notification.BigTextStyle().bigText(t));
         }
         if (!sending) { // while the answer is on its way, no second one
-            if (!a.optBoolean("phone_data_unreadable", false))
-                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow once", GREEN), approveIntent(a, "once"))).build());
-            if (a.optBoolean("allow_session", true))
-                b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
+            if (!lockedPrivate) { // never offer blind Allow while redacted on the lock screen; Deny stays one tap
+                if (!a.optBoolean("phone_data_unreadable", false))
+                    b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow once", GREEN), approveIntent(a, "once"))).build());
+                if (a.optBoolean("allow_session", true))
+                    b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
+            }
             b.addAction(new Notification.Action.Builder(null, colored("Deny", RED), approveIntent(a, "deny")).build());
         }
         hideOnLockScreen(b, CH_STATUS, phoneData);
@@ -2450,9 +2446,29 @@ public class HermesService extends Service {
         return b.build();
     }
 
+    /** Builds an approval pop-up card. When {@code lockedPrivate} is true (tainted or phone-data approval while locked),
+     *  the title/body are replaced with {@link NotifyPrivacy#APPROVAL_LOCKED} and Allow actions are omitted (Deny only)
+     *  so the user can never blindly approve an unseen command; tapping the card still unlocks and opens the app.
+     *  {@code silent} sets {@code setOnlyAlertOnce(true)} for in-place lock/unlock updates without a new heads-up. */
+    Notification buildApprovalCard(JSONObject ev, String session, String titleText, String bodyText,
+                                   boolean phoneData, boolean lockedPrivate, boolean silent) {
+        Notification.Builder b = alertBuilder(CH_ALERT,
+                lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED : titleText,
+                lockedPrivate ? "" : clip(bodyText, 600), session, true);
+        if (silent) b.setOnlyAlertOnce(true);
+        hideOnLockScreen(b, CH_ALERT, phoneData);
+        if (!lockedPrivate) {
+            if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
+            if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
+        }
+        b.addAction(approveAction(ev, "deny", "Deny"));
+        return b.build();
+    }
+
     /** Any approval for a phone-data read or a chat that has read phone data never shows its command, description,
      *  kind or search text on the lock screen: private, with a generic public version on the same channel (in addition
-     *  to redacting the notification's own text while the phone is locked via NotifyPrivacy.redactApproval). */
+     *  to redacting the notification's own text and omitting Allow actions while the phone is locked via
+     *  NotifyPrivacy.redactApproval). */
     void hideOnLockScreen(Notification.Builder b, String channel, boolean phoneData) {
         if (!phoneData) return;
         b.setVisibility(Notification.VISIBILITY_PRIVATE);
@@ -2469,6 +2485,7 @@ public class HermesService extends Service {
 
     long approvalDeadline;
     long lastReAlert = -1;
+    Boolean lastApprovalLocked;
 
     void reAlertApproval() {
         JSONObject e = pendingApproval;
@@ -2477,15 +2494,55 @@ public class HermesService extends Service {
         boolean phoneData = isPhoneData(e, session);
         boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
         NotificationManager nm = getSystemService(NotificationManager.class);
-        Notification.Builder b = alertBuilder(CH_ALERT,
-                lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED : e.optString("title", "Hermux"),
-                lockedPrivate ? "" : "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
-        hideOnLockScreen(b, CH_ALERT, phoneData);
-        if (!e.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(e, "once", "Allow once"));
-        if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
-        b.addAction(approveAction(e, "deny", "Deny"));
+        Notification card = buildApprovalCard(e, session, e.optString("title", "Hermux"),
+                "Still waiting for your answer: " + clip(e.optString("body", ""), 600), phoneData, lockedPrivate, false);
         nm.cancel(tag("approval", session), 2); // a fresh post is what re-triggers the heads-up
-        postGrouped(nm, tag("approval", session), b.build());
+        postGrouped(nm, tag("approval", session), card);
+    }
+
+    /** Silently re-posts every active pending tainted approval pop-up card on a lock/unlock transition so a card posted
+     *  while unlocked is redacted immediately when the phone locks (even under "Show all notification content", after
+     *  40 s, on a short timeout, or for a second queued chat) and restored with its details and Allow buttons on unlock. */
+    void refreshApprovalPopups(boolean lockedNow) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        java.util.HashSet<String> active = null;
+        try {
+            android.service.notification.StatusBarNotification[] live = nm.getActiveNotifications();
+            if (live != null) {
+                active = new java.util.HashSet<>();
+                for (android.service.notification.StatusBarNotification sbn : live) {
+                    if (sbn.getId() == 2 && sbn.getTag() != null) active.add(sbn.getTag());
+                }
+            }
+        } catch (Exception ignored) {
+            // fail closed below when the active notification list cannot be read
+        }
+        java.util.LinkedHashMap<String, JSONObject> latest = new java.util.LinkedHashMap<>();
+        java.util.HashSet<String> taintedSessions = new java.util.HashSet<>();
+        for (PendingAsk.Entry<JSONObject> en : pending.all(PendingAsk.APPROVAL)) {
+            latest.put(en.session, en.payload);
+            if (isPhoneData(en.payload, en.session)) taintedSessions.add(en.session);
+        }
+        boolean canPost = !MainActivity.visible && NotifyChoice.needsMe(this);
+        for (java.util.Map.Entry<String, JSONObject> item : latest.entrySet()) {
+            String ses = item.getKey();
+            if (!taintedSessions.contains(ses)) continue;
+            String cardTag = tag("approval", ses);
+            if (active != null && !active.contains(cardTag)) continue;
+            if (!canPost) {
+                if (lockedNow) cancelCard(nm, cardTag);
+                continue;
+            }
+            JSONObject ev = item.getValue();
+            boolean lockedPrivate = NotifyPrivacy.redactApproval(true, lockedNow);
+            Notification card = buildApprovalCard(ev, ses, ev.optString("title", "Hermux"),
+                    ev.optString("body", ""), true, lockedPrivate, true);
+            try {
+                postGrouped(nm, cardTag, card);
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     /** The approval event as the notification shows it. For a phone-data read (the description starts "phone_data:") the
@@ -2532,22 +2589,42 @@ public class HermesService extends Service {
     /** Ticks the approval countdown once a second until answered or expired. */
     void tickApproval() {
         synchronized (this) {
-            if (pendingApproval == null) return;
+            if (pendingApproval == null) {
+                lastApprovalLocked = null;
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (now > approvalDeadline + 3000) {
+                java.util.LinkedHashSet<String> before = new java.util.LinkedHashSet<>();
+                for (PendingAsk.Entry<JSONObject> en : pending.all(PendingAsk.APPROVAL)) before.add(en.session);
+                pending.expire(now, 3000); // expired; the plugin's clear normally beats this
+                java.util.HashSet<String> after = new java.util.HashSet<>();
+                for (PendingAsk.Entry<JSONObject> en : pending.all(PendingAsk.APPROVAL)) after.add(en.session);
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                for (String ses : before) {
+                    if (!after.contains(ses)) cancelCard(nm, tag("approval", ses));
+                }
+                syncPending();
+                if (pendingApproval == null) lastApprovalLocked = null;
+                postStatus();
+                updateWake();
+                if (pendingApproval != null) main.postDelayed(this::tickApproval, 1000); // another request still waits
+                return;
+            }
+            boolean lockedNow = MainActivity.keyguardLocked(this);
+            if (lastApprovalLocked != null && lockedNow != lastApprovalLocked) {
+                lastApprovalLocked = lockedNow;
+                refreshApprovalPopups(lockedNow);
+            } else if (lastApprovalLocked == null) {
+                lastApprovalLocked = lockedNow;
+            }
             // HyperOS drops the heads-up after ~5 s: pop it up again at 20 s and 40 s while unanswered.
-            long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - System.currentTimeMillis());
+            long elapsed = Math.max(1, pendingApproval.optLong("timeout", 60)) * 1000L - (approvalDeadline - now);
             long sec = elapsed / 1000;
             boolean needs = NotifyChoice.needsMe(this);
             if ((sec == 20 || sec == 40) && sec != lastReAlert && !MainActivity.visible && needs) {
                 lastReAlert = sec;
                 reAlertApproval();
-            }
-            if (System.currentTimeMillis() > approvalDeadline + 3000) {
-                pending.expire(System.currentTimeMillis(), 3000); // expired; the plugin's clear normally beats this
-                syncPending();
-                postStatus();
-                updateWake();
-                if (pendingApproval != null) main.postDelayed(this::tickApproval, 1000); // another request still waits
-                return;
             }
             if (needs) postStatus(); // the countdown on the chip; with "needs me" off the chip doesn't show it
         }

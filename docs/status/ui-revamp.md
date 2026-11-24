@@ -508,18 +508,25 @@ here but not installed on a phone, and going back has not been tried on one.
     downward).
   - **Security-review follow-ups on PR #232:**
     - Approval notifications for phone-data reads and tainted chats now also redact their own title and body to
-      `NotifyPrivacy.APPROVAL_LOCKED` ("Hermux needs your approval") whenever `MainActivity.keyguardLocked` is true
-      (`NotifyPrivacy.redactApproval`, in `onEvent` `case "approval"`, `approvalNotification`, and `reAlertApproval`),
-      so details stay hidden even under Android's "Show all notification content" lock-screen setting (restored on the
-      1 s `tickApproval` tick after unlock), in addition to `hideOnLockScreen` (`VISIBILITY_PRIVATE` + `setPublicVersion`).
+      `NotifyPrivacy.APPROVAL_LOCKED` ("Hermux needs your approval") and omit "Allow once" / "Allow session" (keeping
+      "Deny" only; tapping the card still unlocks and opens the panel or app) whenever `MainActivity.keyguardLocked`
+      is true (failing closed when `KeyguardManager` is null, with `askUnlock` null-checking `km`; via
+      `NotifyPrivacy.redactApproval` in `buildApprovalCard` for `onEvent` `case "approval"` / `reAlertApproval` /
+      `refreshApprovalPopups` and in `approvalNotification`), so details stay hidden even under Android's "Show all
+      notification content" lock-screen setting and no blind approval is possible. On lock/unlock transitions
+      `tickApproval` (`lastApprovalLocked`) calls `refreshApprovalPopups` to silently (`setOnlyAlertOnce(true)`)
+      re-post every active pending tainted `approval:<session>` card redacted on lock and restored on unlock (alongside
+      the 1 s chip tick), and cancels expired `approval:<session>` cards when `pending.expire` drops a session's last
+      pending approval.
     - `_termux_fallback` (`_fallback_text`) redacts `phone_data` events (approvals to "Open Hermux to review an approval
       request", other kinds to plain generic text) instead of passing commands or descriptions to `termux-notification`.
-    - `phone_data.subagent_descendants` filters `_delegate_from` / sub-agent compression continuations and bounds `id` /
-      `model_config` byte lengths (`MAX_ID_BYTES`, `MAX_CONFIG_BYTES`) in SQL before `LIMIT`, orders newest first, and
-      stops immediately via `stop_if`; `compression_ancestors` checks `_is_continuation_row` so a clean branch of a
-      compressed parent is not linked to the parent's later sub-agents; `_on_pre_approval_request` checks both
-      `session_id` and `session_key` in one `_chat_has_read_phone_data` call (`extra_ids`); version coupling with older
-      apps lacking `phone_data_read` (fail-closed) is documented in spec 4.4.
+    - `phone_data.subagent_descendants` filters `_delegate_from` / sub-agent compression continuations (excluding
+      `_branched_from` in SQL at depth ≥ 1) and bounds `id` / `model_config` byte lengths (`MAX_ID_BYTES`,
+      `MAX_CONFIG_BYTES`) in SQL before `LIMIT`, orders newest first, and stops immediately via `stop_if`;
+      `compression_ancestors` checks `_is_continuation_row` so a clean branch of a compressed parent is not linked to
+      the parent's later sub-agents; `_on_pre_approval_request` checks both `session_id` and `session_key` in one
+      `_chat_has_read_phone_data` call (`extra_ids`); version coupling with older apps lacking `phone_data_read`
+      (fail-closed) is documented in spec 4.4.
   Verified with `tools/check.sh plugin android` (`tools/java-check.sh` including `tools/test_badge_and_reply.sh`,
   `tools/api-check.sh`, `tools/test_island_state.sh`, `tools/test_notify_choice.sh`, `tools/test_notification_unlock.sh`,
   all plugin tests including `tools/test_chip.py`, `tools/test_phone_taint.py`, `tools/test_phone_data.py`,
