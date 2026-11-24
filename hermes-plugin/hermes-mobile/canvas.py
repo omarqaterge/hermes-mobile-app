@@ -20,6 +20,7 @@ import secrets
 import stat
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -267,7 +268,7 @@ _SHELL_INIT_FILES = frozenset({
 _PROTECTED_SAVE_FILES = _SHELL_INIT_FILES | frozenset({".gitconfig", ".netrc"})
 _OPEN_SECRET_SEGMENTS = frozenset({".hermes-mobile", ".ssh", ".gnupg", ".aws", ".android", ".termux"})
 _OPEN_SECRET_FILES = frozenset({".netrc"})
-_SAVE_BLOCKED_SEGMENTS = _OPEN_SECRET_SEGMENTS | frozenset({"bin"})
+_SAVE_BLOCKED_SEGMENTS = _OPEN_SECRET_SEGMENTS
 _SAVE_BLOCKED_PAIRS = frozenset({
     (".local", "bin"),
     (".config", "git"),
@@ -289,8 +290,17 @@ _DIR_FD_UNSUPPORTED = frozenset({
 })
 
 
+def _fold(s: str) -> str:
+    """Fold a path segment/name like casefolding filesystems (Android ext4/f2fs NFKD + drop Cf + casefold, APFS)."""
+    cleaned = "".join(
+        ch for ch in unicodedata.normalize("NFKD", s)
+        if unicodedata.category(ch) != "Cf"
+    )
+    return cleaned.casefold()
+
+
 def _low_segments(path: Path) -> Tuple[str, ...]:
-    return tuple(s.lower() for s in path.parts if s not in ("", "/"))
+    return tuple(_fold(s) for s in path.parts if s and s.strip("/"))
 
 
 def _has_pair(low: Tuple[str, ...], a: str, b: str) -> bool:
@@ -298,9 +308,11 @@ def _has_pair(low: Tuple[str, ...], a: str, b: str) -> bool:
 
 
 def _rel_ci(path: Path, root: Path) -> Optional[Tuple[str, ...]]:
-    """Case-insensitive relative path segments when `path` is equal to or under `root`, else None."""
-    p_parts = tuple(s.lower() for s in path.parts)
-    r_parts = tuple(s.lower() for s in root.parts)
+    """Unicode-folded relative path segments when `path` is equal to or under `root`, else None."""
+    if path.is_absolute() != root.is_absolute():
+        return None
+    p_parts = _low_segments(path)
+    r_parts = _low_segments(root)
     if len(p_parts) < len(r_parts) or p_parts[:len(r_parts)] != r_parts:
         return None
     return p_parts[len(r_parts):]
@@ -308,6 +320,19 @@ def _rel_ci(path: Path, root: Path) -> Optional[Tuple[str, ...]]:
 
 def _is_within_ci(path: Path, root: Path) -> bool:
     return _rel_ci(path, root) is not None
+
+
+def _is_home_bin(real: Path, low: Tuple[str, ...]) -> bool:
+    """True for home's top-level `bin/` (active HOME, `/root/bin`, or Termux home `bin/`), not nested project `bin/`."""
+    if _is_within_ci(real, _home_dir() / "bin"):
+        return True
+    if len(low) >= 2 and low[0] == "root" and low[1] == "bin":
+        return True
+    if low[:6] == ("data", "data", "com.termux", "files", "home", "bin"):
+        return True
+    if len(low) >= 7 and low[:2] == ("data", "user") and low[3:7] == ("com.termux", "files", "home", "bin"):
+        return True
+    return False
 
 
 def _home_dir() -> Path:
@@ -348,14 +373,14 @@ def _hermes_homes() -> List[Path]:
                 roots.append(cand)
 
     seeds: List[Path] = [_home_dir() / ".hermes"]
-    if ROOT.parent.name.lower() == "mobile":
+    if _fold(ROOT.parent.name) == "mobile":
         seeds.append(ROOT.parent.parent)
     for env_name in ("HERMES_HOME", "HERMES_MOBILE_ROOT"):
         val = (os.environ.get(env_name) or "").strip()
         if val:
             p = Path(os.path.realpath(os.path.expanduser(val)))
             seeds.append(p)
-            if p.parent.name.lower() == "profiles":
+            if _fold(p.parent.name) == "profiles":
                 seeds.append(p.parent.parent)
     for hh in seeds:
         add(hh)
@@ -370,7 +395,7 @@ def _hermes_homes() -> List[Path]:
 
 
 def _is_env_file(name: str) -> bool:
-    low = name.lower()
+    low = _fold(name)
     return low == ".env" or low.startswith(".env.")
 
 
@@ -392,15 +417,19 @@ def _is_hermes_segment_secret(low: Tuple[str, ...]) -> bool:
         if seg != ".hermes":
             continue
         inside = low[i + 1:]
+        if not inside:
+            continue
+        if name in _HERMES_SECRET_FILES:
+            return True
         sub = inside[2:] if len(inside) >= 2 and inside[0] == "profiles" else inside
-        if sub and (sub[0] == "mobile" or name in _HERMES_SECRET_FILES):
+        if sub and sub[0] == "mobile":
             return True
     return False
 
 
 def _check_open_path(path: Path) -> None:
     """Refuse secrets, container rootfs aliases, kernel pseudo-fs, etc/ssh and internal files by segment at any
-    depth (case-insensitively), plus resolved `_hermes_homes()` as an extra layer."""
+    depth (Unicode case-folded), plus resolved `_hermes_homes()` as an extra layer."""
     low = _low_segments(path)
     name = low[-1] if low else ""
     if low and low[0] in _KERNEL_PSEUDO_ROOTS:
@@ -445,6 +474,7 @@ def _check_save_denylist(real: Path) -> None:
         or _has_pair(low, "etc", "ssh")
         or any(seg in _SAVE_BLOCKED_SEGMENTS for seg in low)
         or any(_has_pair(low, a, b) for a, b in _SAVE_BLOCKED_PAIRS)
+        or _is_home_bin(real, low)
     ):
         raise CanvasError("refused: this file is outside the folders Hermux can save to")
     if name in _PROTECTED_SAVE_FILES:
@@ -563,7 +593,7 @@ def _open_readonly_bounded(real: Path, raw_label: str) -> Tuple[bytes, os.stat_r
     parent_fd = -1
     try:
         try:
-            parent_parts = [p for p in real.parent.parts if p not in ("", "/")]
+            parent_parts = [p for p in real.parent.parts if p and p.strip("/")]
             parent_fd = _open_dir_chain(Path("/"), parent_parts, nofollow=True, verb="open")
             fd = os.open(real.name, leaf_flags, dir_fd=parent_fd)
         except (NotImplementedError, OSError) as e:
@@ -608,11 +638,11 @@ def _open_readonly_bounded(real: Path, raw_label: str) -> Tuple[bytes, os.stat_r
 def open_file(session: str, path: str, by: str = "agent") -> Dict[str, Any]:
     """Load a text file from the phone into a new canvas document linked to that path."""
     raw_abs = _validate_raw_path(path)
+    _check_open_path(Path(os.path.abspath(raw_abs)))
     try:
         real = Path(os.path.realpath(raw_abs))
     except OSError as e:
         raise _fs_error("read", e) from e
-    _check_open_path(Path(os.path.abspath(raw_abs)))
     _check_open_path(real)
     raw, st = _open_readonly_bounded(real, path)
     if _is_in_secret_reach(real) and st.st_nlink > 1:
