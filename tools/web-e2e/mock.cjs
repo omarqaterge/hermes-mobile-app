@@ -48,6 +48,8 @@ let activityItems = []
 // The plugin's /tool-result: the stored output of a finished tool call, by tool_id (filled by every tool.complete the mock sends).
 const toolResults = new Map()
 // The chat model picker's model.options: {fail, mark, delay} (see the RPC case), set through /__mock {models: {...}}.
+const MAX_MODEL_DELAY_MS = 10_000
+const MAX_TIMER_MS = 60_000
 let modelsMock = { fail: false, mark: false, delay: 0 }
 // The plugin's /memory (MEMORY.md / USER.md) and /bots, kept so POST /memory and PUT /bots/<name> change what the next GET says.
 const memory = { memory: { target: 'memory', entries: ['x', 'y'], used: 1100, limit: 2200 }, user: { target: 'user', entries: ['z'], used: 10, limit: 1375 } }
@@ -195,7 +197,17 @@ const server = http.createServer((req, res) => {
       if (b.looseStatus !== undefined) looseStatus = b.looseStatus
       if (b.quickCommands) quickCommands = b.quickCommands
       if (typeof b.catalogWarning === 'string') catalogWarning = b.catalogWarning
-      if (b.models) modelsMock = { ...modelsMock, ...b.models }
+      if (b.models && typeof b.models === 'object') {
+        if (b.models.delay !== undefined) {
+          const d = b.models.delay
+          if (typeof d !== 'number' || !Number.isFinite(d) || d < 0 || d > MAX_MODEL_DELAY_MS) {
+            return send({ detail: `models.delay must be a number between 0 and ${MAX_MODEL_DELAY_MS}` }, 400)
+          }
+          modelsMock.delay = d
+        }
+        if (b.models.fail !== undefined) modelsMock.fail = Boolean(b.models.fail)
+        if (b.models.mark !== undefined) modelsMock.mark = Boolean(b.models.mark)
+      }
       if (b.claudeSignedIn !== undefined) claudePool = b.claudeSignedIn ? [claudeEntry()] : []
       if (b.claudeLoginMissing !== undefined) claudeLoginMissing = b.claudeLoginMissing
       if (b.poolSeeded) poolSeeded = new Set(b.poolSeeded)
@@ -695,7 +707,11 @@ wss.on('connection', ws => {
     if (type === 'tool.complete' && payload && payload.tool_id) toolResults.set(payload.tool_id, { tool_name: payload.name, content: typeof payload.result === 'string' ? payload.result : JSON.stringify(payload.result ?? null) })
     ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   }
-  const later = (ms, fn) => setTimeout(fn, ms)
+  const later = (ms, fn) => {
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return setTimeout(fn, 0)
+    if (ms > MAX_TIMER_MS) return setTimeout(fn, MAX_TIMER_MS)
+    return setTimeout(fn, ms)
+  }
   const live = fn => () => ws.readyState === 1 && fn()
   // Plays [type, payload] events 40 ms apart from `t` ms on; returns the time of the last one.
   const play = (sid, steps, t = 50, gap = 40) => {
@@ -1228,10 +1244,13 @@ wss.on('connection', ws => {
             (i % 3 === 0 ? `| Name | Value | Note |\n|---|---|---|\n| alpha | ${i} | ok |\n| beta | ${i * 2} | slow |\n\n` : '') +
             (i % 2 === 0 ? '```python\ndef step_' + i + '(x):\n    total = sum(v * 2 for v in x)\n    return total + ' + i + '\n```\n\n' : '') +
             `A closing sentence for this part, so the paragraph after the block is ordinary prose again.\n\n`
+          const rawChars = Number(bench[1])
+          const targetChars = rawChars > 100_000 ? 100_000 : rawChars
           let full = ''
-          for (let i = 0; full.length < Number(bench[1]); i++) full += part(i)
+          for (let i = 0; full.length < targetChars; i++) full += part(i)
           const chunks = full.match(/[\s\S]{1,12}/g)
-          const gap = Number(bench[2] || 40)
+          const rawGap = Number(bench[2] || 40)
+          const gap = rawGap > 1000 ? 1000 : rawGap
           let t = 200
           event('message.start', sid, {})
           for (const c of chunks) later((t += gap), live(() => event('message.delta', sid, { text: c })))
