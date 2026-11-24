@@ -213,6 +213,7 @@ public class HermesService extends Service {
     JSONObject lastTodo = null;
     org.json.JSONArray lastOthers = null;
     boolean lastReview = false;
+    boolean lastPhoneData = false;
     /** Per-turn Stop state shared by the status chip and the island panel (synchronized on {@code this}). */
     final IslandState.StopBook stops = new IslandState.StopBook();
     final Runnable stopTimeoutTask = this::expireStopTimeouts;
@@ -237,6 +238,7 @@ public class HermesService extends Service {
     static final String ACTION_WAKE = "com.omarqaterge.hermesmobile.WAKE";
     static final String ACTION_STOP = "com.omarqaterge.hermesmobile.STOP";
     static final String REMOTE_TEXT = "text";
+    static final String EXTRA_DISMISSING = "hm_dismissing";
     static final int SUMMARY_ID = 3;
     final Handler main = new Handler(Looper.getMainLooper());
 
@@ -1347,12 +1349,36 @@ public class HermesService extends Service {
     // ── read-aloud mode: speak replies while the app is closed or the phone is locked ──
     Voice voice;
 
+    /** Whether this chat has asked to read phone data (fails closed on null/empty/invalid id, overflow, lost records, or storage error). */
+    boolean hasReadPhoneData(String session) {
+        try {
+            return NotifyPrivacy.hasReadPhoneData(PhoneDataRoute.chats(this), session);
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    /** App record OR plugin phone_data hint: the plugin flag only tightens privacy, never loosens the app's own record. */
+    boolean isPhoneData(JSONObject e, String session) {
+        return (e != null && e.optBoolean("phone_data", false)) || hasReadPhoneData(session);
+    }
+
+    /** Keeps notification text off the lock screen when Android's "hide sensitive content" is on:
+     *  VISIBILITY_PRIVATE with a generic public version carrying no chat title or reply text. */
+    void makePrivate(Notification.Builder b, String channel, String publicTitle, int color) {
+        b.setVisibility(Notification.VISIBILITY_PRIVATE);
+        b.setPublicVersion(new Notification.Builder(this, channel)
+                .setSmallIcon(R.drawable.ic_stat_hermes)
+                .setColor(color)
+                .setContentTitle(publicTitle)
+                .build());
+    }
+
     /** Speaks a finished reply when read-aloud mode is on for its chat (global setting or per-chat override). */
     void readAloud(JSONObject e, String session) {
         try {
-            if (!"mobile".equals(e.optString("platform", ""))) return; // only chats made in this app
             String text = e.optString("speak_text", "");
-            if (text.isEmpty() || session == null) return;
+            if (session == null || !NotifyPrivacy.mayReadAloud(e.optString("platform", ""), text, isPhoneData(e, session))) return;
             String raw = getSharedPreferences("hm", MODE_PRIVATE).getString("readaloud", null);
             if (raw == null) return;
             JSONObject cfg = new JSONObject(raw);
@@ -1420,6 +1446,7 @@ public class HermesService extends Service {
                 lastOthers = others;
                 lastMore = working ? e.optInt("more", 0) : 0;
                 lastReview = working && e.optBoolean("review", false);
+                lastPhoneData = working && isPhoneData(e, session != null && !session.isEmpty() ? session : lastSession);
                 if (working && sinceMs > 0) workingSince = sinceMs;
                 boolean ended = lastWorking && !working;
                 lastWorking = working;
@@ -1453,14 +1480,16 @@ public class HermesService extends Service {
             }
             case "flash": {
                 boolean doneFlash = e.optBoolean("done", false) || e.optString("short", "").contains("Done");
+                boolean phoneData = isPhoneData(e, session);
                 if (doneFlash && session != null && !session.isEmpty()) {
                     String proc = e.optString("proc", "");
                     String turnId = e.optString("turn_id", "");
                     boolean stopEnded = stops.onDoneFlash(proc, session, turnId);
                     if (stopEnded) scheduleStopTimeout();
+                    String safeReply = NotifyPrivacy.safeReply(e.optString("reply", ""), phoneData);
                     // The island panel's Done state, whatever the Done chip's rules below decide for the chip.
                     lastDone.remove(session); // one per chat, the newest last
-                    lastDone.put(session, new IslandState.Done(session, turnId, IslandState.chatLine(title, profile), e.optString("reply", ""),
+                    lastDone.put(session, new IslandState.Done(session, turnId, IslandState.chatLine(title, profile), safeReply,
                             e.optInt("steps", 0), e.optLong("secs", 0), System.currentTimeMillis()));
                     while (lastDone.size() > IslandState.MAX_DONE) lastDone.remove(lastDone.keySet().iterator().next());
                     if (stopEnded) postStatus();
@@ -1470,8 +1499,18 @@ public class HermesService extends Service {
                     unseen.remove(session);
                     unseen.put(session, new String[]{title, profile});
                     // What the expanded Done chip says about the turn (in memory only; a restart shows the title alone).
+                    // Never keep reply text in doneInfo for a chat that has read phone data.
+                    JSONObject stored = e;
+                    if (phoneData) {
+                        try {
+                            stored = new JSONObject(e.toString()).put("reply", NotifyPrivacy.REPLY_READY)
+                                    .put("body", NotifyPrivacy.REPLY_READY).put("phone_data", true);
+                        } catch (Exception ignored) {
+                            stored = new JSONObject();
+                        }
+                    }
                     doneInfo.keySet().retainAll(unseen.keySet());
-                    doneInfo.put(session, e);
+                    doneInfo.put(session, stored);
                     if (!lastWorking) lastSession = session;
                     saveUnseen();
                     updateBadge();
@@ -1481,8 +1520,8 @@ public class HermesService extends Service {
                 if (doneFlash && !NotifyChoice.finishes(this)) return; // nor a momentary Done chip
                 // Momentary chip: done (green) or a memory/skill update.
                 flashChip = e.optString("short", "Done");
-                flashTitle = title;
-                flashBody = body;
+                flashTitle = phoneData ? "Hermux" : title;
+                flashBody = phoneData ? NotifyPrivacy.REPLY_READY : body;
                 flashColor = Color.parseColor(e.optString("color", "#2E9E5B"));
                 flashUntil = System.currentTimeMillis() + FLASH_MS;
                 if (!lastWorking && session != null && !session.isEmpty()) lastSession = session;
@@ -1520,21 +1559,38 @@ public class HermesService extends Service {
             case "ask": {
                 // HyperOS hides the popup after ~5 s: the question and its answers also ride on the island chip,
                 // armed even while the app is on screen so leaving it unanswered still leaves a way to answer.
-                pending.arrived(PendingAsk.ASK, session, "", e, System.currentTimeMillis() + ASK_TTL_MS);
+                boolean phoneData = isPhoneData(e, session);
+                JSONObject storedAsk = e;
+                if (phoneData) {
+                    try {
+                        storedAsk = new JSONObject(e.toString())
+                                .put("body", NotifyPrivacy.ASK_OPEN_APP)
+                                .put("choices", new org.json.JSONArray())
+                                .put("single", false)
+                                .put("phone_data", true);
+                    } catch (Exception ignored) {
+                        storedAsk = new JSONObject();
+                    }
+                }
+                pending.arrived(PendingAsk.ASK, session, "", storedAsk, System.currentTimeMillis() + ASK_TTL_MS);
                 syncPending();
                 main.postDelayed(expireAskTask, ASK_TTL_MS + 100); // each arrival has its own expiry check
                 postStatus();
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
-                Notification.Builder b = alertBuilder(CH_ALERT, title, body, session, true);
-                // Answer in the notification; a question with choices offers them as quick replies.
-                org.json.JSONArray ch = e.optJSONArray("choices");
-                java.util.ArrayList<CharSequence> choices = new java.util.ArrayList<>();
-                if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
-                    String c = ch.optString(k, "").trim();
-                    if (!c.isEmpty()) choices.add(c.length() > 40 ? c.substring(0, 40) : c);
+                String safeBody = NotifyPrivacy.safeBody("ask", body, phoneData);
+                Notification.Builder b = alertBuilder(CH_ALERT, phoneData ? "Hermux asks" : title, safeBody, session, true);
+                makePrivate(b, CH_ALERT, NotifyPrivacy.publicTitle("ask"), GOLD);
+                // Answer in the notification; a question with choices offers them as quick replies (never for phone-data chats).
+                if (!phoneData) {
+                    org.json.JSONArray ch = e.optJSONArray("choices");
+                    java.util.ArrayList<CharSequence> choices = new java.util.ArrayList<>();
+                    if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
+                        String c = ch.optString(k, "").trim();
+                        if (!c.isEmpty()) choices.add(c.length() > 40 ? c.substring(0, 40) : c);
+                    }
+                    if (e.optBoolean("single", true)) b.addAction(answerAction("ask", session, "Answer", choices));
                 }
-                if (e.optBoolean("single", true)) b.addAction(answerAction("ask", session, "Answer", choices));
                 postGrouped(nm, tag(kind, session), b.build());
                 return;
             }
@@ -1542,39 +1598,62 @@ public class HermesService extends Service {
             case "error":
                 if (MainActivity.visible) return;
                 if (NotifyChoice.finishes(this)) { // "When a task finishes" off: no card; reading the reply aloud is its own setting
-                    Notification.Builder rb = alertBuilder(CH_REPLY, title, body, session, false);
-                    if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null));
-                    postGrouped(nm, tag("reply", session), badged(rb, unseen.size() + (session != null && !unseen.containsKey(session) ? 1 : 0)));
+                    String safeBody = NotifyPrivacy.safeBody(kind, body, isPhoneData(e, session));
+                    boolean isError = "error".equals(kind);
+                    String cardTag = tag(isError ? "error" : "reply", session);
+                    Notification.Builder rb = alertBuilder(CH_REPLY, title, safeBody, session, false);
+                    makePrivate(rb, CH_REPLY, NotifyPrivacy.publicTitle(kind), GOLD);
+                    if (session != null && !session.isEmpty()) rb.addAction(answerAction("reply", session, "Reply", null, isError));
+                    postGrouped(nm, cardTag, badged(rb, BadgePlan.initialReplyCount(kind)));
                 }
                 if ("reply".equals(kind)) readAloud(e, session);
                 return;
-            case "learning":
+            case "learning": {
+                boolean phoneData = isPhoneData(e, session);
+                String safeTitle = phoneData ? "Hermux" : title;
+                String safeBody = NotifyPrivacy.safeBody("learning", body, phoneData);
+                int purple = Color.parseColor("#7B61D9");
                 flashChip = title.startsWith("Skill") ? "Skill" : "Memory";
-                flashTitle = title;
-                flashBody = body;
-                flashColor = Color.parseColor("#7B61D9");
+                flashTitle = safeTitle;
+                flashBody = safeBody;
+                flashColor = purple;
                 flashUntil = System.currentTimeMillis() + FLASH_MS;
                 postStatus();
                 main.postDelayed(this::expireFlash, FLASH_MS + 100);
-                postGrouped(nm, tag("learn", e.optString("id", title)), alert(CH_LEARN, title, body, session, false));
+                Notification.Builder lb = alertBuilder(CH_LEARN, safeTitle, safeBody, session, false);
+                makePrivate(lb, CH_LEARN, NotifyPrivacy.publicTitle("learning"), purple);
+                postGrouped(nm, tag("learn", phoneData ? (session == null ? "phone-data" : session) : e.optString("id", title)), badged(lb, 0));
                 return;
+            }
             case "cron":
-                if (NotifyChoice.finishes(this)) postGrouped(nm, tag("cron", e.optString("id", session)), alert(CH_JOBS, title, body, session, false));
+                if (NotifyChoice.finishes(this)) {
+                    boolean cronFailed = e.optBoolean("failed", false) || title.toLowerCase(java.util.Locale.ROOT).contains("failed");
+                    String safeBody = NotifyPrivacy.safeBody("cron", body, isPhoneData(e, session), cronFailed);
+                    Notification.Builder cb = alertBuilder(CH_JOBS, title, safeBody, session, false);
+                    makePrivate(cb, CH_JOBS, NotifyPrivacy.publicTitle("cron"), GOLD);
+                    postGrouped(nm, tag("cron", e.optString("id", session)), badged(cb, 0));
+                }
                 return;
             case "clear":
                 // The clear names its chat (not the request): only that chat's entries go; one naming no chat drops them all.
-                if ("ask".equals(e.optString("what")) && pending.cleared(PendingAsk.ASK, session)) {
+                String what = e.optString("what", "reply");
+                if ("ask".equals(what) && pending.cleared(PendingAsk.ASK, session)) {
                     syncPending();
                     postStatus();
                 }
-                if ("approval".equals(e.optString("what")) && pending.cleared(PendingAsk.APPROVAL, session)) {
+                if ("approval".equals(what) && pending.cleared(PendingAsk.APPROVAL, session)) {
                     syncPending();
                     postStatus();
                     updateWake();
                 }
-                String t = tag(e.optString("what", "reply"), session);
+                String t = tag(what, session);
                 nm.cancel(t, 2);
                 dropEmptySummary(nm, t);
+                if ("reply".equals(what)) {
+                    String errTag = tag("error", session);
+                    nm.cancel(errTag, 2);
+                    dropEmptySummary(nm, errTag);
+                }
                 return;
             default:
         }
@@ -1660,6 +1739,12 @@ public class HermesService extends Service {
         String t = tag("reply", id);
         nm.cancel(t, 2);
         dropEmptySummary(nm, t);
+        String errTag = tag("error", id);
+        nm.cancel(errTag, 2);
+        dropEmptySummary(nm, errTag);
+        String failTag = tag("answer_fail", id);
+        nm.cancel(failTag, 2);
+        dropEmptySummary(nm, failTag);
         if (unseen.remove(id) != null) {
             saveUnseen();
             updateBadge();
@@ -1705,44 +1790,74 @@ public class HermesService extends Service {
         postStatus();
     }
 
-    /** App-icon badge number = unseen chats. Isolated so it can be adapted per launcher. Stock Android shows only a
-     *  dot (from any badging notification); HyperOS shows a number taken from setNumber / Xiaomi's message count.
-     *  Every reply notification and the group summary carry the current count; this refreshes the ones on display. */
+    /** App-icon badge number = unseen chats. Launchers (AOSP Launcher3 and HyperOS) sum active child notifications,
+     *  so BadgePlan assigns each active reply card 1 (or puts any dismissed cards' count on the newest remaining card)
+     *  so the sum equals unseen.size(), cancels reply cards when unseen drops to 0, and keeps non-reply cards and the
+     *  group summary at 0 with BADGE_ICON_NONE. */
     int badgeCount = -1;
 
     void updateBadge() {
         int n = unseen.size();
-        if (n == badgeCount) return;
         badgeCount = n;
         try {
             NotificationManager nm = getSystemService(NotificationManager.class);
+            java.util.ArrayList<android.service.notification.StatusBarNotification> replies = new java.util.ArrayList<>();
+            android.service.notification.StatusBarNotification summary = null;
             for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
                 String t = sn.getTag();
-                boolean reply = sn.getId() == 2 && t != null && t.startsWith("reply:");
-                if (!reply && sn.getId() != SUMMARY_ID) continue;
-                // Nothing unseen any more (Clear, or every chat opened): HyperOS reads number 0 as "no number"
-                // and counts the cards still showing instead (phone-tested: badge 1), so drop the reply cards.
-                if (n == 0 && reply) {
-                    nm.cancel(t, 2);
-                    dropEmptySummary(nm, t);
-                    continue;
-                }
-                if (n == 0) continue;
+                Bundle ex = sn.getNotification().extras;
+                if (ex != null && ex.getBoolean(EXTRA_DISMISSING, false)) continue;
+                if (sn.getId() == 2 && BadgePlan.isReplyTag(t)) replies.add(sn);
+                else if (sn.getId() == SUMMARY_ID) summary = sn;
+            }
+            replies.sort((a, b) -> Long.compare(a.getPostTime(), b.getPostTime()));
+            java.util.ArrayList<String> activeTags = new java.util.ArrayList<>(replies.size());
+            java.util.HashMap<String, android.service.notification.StatusBarNotification> byTag = new java.util.HashMap<>();
+            for (android.service.notification.StatusBarNotification sn : replies) {
+                activeTags.add(sn.getTag());
+                byTag.put(sn.getTag(), sn);
+            }
+            BadgePlan.Plan plan = BadgePlan.plan(n, unseen.keySet(), activeTags);
+            for (String t : plan.cancelTags) {
+                nm.cancel(t, 2);
+                dropEmptySummary(nm, t);
+            }
+            for (java.util.Map.Entry<String, Integer> en : plan.counts.entrySet()) {
+                android.service.notification.StatusBarNotification sn = byTag.get(en.getKey());
+                int want = en.getValue();
+                if (sn == null || sn.getNotification().number == want) continue;
                 Notification.Builder b = Notification.Builder.recoverBuilder(this, sn.getNotification()).setOnlyAlertOnce(true);
-                nm.notify(t, sn.getId(), badged(b, n));
+                nm.notify(en.getKey(), 2, badged(b, want));
+            }
+            if (summary != null && summary.getNotification().number != 0) {
+                boolean stillActive = false;
+                for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                    if (sn.getId() == SUMMARY_ID) {
+                        stillActive = true;
+                        break;
+                    }
+                }
+                if (stillActive) {
+                    Notification.Builder b = Notification.Builder.recoverBuilder(this, summary.getNotification()).setOnlyAlertOnce(true);
+                    nm.notify(SUMMARY_ID, badged(b, 0));
+                }
             }
         } catch (Exception ignored) {
         }
     }
 
-    /** Builds with the badge number set: setNumber, plus Xiaomi's own count by reflection (no-op elsewhere). */
+    /** Builds with the badge count set: setNumber (BADGE_ICON_NONE when 0, BADGE_ICON_LARGE above 0 so a recovered
+     *  builder clears BADGE_ICON_NONE) and Xiaomi's own messageCount by reflection (no-op elsewhere). */
     Notification badged(Notification.Builder b, int n) {
-        Notification note = b.setNumber(n).build();
+        int count = Math.max(0, n);
+        b.setNumber(count);
+        b.setBadgeIconType(count == 0 ? Notification.BADGE_ICON_NONE : Notification.BADGE_ICON_LARGE);
+        Notification note = b.build();
         try {
             java.lang.reflect.Field f = Notification.class.getDeclaredField("extraNotification");
             f.setAccessible(true);
             Object extra = f.get(note);
-            if (extra != null) extra.getClass().getDeclaredMethod("setMessageCount", int.class).invoke(extra, n);
+            if (extra != null) extra.getClass().getDeclaredMethod("setMessageCount", int.class).invoke(extra, count);
         } catch (Throwable ignored) {
         }
         return note;
@@ -1772,15 +1887,24 @@ public class HermesService extends Service {
         IslandState.Ask ask = null;
         if (q != null) {
             String session = q.optString("session", "");
+            boolean askPhoneData = isPhoneData(q, session);
             java.util.ArrayList<String> choices = new java.util.ArrayList<>();
-            org.json.JSONArray ch = q.optJSONArray("choices");
-            if (ch != null) for (int k = 0; k < ch.length(); k++) choices.add(ch.optString(k, ""));
+            if (!askPhoneData) {
+                org.json.JSONArray ch = q.optJSONArray("choices");
+                if (ch != null) for (int k = 0; k < ch.length(); k++) choices.add(ch.optString(k, ""));
+            }
             ask = new IslandState.Ask(session, IslandState.chatLine(chatTitle(session), q.optString("profile", "")),
-                    q.optString("body", ""), choices, q.optBoolean("single", true));
+                    askPhoneData ? NotifyPrivacy.ASK_OPEN_APP : q.optString("body", ""), choices,
+                    !askPhoneData && q.optBoolean("single", true));
         }
         String kind = IslandState.pick(pendingApproval != null, ask != null, lastWorking, !lastWorking && !unseen.isEmpty());
         java.util.List<IslandState.Progress> working = islandWorking();
-        java.util.ArrayList<IslandState.Done> dones = new java.util.ArrayList<>(lastDone.values());
+        java.util.ArrayList<IslandState.Done> dones = new java.util.ArrayList<>(lastDone.size());
+        for (IslandState.Done d : lastDone.values()) {
+            dones.add(hasReadPhoneData(d.session)
+                    ? new IslandState.Done(d.session, d.turnId, d.chat, NotifyPrivacy.REPLY_READY, d.steps, d.secs, d.at)
+                    : d);
+        }
         java.util.Collections.reverse(dones); // the newest first
         return new IslandState(kind, ask, lastOutcome, lastExpired, islandApprovals(), working,
                 working.isEmpty() ? 0 : 1 + lastMore, dones);
@@ -1799,10 +1923,13 @@ public class HermesService extends Service {
         BgApp bg = bgApp;
         android.graphics.Bitmap thumb = bgThumb;
         JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
-        boolean app = bg != null && bg.session.equals(lastSession);
-        out.add(new IslandState.Progress(lastSession, lastTurnId, IslandState.chatLine(lastTitle, lastSub), lastTitle, lastStatus,
+        boolean mainPhoneData = lastPhoneData || hasReadPhoneData(lastSession);
+        boolean app = !mainPhoneData && bg != null && bg.session.equals(lastSession);
+        String mainStatus = mainPhoneData ? NotifyPrivacy.WORKING : lastStatus;
+        String mainTask = mainPhoneData || todo == null ? "" : todo.optString("current", "");
+        out.add(new IslandState.Progress(lastSession, lastTurnId, IslandState.chatLine(lastTitle, lastSub), lastTitle, mainStatus,
                 workingSince, lastSteps, todo == null ? "" : todo.optString("states", ""),
-                todo == null ? "" : todo.optString("current", ""), todo == null ? 0 : todo.optInt("done", 0),
+                mainTask, todo == null ? 0 : todo.optInt("done", 0),
                 todo == null ? 0 : todo.optInt("total", 0), stops.view(lastSession, lastTurnId, nowMono), app ? bg.label : "",
                 app && thumb != null ? System.identityHashCode(thumb) : 0));
         if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
@@ -1812,9 +1939,10 @@ public class HermesService extends Service {
             String oTurnId = o.optString("turn_id", "");
             double oSinceSec = o.optDouble("since", 0);
             long oSince = oSinceSec > 0 ? (long) (oSinceSec * 1000) : 0;
-            boolean oapp = bg != null && bg.session.equals(ses);
+            boolean otherPhoneData = isPhoneData(o, ses);
+            boolean oapp = !otherPhoneData && bg != null && bg.session.equals(ses);
             out.add(new IslandState.Progress(ses, oTurnId, IslandState.chatLine(o.optString("title", ""), lastSub), o.optString("title", ""),
-                    o.optString("text", ""), oSince, 0, "", "", 0, 0, stops.view(ses, oTurnId, nowMono), oapp ? bg.label : "",
+                    otherPhoneData ? NotifyPrivacy.WORKING : o.optString("text", ""), oSince, 0, "", "", 0, 0, stops.view(ses, oTurnId, nowMono), oapp ? bg.label : "",
                     oapp && thumb != null ? System.identityHashCode(thumb) : 0));
         }
         return out;
@@ -1859,7 +1987,7 @@ public class HermesService extends Service {
                 .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
                 .setAutoCancel(true)
                 .setContentIntent(openApp(null));
-        nm.notify(SUMMARY_ID, badged(sum, unseen.size()));
+        nm.notify(SUMMARY_ID, badged(sum, 0));
     }
 
     void dropEmptySummary(NotificationManager nm, String gone) {
@@ -1928,11 +2056,12 @@ public class HermesService extends Service {
     Notification workingNotification(String text, String sub) {
         JSONObject todo = lastTodo != null && lastTodo.optInt("total", 0) > 0 ? lastTodo : null;
         boolean isStopping = stops.view(lastSession, lastTurnId, android.os.SystemClock.uptimeMillis()).stopping();
+        boolean mainPhoneData = lastPhoneData || hasReadPhoneData(lastSession);
         String chat = lastTitle.isEmpty() ? "Hermux" : lastTitle;
 
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
-        t.append(isStopping ? "Stopping\u2026" : codeSpans(text));
-        String task = todo == null ? "" : todo.optString("current", "");
+        t.append(isStopping ? "Stopping\u2026" : (mainPhoneData ? bold(NotifyPrivacy.WORKING) : codeSpans(text)));
+        String task = mainPhoneData || todo == null ? "" : todo.optString("current", "");
         if (!task.isEmpty()) {
             int st = t.length();
             t.append("\n\u25B8 ").append(task);
@@ -1941,8 +2070,13 @@ public class HermesService extends Service {
         if (lastOthers != null) for (int k = 0; k < lastOthers.length(); k++) {
             JSONObject o = lastOthers.optJSONObject(k);
             if (o == null) continue;
-            String ot = o.optString("title", "");
-            t.append("\n").append(ot.isEmpty() ? "Another chat" : ot).append(": ").append(o.optString("text", "").replace("`", ""));
+            boolean otherPhoneData = isPhoneData(o, o.optString("session", ""));
+            if (otherPhoneData) {
+                t.append("\nAnother chat: ").append(NotifyPrivacy.WORKING);
+            } else {
+                String ot = o.optString("title", "");
+                t.append("\n").append(ot.isEmpty() ? "Another chat" : ot).append(": ").append(o.optString("text", "").replace("`", ""));
+            }
         }
 
         java.util.ArrayList<String> head = new java.util.ArrayList<>();
@@ -1999,13 +2133,13 @@ public class HermesService extends Service {
                     PendingIntent.getService(this, ("stop:" + lastSession + ":" + lastTurnId).hashCode(), stop,
                             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
         }
-        promote(b, lastShort.isEmpty() ? "Hermux" : lastShort);
-        // Hermes is using an app on the hidden screen for this chat: the expanded card shows a picture of it.
-        // The lock screen gets the same card without the picture (it can show the user's own data).
+        promote(b, mainPhoneData ? NotifyPrivacy.WORKING : (lastShort.isEmpty() ? "Hermux" : lastShort));
+        // Generic private lock-screen version (never carries step text, other chats' text, or a hidden-screen picture).
+        makePrivate(b, CH_STATUS, NotifyPrivacy.publicTitle("working"), GOLD);
+        // Hermes is using an app on the hidden screen for this chat: the expanded card shows a picture of it
+        // (never for a chat that has read phone data, and never on the lock-screen public version).
         android.graphics.Bitmap thumb = bgThumb;
-        if (thumb != null && bgForChip(bg)) {
-            // build() hands back the builder's own Notification: clone it, or the card becomes its own public version.
-            b.setPublicVersion(b.build().clone());
+        if (!mainPhoneData && thumb != null && bgForChip(bg)) {
             b.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(thumb));
         }
         return b.build();
@@ -2147,15 +2281,18 @@ public class HermesService extends Service {
     Notification askNotification(String sub) {
         JSONObject a = pendingAsk;
         String session = a.optString("session", "");
-        String q = a.optString("body", "").trim();
+        boolean phoneData = isPhoneData(a, session);
+        String q = phoneData ? NotifyPrivacy.ASK_OPEN_APP : a.optString("body", "").trim();
         if (q.isEmpty()) q = "Hermux has a question";
         java.util.ArrayList<String> choices = new java.util.ArrayList<>();
-        org.json.JSONArray ch = a.optJSONArray("choices");
-        if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
-            String c = ch.optString(k, "").trim();
-            if (!c.isEmpty()) choices.add(c); // whole: a tap answers with this text; only the card's list is cut
+        if (!phoneData) {
+            org.json.JSONArray ch = a.optJSONArray("choices");
+            if (ch != null) for (int k = 0; k < ch.length() && choices.size() < 5; k++) {
+                String c = ch.optString(k, "").trim();
+                if (!c.isEmpty()) choices.add(c); // whole: a tap answers with this text; only the card's list is cut
+            }
         }
-        boolean single = a.optBoolean("single", true);
+        boolean single = !phoneData && a.optBoolean("single", true);
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder(q);
         t.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, t.length(), 0);
         if (single) for (String c : choices) {
@@ -2181,6 +2318,7 @@ public class HermesService extends Service {
             for (int k = 0; k < Math.min(2, choices.size()); k++) b.addAction(choiceAction(session, choices.get(k), k));
             b.addAction(new Notification.Action.Builder(null, colored("Answer", GOLD), box).build());
         }
+        makePrivate(b, CH_STATUS, NotifyPrivacy.publicTitle("ask"), GOLD);
         promote(b, "Answer?");
         return b.build();
     }
@@ -2405,9 +2543,9 @@ public class HermesService extends Service {
         StringBuilder titles = new StringBuilder();
         for (String[] v : unseen.values()) titles.append(titles.length() > 0 ? "\n" : "").append(v[0].isEmpty() ? "Chat" : v[0]);
         String title = n == 1 ? (latest[0].isEmpty() ? "Hermux" : latest[0]) : n + " chats finished";
-        // One chat: the start of the reply, and how long the turn took / how many steps. Several: their titles.
+        // One chat: the start of the reply (generic words if it read phone data), and how long the turn took / how many steps. Several: their titles.
         JSONObject info = n == 1 ? doneInfo.get(latestId) : null;
-        String reply = info == null ? "" : info.optString("reply", "");
+        String reply = NotifyPrivacy.safeReply(info == null ? "" : info.optString("reply", ""), n == 1 && isPhoneData(info, latestId));
         String text = n == 1 ? (reply.isEmpty() ? "Done" : reply) : titles.toString();
         java.util.ArrayList<String> head = new java.util.ArrayList<>();
         if (sub != null) head.add(sub);
@@ -2428,6 +2566,7 @@ public class HermesService extends Service {
                 .setContentIntent(openApp(latestId, true))
                 .addAction(new Notification.Action.Builder(null, "Clear",
                         PendingIntent.getService(this, 7, clear, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)).build());
+        makePrivate(b, CH_STATUS, NotifyPrivacy.publicTitle("done"), GREEN);
         promote(b, n == 1 ? "Done" : n + " done");
         return b.build();
     }
@@ -2484,12 +2623,14 @@ public class HermesService extends Service {
         Bundle extras = new Bundle();
         extras.putBoolean("android.requestPromotedOngoing", true);
         b.addExtras(extras);
+        makePrivate(b, CH_STATUS, NotifyPrivacy.publicTitle("done"), flashColor);
         if (Build.VERSION.SDK_INT >= 36) b.setShortCriticalText(flashChip);
         return b.build();
     }
 
     Notification alert(String channel, String title, String body, String session, boolean urgent) {
-        return alertBuilder(channel, title, body, session, urgent).build();
+        Notification.Builder b = alertBuilder(channel, title, body, session, urgent);
+        return CH_LEARN.equals(channel) || CH_JOBS.equals(channel) ? badged(b, 0) : b.build();
     }
 
     Notification.Action approveAction(JSONObject e, String choice, String label) {
@@ -2717,50 +2858,135 @@ public class HermesService extends Service {
         }, "hermes-approve").start();
     }
 
-    /** A text field on the notification (RemoteInput). Its PendingIntent must be mutable to receive the text;
-     *  it is explicit (this service), so nothing else can fill it in. */
+    /** A text field on the notification (RemoteInput). Its PendingIntent must be mutable so Android can attach the
+     *  RemoteInput results; callers with a handle to a mutable PendingIntent can still supply fillIn() extras, so
+     *  answerFromNotification never trusts a raw tag string from the intent and derives the tag from kind/session. */
     Notification.Action answerAction(String kind, String session, String label, java.util.List<CharSequence> choices) {
+        return answerAction(kind, session, label, choices, false);
+    }
+
+    Notification.Action answerAction(String kind, String session, String label, java.util.List<CharSequence> choices, boolean errorCard) {
         android.app.RemoteInput.Builder ri = new android.app.RemoteInput.Builder(REMOTE_TEXT).setLabel("ask".equals(kind) ? "Your answer" : "Message Hermux");
         if (choices != null && !choices.isEmpty()) ri.setChoices(choices.toArray(new CharSequence[0]));
+        boolean isError = errorCard && "reply".equals(kind);
         Intent i = new Intent(this, HermesService.class).setAction(ACTION_ANSWER)
                 .putExtra("kind", kind)
-                .putExtra("session", session == null ? "" : session);
-        PendingIntent pi = PendingIntent.getService(this, ("answer:" + kind + ":" + session).hashCode(), i,
+                .putExtra("session", session == null ? "" : session)
+                .putExtra("error_card", isError);
+        PendingIntent pi = PendingIntent.getService(this, ("answer:" + kind + ":" + (isError ? "err:" : "") + session).hashCode(), i,
                 PendingIntent.FLAG_MUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return unlockFirst(new Notification.Action.Builder(null, label, pi).addRemoteInput(ri.build()).setAllowGeneratedReplies(false)).build();
+    }
+
+    /** Replaces an active RemoteInput card without its text field so Android / HyperOS exits the active inline-reply
+     *  state and dismisses the card cleanly. Synchronized on HermesService.this (as onEvent is) so active-check + notify
+     *  and the 300 ms cleanup cannot race with clear or a newly arrived card. All notification calls are guarded so a
+     *  failure on the main thread cannot kill the service. */
+    void dismissAnsweredCard(NotificationManager nm, String tag, String channel, String session) {
+        boolean posted = false;
+        synchronized (HermesService.this) {
+            boolean active = false;
+            try {
+                for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                    if (sn.getId() == 2 && tag.equals(sn.getTag())) {
+                        Bundle ex = sn.getNotification().extras;
+                        active = ex == null || !ex.getBoolean(EXTRA_DISMISSING, false);
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {
+                return;
+            }
+            if (!active) {
+                try {
+                    dropEmptySummary(nm, tag);
+                } catch (Exception ignored) {
+                }
+                return;
+            }
+            Notification.Builder b = new Notification.Builder(this, channel)
+                    .setSmallIcon(R.drawable.ic_stat_hermes)
+                    .setColor(GOLD)
+                    .setContentTitle("Sent")
+                    .setContentText("")
+                    .setOnlyAlertOnce(true)
+                    .setAutoCancel(true)
+                    .setGroup(GROUP)
+                    .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+                    .setTimeoutAfter(1)
+                    .setContentIntent(openApp(session));
+            Bundle ex = new Bundle();
+            ex.putBoolean(EXTRA_DISMISSING, true);
+            b.addExtras(ex);
+            try {
+                nm.notify(tag, 2, badged(b, 0));
+                posted = true;
+            } catch (Exception ignored) {
+                return;
+            }
+        }
+        if (!posted) return;
+        main.postDelayed(() -> {
+            synchronized (HermesService.this) {
+                try {
+                    boolean oursOrGone = true;
+                    for (android.service.notification.StatusBarNotification sn : nm.getActiveNotifications()) {
+                        if (sn.getId() == 2 && tag.equals(sn.getTag())) {
+                            Bundle snEx = sn.getNotification().extras;
+                            if (snEx != null && snEx.getBoolean(EXTRA_DISMISSING, false)) nm.cancel(tag, 2);
+                            else oursOrGone = false; // a new card arrived for this tag; leave it and its summary alone
+                            break;
+                        }
+                    }
+                    if (oursOrGone) dropEmptySummary(nm, tag);
+                } catch (Exception ignored) {
+                }
+            }
+        }, 300);
     }
 
     /** Hand a typed answer to the app's page (it holds the connection Hermes asked on). If the app isn't
      *  running, say so and offer to open the chat with the text already in the composer. */
     void answerFromNotification(Intent i) {
         Bundle res = android.app.RemoteInput.getResultsFromIntent(i);
+        boolean fromRemoteInput = res != null;
         CharSequence cs = res == null ? null : res.getCharSequence(REMOTE_TEXT);
         String typed = cs == null ? "" : cs.toString().trim();
         final String text = typed.isEmpty() && i.hasExtra("text") ? i.getStringExtra("text").trim() : typed; // a choice button
         String kind = i.getStringExtra("kind");
         String session = i.getStringExtra("session");
         boolean fromPanel = i.getBooleanExtra("panel", false); // the island panel shows its own check
-        String t = tag("ask".equals(kind) ? "ask" : "reply", session);
+        boolean errorCard = "reply".equals(kind) && i.getBooleanExtra("error_card", false);
+        String t = BadgePlan.answerTag(kind, session, errorCard);
+        String ch = "ask".equals(kind) ? CH_ALERT : CH_REPLY;
         NotificationManager nm = getSystemService(NotificationManager.class);
-        if (!text.isEmpty() && openToUnlock(session, text, "answer " + kind)) return;
-        if ("ask".equals(kind) && !text.isEmpty() && pending.answered(PendingAsk.ASK, session, "")) {
+        if (text.isEmpty()) {
+            if (MainActivity.keyguardLocked(this)) return; // API 26-30 locked phone: keep the card without unlocking
+            if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
+            else {
+                nm.cancel(t, 2);
+                dropEmptySummary(nm, t);
+            }
+            return;
+        }
+        if (openToUnlock(session, text, "answer " + kind)) return;
+        if ("ask".equals(kind) && pending.answered(PendingAsk.ASK, session, "")) {
             syncPending(); // answered (or it failed and says so): the chip goes back to the status
             postStatus();
-        }
-        if (text.isEmpty()) {
-            nm.cancel(t, 2);
-            dropEmptySummary(nm, t);
-            return;
         }
         MainActivity a = MainActivity.current;
         java.util.function.Consumer<Boolean> done = ok -> {
             noteOutcome(kind, session, "", ok ? IslandState.Outcome.SENT : IslandState.Outcome.FAILED, ok ? "" : (a == null ? "app not running" : "not delivered"));
             if (ok) {
-                nm.cancel(t, 2);
-                dropEmptySummary(nm, t);
+                if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
+                else {
+                    nm.cancel(t, 2);
+                    dropEmptySummary(nm, t);
+                }
                 if ("ask".equals(kind) && !fromPanel) confirmChip(CONFIRM_SENT, true); // a card's answer: the chip says Sent
                 return;
             }
+            if (fromRemoteInput) dismissAnsweredCard(nm, t, ch, session);
             Intent open = IntentGate.mark(this, new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK))
                     .putExtra("draft", text.length() > 20000 ? text.substring(0, 20000) : text);
             if (session != null && !session.isEmpty()) open.putExtra("session", session);
@@ -2770,7 +2996,8 @@ public class HermesService extends Service {
                     "ask".equals(kind) ? "The question is no longer open here. Tap to open the chat; your text is in the box."
                             : "Hermux isn't connected. Tap to open the chat; your text is in the box.", session, false)
                     .setContentIntent(pi);
-            postGrouped(nm, t, b.build());
+            makePrivate(b, CH_ALERT, NotifyPrivacy.publicTitle("error"), GOLD);
+            postGrouped(nm, tag("answer_fail", session), badged(b, 0));
         };
         if (a == null) {
             done.accept(false);

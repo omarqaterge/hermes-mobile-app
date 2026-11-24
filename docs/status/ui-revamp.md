@@ -459,6 +459,27 @@ covered), `31-fixed-points.cjs` green.
 **Needs a real phone:** the checklist in `docs/manual-tests.md` ("Trying the redesign build"); the test build was built
 here but not installed on a phone, and going back has not been tried on one.
 
+- **Reply text, notifications, badge and read-aloud fixes (`fix-reply-text-notifications`, PR against `redesign`).**
+  Captured reply text from Hermes's synchronous `post_llm_call` hook (`assistant_response`) in `hermes-plugin/hermes-mobile/__init__.py`
+  keyed by `(session_id, turn_id)` and source (`_turn_replies`, `_ended_turns`, `_clear_reply`, `_take_reply`) so
+  `post_llm_call` always beats async worker-thread `on_stream_end` (which only fills in for `finished` final model
+  calls when empty and never overwrites), `_on_pre_tool_call` clears commentary before `auto_mode` / `_taint_directive`
+  early returns without letting late parallel tool workers wipe newer/ended turns, thinking/reasoning blocks are skipped
+  and text is capped at 64 KiB, `/btw` and background reviews are skipped even without `turn_id`, and failed turns
+  always prefer `_plain_exit_reason`. Added synchronous `_chat_has_read_phone_data` (including compression lineage and
+  `_inherit_read` for branches) so the plugin redacts `reply`/`flash`/`error`/`cron`/`status`/`ask`/`learning` first
+  with `phone_data: true` and empty `speak_text`. Added `source: 'mobile'` to `session.resume` in `web/src/gateway.ts`
+  and hid `ActivityBanner` in lock view (`web/src/App.tsx`). Added `NotifyPrivacy.java` and `BadgePlan.java` and updated
+  `HermesService.java` so `hasReadPhoneData` fails closed on null/empty/invalid ids and `isPhoneData` only tightens;
+  every notification from a phone-data chat (`working`, `ask`, `learning`, `reply`, `error`, `Done`, `flash`, `cron`)
+  uses generic words, skips `bgThumb` and `readAloud`, and applies `makePrivate` (never cloning into `publicVersion`);
+  `error:<chat>` and private zero-badge `answer_fail:<chat>` stay outside `BadgePlan`; `answerAction` uses boolean
+  `error_card` via `BadgePlan.answerTag`; API 26–30 empty inline answers keep the card when locked; and
+  `dismissAnsweredCard` synchronizes and guards all notification calls on `HermesService.this`.
+  Needs a phone: verify Done chip/card/island reply text, phone-data redaction, lock-screen private versions, background
+  read-aloud, scheduled-job cards, HyperOS badge behaviour on `Learning`/`Scheduled jobs`/`error` cards, and
+  `RemoteInput` dismissal on a real phone.
+
 **Links:** [decision: the redesign stays on its branch](../decisions/redesign-branch-until-tried.md),
 [decision: no UI-coverage project before the revamp](../decisions/no-ui-test-work-before-revamp.md) (held until it
 started), [where the UI work stands](ui-revamp-overview.md), [UI inventory](../design/ui-inventory.md),

@@ -224,6 +224,338 @@ check("a review clear does not drop a live turn", "race-1" in plugin._active)
 plugin._clear_status("race-1")
 
 
+print("reply text via post_llm_call (Codex / non-streaming) and plain-words exit reasons")
+sent.clear()
+# Codex Responses passes final_text="" to on_stream_end, then passes assistant_response to post_llm_call right before on_session_end.
+plugin._on_pre_llm_call(session_id="s-a", turn_id="s-a:codex1", user_message="What is the capital of France?")
+plugin._on_stream_start(session_id="s-a", turn_id="s-a:codex1")
+plugin._on_stream_end(final_text="", session_id="s-a", turn_id="s-a:codex1", finished=True)
+plugin._on_post_llm_call(session_id="s-a", turn_id="s-a:codex1", assistant_response="The capital of France is Paris.")
+plugin._on_session_end(session_id="s-a", turn_id="s-a:codex1", completed=True, platform="mobile",
+                       turn_exit_reason="text_response(finish_reason=stop)")
+rep = [x for x in sent if x["kind"] == "reply"][-1]
+fl = [x for x in sent if x["kind"] == "flash"][-1]
+check("Codex reply event carries reply text, speak_text and platform",
+      rep.get("body") == "The capital of France is Paris."
+      and rep.get("speak_text") == "The capital of France is Paris."
+      and rep.get("platform") == "mobile", rep)
+check("Codex flash (Done chip + island) carries reply text",
+      fl.get("reply") == "The capital of France is Paris."
+      and "Paris" in fl.get("body", ""), fl)
+
+# Non-streaming provider: no on_stream_end at all, content-block list in post_llm_call.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-a", turn_id="s-a:ns1", user_message="hi")
+plugin._on_post_llm_call(session_id="s-a", turn_id="s-a:ns1",
+                         assistant_response=[{"type": "text", "text": "Tea is ready."}])
+plugin._on_session_end(session_id="s-a", turn_id="s-a:ns1", completed=True, platform="mobile")
+rep_ns = [x for x in sent if x["kind"] == "reply"][-1]
+fl_ns = [x for x in sent if x["kind"] == "flash"][-1]
+check("non-streaming list-of-blocks reply reaches reply, speak_text and flash",
+      rep_ns.get("body") == "Tea is ready." and rep_ns.get("speak_text") == "Tea is ready."
+      and fl_ns.get("reply") == "Tea is ready.", (rep_ns, fl_ns))
+
+# Stale reply text is cleared when a new turn starts (so an empty cron/failed turn never reuses an earlier turn's text).
+sent.clear()
+plugin._last_text["s-cron"] = "Old reply from an earlier turn"
+plugin._on_pre_llm_call(session_id="s-cron", turn_id="s-cron:1", user_message="run job")
+plugin._on_post_llm_call(session_id="s-cron", turn_id="s-cron:1", assistant_response="Cron ping ok.")
+plugin._on_session_end(session_id="s-cron", turn_id="s-cron:1", completed=True, platform="cron",
+                       turn_exit_reason="text_response(finish_reason=stop)")
+cr = [x for x in sent if x["kind"] == "cron"][-1]
+check("cron job shows its reply text from post_llm_call", cr.get("body") == "Cron ping ok.", cr)
+
+# Empty cron turn never shows raw text_response(finish_reason=stop); gets plain words.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-cron2", turn_id="s-cron2:1", user_message="run quiet job")
+plugin._on_session_end(session_id="s-cron2", turn_id="s-cron2:1", completed=True, platform="cron",
+                       turn_exit_reason="text_response(finish_reason=stop)")
+cr_empty = [x for x in sent if x["kind"] == "cron"][-1]
+check("empty cron turn gets plain words, never text_response(finish_reason=stop)",
+      cr_empty.get("body") == "Finished" and "finish_reason" not in cr_empty.get("body", ""), cr_empty)
+
+# Failed cron and failed chat turns never leak raw internal turn_exit_reason strings.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-fail", turn_id="s-fail:1", user_message="x")
+plugin._on_session_end(session_id="s-fail", turn_id="s-fail:1", failed=True, platform="mobile",
+                       turn_exit_reason="max_iterations_reached(20/20)")
+er1 = [x for x in sent if x["kind"] == "error"][-1]
+plugin._on_pre_llm_call(session_id="s-fail", turn_id="s-fail:2", user_message="x")
+plugin._on_session_end(session_id="s-fail", turn_id="s-fail:2", failed=True, platform="mobile",
+                       turn_exit_reason="local_processing_error(ValueError: internal traceback)")
+er2 = [x for x in sent if x["kind"] == "error"][-1]
+plugin._on_pre_llm_call(session_id="s-fail", turn_id="s-fail:3", user_message="x")
+plugin._on_session_end(session_id="s-fail", turn_id="s-fail:3", failed=True, platform="mobile",
+                       turn_exit_reason="unknown_repr(foo=bar)")
+er3 = [x for x in sent if x["kind"] == "error"][-1]
+check("failed turns map internal exit reasons to plain words (never raw reprs)",
+      er1.get("body") == "Reached the step limit"
+      and er2.get("body") == "Something went wrong while running the turn"
+      and er3.get("body") == "The turn failed"
+      and "ValueError" not in er2.get("body", "") and "unknown_repr" not in er3.get("body", ""),
+      (er1, er2, er3))
+
+# Tool Search bridge wrapping todo_list still updates the working status chip's task list.
+plugin._on_stream_start(session_id="s-todo", turn_id="s-todo:1")
+bridged_todo = {"calls": [{"name": "todo_list", "arguments": {"todos": [{"id": "1", "content": "Step 1", "status": "in_progress"}]}}]}
+plugin._on_pre_tool_call(tool_name="tool_call", args=bridged_todo, session_id="s-todo", turn_id="s-todo:1")
+plugin._on_post_tool_call(tool_name="tool_call", args=bridged_todo, result=res, session_id="s-todo", turn_id="s-todo:1")
+st_todo = last_status()
+check("todo_list through tool_call updates the chip's task list",
+      (st_todo.get("todo") or {}).get("states") == "dapx", st_todo.get("todo"))
+plugin._on_session_end(session_id="s-todo", turn_id=None, interrupted=True)
+
+print("reply text hygiene: stale commentary, background work, thinking blocks, cap, early pop")
+# Pre-tool commentary must be cleared when a tool step starts and never leak as a failed turn's error body.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-stale", turn_id="s-stale:1", user_message="run it")
+plugin._on_stream_end(final_text="Let me check that file first.", session_id="s-stale", turn_id="s-stale:1", finished=False)
+plugin._on_pre_tool_call(tool_name="terminal", args={"command": "ls"}, session_id="s-stale", turn_id="s-stale:1")
+check("pre_tool_call clears pre-tool commentary from _last_text", "s-stale" not in plugin._last_text, plugin._last_text.get("s-stale"))
+plugin._on_post_llm_call(session_id="s-stale", turn_id="s-stale:1", assistant_response="Earlier step commentary.")
+plugin._on_session_end(session_id="s-stale", turn_id="s-stale:1", failed=True, platform="mobile",
+                       turn_exit_reason="pending_tool_result")
+er_stale = [x for x in sent if x["kind"] == "error"][-1]
+check("failed turn prefers plain words over stored text",
+      er_stale.get("body") == "Stopped before finishing a tool step", er_stale)
+
+# _is_review checks _write_origin() even when turn_id is missing, and pre_llm_call skips review / /btw without wiping _last_text.
+orig_wo = plugin._write_origin
+try:
+    plugin._write_origin = lambda: "side_question"
+    check("_is_review detects side_question even when turn_id is None",
+          plugin._is_review(None, "s-main") is True)
+    plugin._last_text["s-main"] = "Main turn reply"
+    plugin._on_pre_llm_call(session_id="s-main", turn_id=None, user_message="quick side question")
+    check("pre_llm_call for /btw (even without turn_id) does not wipe main turn _last_text",
+          plugin._last_text.get("s-main") == "Main turn reply", plugin._last_text.get("s-main"))
+    plugin._write_origin = lambda: "background_review"
+    check("_is_review detects background_review even when turn_id is None",
+          plugin._is_review(None, "s-main") is True)
+    plugin._on_pre_llm_call(session_id="s-main", turn_id="rev-turn", user_message="something else")
+    check("pre_llm_call for background_review does not wipe main turn _last_text",
+          plugin._last_text.get("s-main") == "Main turn reply", plugin._last_text.get("s-main"))
+finally:
+    plugin._write_origin = orig_wo
+plugin._clear_status("s-main")
+
+# _on_session_end with turn_id=None still pops _last_text so nothing leaks.
+plugin._on_session_end(session_id="s-main", turn_id=None, interrupted=True)
+check("on_session_end with turn_id=None pops _last_text", "s-main" not in plugin._last_text)
+
+# _reply_text skips thinking/reasoning blocks and caps at MAX_REPLY_TEXT.
+mixed_blocks = [
+    {"type": "thinking", "text": "secret chain of thought"},
+    {"type": "reasoning", "text": "private reasoning"},
+    {"type": "text", "text": "Hello "},
+    {"type": "output_text", "text": "world"},
+    {"text": "!"},
+]
+check("_reply_text keeps only text/output_text/untyped blocks, never thinking or reasoning",
+      plugin._reply_text(mixed_blocks) == "Hello world!", plugin._reply_text(mixed_blocks))
+huge = "a" * (plugin.MAX_REPLY_TEXT + 5000)
+check("_reply_text caps stored reply text at MAX_REPLY_TEXT",
+      len(plugin._reply_text(huge)) == plugin.MAX_REPLY_TEXT, len(plugin._reply_text(huge)))
+
+print("async on_stream_end race and late parallel tool workers")
+sent.clear()
+# 1. Step-1 commentary arriving asynchronously via on_stream_end(finished=False) after pre_tool_call is ignored.
+plugin._on_pre_llm_call(session_id="s-race", turn_id="r:1", user_message="run tool")
+plugin._on_post_llm_call(session_id="s-race", turn_id="r:1", assistant_response="Step 1 commentary")
+plugin._on_pre_tool_call(tool_name="terminal", args={"command": "ls"}, session_id="s-race", turn_id="r:1")
+plugin._on_stream_end(final_text="Step 1 commentary (late)", session_id="s-race", turn_id="r:1", finished=False)
+plugin._on_session_end(session_id="s-race", turn_id="r:1", completed=True, platform="mobile")
+rep_race1 = [x for x in sent if x["kind"] == "reply"][-1]
+check("late on_stream_end(finished=False) never restores cleared pre-tool commentary",
+      rep_race1.get("body") == "Done", rep_race1)
+
+# 2. post_llm_call wins over on_stream_end(finished=True) in either order; stream_end only fills in when empty.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-race", turn_id="r:2", user_message="answer")
+plugin._on_post_llm_call(session_id="s-race", turn_id="r:2", assistant_response="Authoritative final reply")
+plugin._on_stream_end(final_text="Stale streamed text", session_id="s-race", turn_id="r:2", finished=True)
+plugin._on_session_end(session_id="s-race", turn_id="r:2", completed=True, platform="mobile")
+rep_race2 = [x for x in sent if x["kind"] == "reply"][-1]
+check("post_llm_call wins when on_stream_end(finished=True) arrives after it",
+      rep_race2.get("body") == "Authoritative final reply", rep_race2)
+
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-race", turn_id="r:3", user_message="answer")
+plugin._on_stream_end(final_text="Earlier streamed text", session_id="s-race", turn_id="r:3", finished=True)
+plugin._on_post_llm_call(session_id="s-race", turn_id="r:3", assistant_response="Final post_llm_call text")
+plugin._on_session_end(session_id="s-race", turn_id="r:3", completed=True, platform="mobile")
+rep_race3 = [x for x in sent if x["kind"] == "reply"][-1]
+check("post_llm_call overwrites earlier on_stream_end(finished=True)",
+      rep_race3.get("body") == "Final post_llm_call text", rep_race3)
+
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-race", turn_id="r:4", user_message="stream only")
+plugin._on_stream_end(final_text="Stream fallback reply", session_id="s-race", turn_id="r:4", finished=True)
+plugin._on_session_end(session_id="s-race", turn_id="r:4", completed=True, platform="mobile")
+rep_race4 = [x for x in sent if x["kind"] == "reply"][-1]
+check("on_stream_end(finished=True) fills in when post_llm_call gave no text",
+      rep_race4.get("body") == "Stream fallback reply", rep_race4)
+
+# 3. pre_tool_call clears commentary even when auto_mode blocks early.
+orig_auto = plugin._auto_mode
+try:
+    class _BlockAuto:
+        def check(self, *a, **kw):
+            return {"action": "block", "message": "blocked"}
+    plugin._auto_mode = lambda: _BlockAuto()
+    sent.clear()
+    plugin._on_pre_llm_call(session_id="s-blk", turn_id="blk:1", user_message="danger")
+    plugin._on_post_llm_call(session_id="s-blk", turn_id="blk:1", assistant_response="Running rm now...")
+    v = plugin._on_pre_tool_call(tool_name="terminal", args={"command": "rm -rf /"}, session_id="s-blk", turn_id="blk:1")
+    check("auto_mode blocked the tool call", isinstance(v, dict) and v.get("action") == "block", v)
+    plugin._on_session_end(session_id="s-blk", turn_id="blk:1", completed=True, platform="mobile")
+    rep_blk = [x for x in sent if x["kind"] == "reply"][-1]
+    check("pre_tool_call cleared commentary even before auto_mode early return",
+          rep_blk.get("body") == "Done", rep_blk)
+finally:
+    plugin._auto_mode = orig_auto
+
+# 4. A late tool worker from an already-ended turn (r:4) must not wipe a newer turn (r:5)'s reply.
+sent.clear()
+plugin._on_pre_llm_call(session_id="s-race", turn_id="r:5", user_message="next turn")
+plugin._on_post_llm_call(session_id="s-race", turn_id="r:5", assistant_response="Turn 5 final answer")
+plugin._on_pre_tool_call(tool_name="terminal", args={"command": "echo late"}, session_id="s-race", turn_id="r:4")
+plugin._on_session_end(session_id="s-race", turn_id="r:5", completed=True, platform="mobile")
+rep_race5 = [x for x in sent if x["kind"] == "reply"][-1]
+check("late tool worker from timed-out turn r:4 does not wipe turn r:5 reply",
+      rep_race5.get("body") == "Turn 5 final answer", rep_race5)
+
+print("phone-data redaction on plugin side (direct, compacted, branched, status/ask/learning/cron)")
+import shutil, sqlite3
+pt = plugin._phone_taint()
+pd_mod = plugin._phone_data()
+tmp_pd_dir = Path(tempfile.mkdtemp())
+orig_pt_path = pt.PATH
+orig_state_db = pd_mod._state_db
+orig_report = plugin._report_taint
+try:
+    pt.PATH = tmp_pd_dir / "phone-read.json"
+    pt._mem.clear()
+    pt._cache = (None, {}, {})
+    plugin._INHERIT_SEEN.clear()
+    plugin._report_taint = lambda batch: None  # no HTTP in unit test
+    db_path = tmp_pd_dir / "state.db"
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_session_id TEXT, end_reason TEXT, model_config TEXT, started_at REAL)")
+    now_t = time.time()
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-pd-1", None, "compression", "{}", now_t - 100))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-pd-compact", "s-pd-1", None, "{}", now_t - 10))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-pd-branch", None, None, json.dumps({"_branched_from": "s-pd-1"}), now_t + 10))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-pd-clean", None, None, "{}", now_t + 10))
+    con.commit()
+    con.close()
+    pd_mod._state_db = lambda: db_path
+
+    # Mark s-pd-1 as having read phone data.
+    pt.mark(["s-pd-1"])
+
+    # Direct phone-data chat: reply, flash, speak_text, error, cron (finished + failed).
+    sent.clear()
+    plugin._on_pre_llm_call(session_id="s-pd-1", turn_id="pd:1", user_message="read sms")
+    plugin._on_post_llm_call(session_id="s-pd-1", turn_id="pd:1", assistant_response="Your bank OTP is 998877")
+    plugin._on_session_end(session_id="s-pd-1", turn_id="pd:1", completed=True, platform="mobile")
+    r_pd = [x for x in sent if x["kind"] == "reply"][-1]
+    f_pd = [x for x in sent if x["kind"] == "flash"][-1]
+    check("tainted chat reply is redacted to Reply ready with empty speak_text and phone_data=True",
+          r_pd.get("body") == "Reply ready" and r_pd.get("speak_text") == "" and r_pd.get("phone_data") is True
+          and "998877" not in json.dumps(sent), (r_pd, f_pd))
+    check("tainted chat flash is redacted to Reply ready with phone_data=True",
+          f_pd.get("reply") == "Reply ready" and f_pd.get("phone_data") is True, f_pd)
+
+    # Compacted session s-pd-compact answering WITHOUT calling any tool is redacted synchronously.
+    sent.clear()
+    plugin._on_pre_llm_call(session_id="s-pd-compact", turn_id="pdc:1", user_message="summarize")
+    plugin._on_post_llm_call(session_id="s-pd-compact", turn_id="pdc:1", assistant_response="Secret compacted SMS 445566")
+    plugin._on_session_end(session_id="s-pd-compact", turn_id="pdc:1", completed=True, platform="mobile")
+    r_cmp = [x for x in sent if x["kind"] == "reply"][-1]
+    check("compacted phone-data chat S2 is redacted synchronously without any tool call",
+          r_cmp.get("body") == "Reply ready" and r_cmp.get("speak_text") == "" and r_cmp.get("phone_data") is True
+          and "445566" not in json.dumps(sent), r_cmp)
+
+    # Branched session s-pd-branch answering WITHOUT calling any tool is redacted synchronously.
+    sent.clear()
+    plugin._on_pre_llm_call(session_id="s-pd-branch", turn_id="pdb:1", user_message="repeat")
+    plugin._on_post_llm_call(session_id="s-pd-branch", turn_id="pdb:1", assistant_response="Secret branched SMS 778899")
+    plugin._on_session_end(session_id="s-pd-branch", turn_id="pdb:1", completed=True, platform="mobile")
+    r_br = [x for x in sent if x["kind"] == "reply"][-1]
+    check("branched phone-data chat S3 is redacted synchronously without any tool call",
+          r_br.get("body") == "Reply ready" and r_br.get("speak_text") == "" and r_br.get("phone_data") is True
+          and "778899" not in json.dumps(sent), r_br)
+
+    # Failed turn and cron (finished + failed) on tainted chat.
+    sent.clear()
+    plugin._on_session_end(session_id="s-pd-1", turn_id="pd:2", failed=True, platform="mobile", turn_exit_reason="pending_tool_result")
+    e_pd = [x for x in sent if x["kind"] == "error"][-1]
+    check("tainted failed turn sends Turn failed and phone_data=True",
+          e_pd.get("body") == "Turn failed" and e_pd.get("phone_data") is True, e_pd)
+
+    sent.clear()
+    plugin._on_post_llm_call(session_id="s-pd-1", turn_id="pd:3", assistant_response="Secret cron output")
+    plugin._on_session_end(session_id="s-pd-1", turn_id="pd:3", completed=True, platform="cron")
+    c_ok = [x for x in sent if x["kind"] == "cron"][-1]
+    plugin._on_session_end(session_id="s-pd-1", turn_id="pd:4", failed=True, platform="cron")
+    c_fail = [x for x in sent if x["kind"] == "cron"][-1]
+    check("tainted cron sends Job finished / Job failed with failed flag and phone_data=True",
+          c_ok.get("body") == "Job finished" and c_ok.get("failed") is False and c_ok.get("phone_data") is True
+          and c_fail.get("body") == "Job failed" and c_fail.get("failed") is True and c_fail.get("phone_data") is True,
+          (c_ok, c_fail))
+
+    # Tainted status (step, todo text, others), clarify (ask), memory and skill learning.
+    sent.clear()
+    plugin._on_stream_start(session_id="s-pd-1", turn_id="pd:5")
+    plugin._on_pre_tool_call(tool_name="read_file", args={"path": "/secret/otp.txt"}, session_id="s-pd-1", turn_id="pd:5")
+    plugin._on_post_tool_call(tool_name="todo_list", args={}, result=res, session_id="s-pd-1", turn_id="pd:5")
+    st_pd = last_status()
+    check("tainted status redacts body, short and todo current text while keeping progress counts",
+          st_pd.get("body") == "Working" and st_pd.get("short") == "Working" and st_pd.get("phone_data") is True
+          and (st_pd.get("todo") or {}).get("current") == "" and (st_pd.get("todo") or {}).get("total") == 3
+          and "otp.txt" not in json.dumps(st_pd), st_pd)
+
+    sent.clear()
+    plugin._on_pre_tool_call(tool_name="clarify", args={"question": "Forward OTP 1234?", "choices": ["Yes 1234", "No"]},
+                             session_id="s-pd-1", turn_id="pd:5")
+    ask_pd = [x for x in sent if x["kind"] == "ask"][-1]
+    check("tainted clarify sends generic ask without question or choice text",
+          ask_pd.get("body") == "Hermes has a question, open Hermux to answer"
+          and ask_pd.get("choices") == [] and ask_pd.get("single") is False and ask_pd.get("phone_data") is True
+          and "1234" not in json.dumps(ask_pd), ask_pd)
+
+    sent.clear()
+    plugin._on_post_tool_call(tool_name="memory", args={"action": "add", "target": "user", "content": "Secret PIN 9876"},
+                              status="ok", session_id="s-pd-1", turn_id="pd:5")
+    mem_pd = [x for x in sent if x["kind"] == "learning"][-1]
+    plugin._on_skill_lifecycle(action="created", skill_name="secret-pin-skill", session_id="s-pd-1")
+    sk_pd = [x for x in sent if x["kind"] == "learning"][-1]
+    check("tainted memory and skill learning send Learned something new and phone_data=True",
+          mem_pd.get("body") == "Learned something new" and mem_pd.get("phone_data") is True and "9876" not in json.dumps(mem_pd)
+          and sk_pd.get("body") == "Learned something new" and sk_pd.get("phone_data") is True and "secret-pin" not in json.dumps(sk_pd),
+          (mem_pd, sk_pd))
+    plugin._on_session_end(session_id="s-pd-1", turn_id=None, interrupted=True)
+
+    # Untainted chat s-pd-clean still receives normal reply text.
+    sent.clear()
+    plugin._on_pre_llm_call(session_id="s-pd-clean", turn_id="cln:1", user_message="hi")
+    plugin._on_post_llm_call(session_id="s-pd-clean", turn_id="cln:1", assistant_response="Normal clean reply")
+    plugin._on_session_end(session_id="s-pd-clean", turn_id="cln:1", completed=True, platform="mobile")
+    r_cln = [x for x in sent if x["kind"] == "reply"][-1]
+    check("untainted chat still gets normal reply and speak_text",
+          r_cln.get("body") == "Normal clean reply" and r_cln.get("speak_text") == "Normal clean reply"
+          and not r_cln.get("phone_data"), r_cln)
+finally:
+    pt.PATH = orig_pt_path
+    pt._mem.clear()
+    pt._cache = (None, {}, {})
+    pd_mod._state_db = orig_state_db
+    plugin._report_taint = orig_report
+    plugin._INHERIT_SEEN.clear()
+    shutil.rmtree(tmp_pd_dir, ignore_errors=True)
+
+
 # ── /stop: finds the live runtime of the stored chat and interrupts it ──
 print("/stop")
 try:
