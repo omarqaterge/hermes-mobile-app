@@ -7,8 +7,9 @@ the browser tests run as five parallel shards in CI and in `tools/check.sh` (`ru
 1 minute 45 instead of 6.5 locally; the longest shard (`07-11`) has about 105 s of checks in CI.
 
 **Next:** the open items of the review of 2026-11-01 (`docs/status/review-2026-11-01.md`). More shards gain little now:
-`07-11`, `17-18` and `12` all take 85–105 s. The next step is fewer fixed `sleep`s in `12-app-shell.cjs` and
-`18-setup-flow.cjs` (waits for the state instead).
+`07-11`, `17-18` and `12` all take 85–105 s. Done: state-waiting `sleep`s and `waitForTimeout` in `12-app-shell.cjs`
+and `18-setup-flow.cjs` (plus `08`, `16` and `29`) are now waits for the state, keeping only commented timing and
+negative checks.
 
 **Needs a real phone:** no.
 

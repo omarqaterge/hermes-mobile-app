@@ -872,6 +872,7 @@ let created = 0
 const goalState = { rt: 'rt-goal', g: null }
 const goalFor = rt => (rt === goalState.rt ? goalState.g : null)
 const slowTurns = new Map() // runtime id → { timers, row, text } of a running 'slow reply'
+const runtimeToStored = new Map() // runtime session_id → stored session id (recorded on create/resume/branch)
 // What the pinned Hermes puts in a subagent event (tools/hermes-contract compares it).
 const TOOLSETS = ['browser', 'canvas', 'code_execution', 'computer_use', 'connections', 'file', 'image_gen', 'project', 'session_search', 'skills', 'terminal', 'todo', 'tts', 'vision', 'web']
 // The usage object of Hermes's message.complete / session.usage after `n` model calls.
@@ -884,7 +885,7 @@ wss.on('connection', ws => {
     ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id, payload } }))
   }
   const later = (ms, fn) => setTimeout(fn, ms)
-  const sessionKeyOf = rt => (rt.startsWith('rt-new') ? `s-new${rt.slice(6)}` : rt.replace(/^rt-/, ''))
+  const sessionKeyOf = rt => runtimeToStored.get(rt) || (rt.startsWith('rt-new') ? `s-new${rt.slice(6)}` : rt.replace(/^rt\d*-/, ''))
   const live = fn => () => ws.readyState === 1 && fn()
   // Plays [type, payload] events 40 ms apart from `t` ms on; returns the time of the last one.
   const play = (sid, steps, t = 50, gap = 40) => {
@@ -936,7 +937,13 @@ wss.on('connection', ws => {
     }
     const { id, method, params = {} } = msg
     log({ rpc: method, params })
-    const reply = result => ws.send(JSON.stringify({ jsonrpc: '2.0', id, result }))
+    const reply = result => {
+      if (result && typeof result === 'object' && typeof result.session_id === 'string') {
+        const stored = result.stored_session_id || result.resumed || result.session_key
+        if (typeof stored === 'string' && stored) runtimeToStored.set(result.session_id, stored)
+      }
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, result }))
+    }
     switch (method) {
       case 'session.list':
         return reply({ sessions: allSessions.slice(0, params.limit || 50) })
@@ -1281,7 +1288,7 @@ wss.on('connection', ws => {
           // prompt to the real Hermes with a fake model: reasoning, one read_file call, reasoning, the answer in chunks).
           // A tool result is the parsed JSON in `result` (the real Hermes adds `result_text` only with display.tool_progress verbose, which
           // the app never sets, so no flow here sends it).
-          const stored = sid.startsWith('rt-new') ? sid.replace(/^rt-/, 's-') : sid.replace(/^rt-/, '') // the chat's stored id
+          const stored = sessionKeyOf(sid) // the chat's stored id
           const args = { path: '/root/note.txt' }
           const usage = n => ({ model: 'mock-model', input: 120 * n, output: 20 * n, reasoning: 0, prompt: 120 * n, completion: 20 * n, total: 140 * n, calls: n, context_used: 120, context_max: 256000, context_percent: 0, context_source: 'provider_usage', context_estimated: false, compressions: 0, avg_latency_s: 1, avg_tps: 20, active_subagents: 0 })
           const steps = [
@@ -1357,7 +1364,7 @@ wss.on('connection', ws => {
           later(50, () => event('tool.generating', sid, { name: 'tool_call' }))
           later(2600, () => event('tool.start', sid, { tool_id: 'call_cv', name: 'canvas', args: { action: 'create', title: 'Plan', content: '# Plan\n\nStep one' } }))
           later(3600, () => {
-            const stored = sid.replace(/^rt-/, '')
+            const stored = sessionKeyOf(sid)
             const d = { id: 'dplan', title: 'Plan', type: 'markdown', lang: '', rev: 1, updated: Date.now() / 1000, by: 'agent', chars: 18, path: '', created: Date.now() / 1000, content: '# Plan\n\nStep one' }
             ;(canvasDocs[stored] ||= []).push(d)
             event('tool.complete', sid, { tool_id: 'call_cv', name: 'canvas', duration_s: 0.1, args: { action: 'create', title: 'Plan', content: '# Plan\n\nStep one' }, result: { ok: true, id: 'dplan', shown: true } })

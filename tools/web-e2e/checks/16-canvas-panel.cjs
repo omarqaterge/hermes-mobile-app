@@ -30,11 +30,13 @@ module.exports = async t => {
   for (const [sel, what] of [['.msg.assistant pre', 'a code block'], ['.msg.assistant table td', 'a table'], ['.msg.assistant .hm-openui', 'a card']]) {
     await cvp.locator(sel).first().scrollIntoViewIfNeeded()
     const on = await cswipe(sel, null, -100)
+    // Negative check: confirm swiping left on a horizontally scrollable block does not open the canvas.
     await sleep(300)
     check(!(await panelOpen()), `a swipe left that starts on ${what} does not open the canvas (${on})`)
   }
   await cvp.locator('.msg.assistant p', { hasText: 'Plain words to swipe' }).scrollIntoViewIfNeeded()
   await cswipe('.msg.assistant p', 300, -40)
+  // Negative check: confirm a short swipe left does not open the canvas.
   await sleep(300)
   check(!(await panelOpen()), 'a short swipe left does not open the canvas')
   await cswipe('.msg.assistant p', 300, -220)
@@ -44,7 +46,7 @@ module.exports = async t => {
     check((await cvp.locator('.canvas-tab-title', { hasText: 'Side' }).count()) === 1, 'it is the chat\'s own canvas')
     const look = await cvp.locator('.canvas-panel').evaluate(el => ({ cls: el.className, anim: getComputedStyle(el).animationName }))
     check(/\bsize-side\b/.test(look.cls) && look.anim === 'canvas-in', `the panel slides in from the right (${look.cls}, ${look.anim})`)
-    await sleep(400) // let the slide-in end
+    await cvp.waitForFunction(() => { const b = document.querySelector('.canvas-panel')?.getBoundingClientRect(); return !!b && Math.abs(b.x) <= 1 && Math.abs(b.x + b.width - 375) <= 1 }, null, { timeout: 3000 }).catch(() => {})
     const box = await cvp.locator('.canvas-panel').boundingBox()
     check(box && Math.abs(box.x) <= 1 && Math.abs(box.x + box.width - 375) <= 1, `the panel covers the chat full width (${JSON.stringify(box)})`)
     check((await cvp.locator('.canvas-grip').count()) === 0, 'no bottom-sheet grip any more')
@@ -54,7 +56,8 @@ module.exports = async t => {
     await cvp.locator('.canvas-toolbar .seg button', { hasText: 'View' }).click()
     // A short swipe right on the header snaps back; a long one closes the panel.
     await cswipe('.canvas-head', 60, 50)
-    await sleep(450)
+    // Negative check: wait past the 200 ms close timeout to confirm a short swipe snapped back instead of closing.
+    await sleep(300)
     check(await panelOpen(), 'a short swipe right on the panel header leaves it open')
     check(await cvp.locator('.canvas-panel').evaluate(el => !el.style.transform || el.style.transform === 'translateX(0px)'), 'and it snaps back')
     await cswipe('.canvas-head', 60, 200)
@@ -66,7 +69,7 @@ module.exports = async t => {
   await cvp.getByRole('button', { name: 'Fill the whole screen' }).click()
   check((await cvp.locator('.canvas-panel.size-max').count()) === 1, 'fill the whole screen still works')
   await cvp.evaluate(() => window.hermesBack())
-  await sleep(200)
+  await cvp.locator('.canvas-panel.size-side').waitFor({ timeout: 2000 }).catch(() => {})
   check((await cvp.locator('.canvas-panel.size-side').count()) === 1, 'Back from the whole screen returns to the panel')
   await cvp.evaluate(() => window.hermesBack())
   await cvp.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 2000 }).then(() => check(true, 'Back closes the canvas panel'), () => check(false, 'Back closes the canvas panel'))
@@ -81,14 +84,14 @@ module.exports = async t => {
     await rp.addInitScript(id => localStorage.setItem('hm.lastSession', JSON.stringify({ id, profile: 'default' })), sid)
     await rp.goto(WEB + '/')
     await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
-    await sleep(500)
+    await rp.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
     const cdp = await rctx.newCDPSession(rp)
     const finger = async (x0, y0, dx, dy, steps = 12) => {
       const pt = (x, y) => [{ x, y, id: 1 }]
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0, y0) })
       for (let i = 1; i <= steps; i++) {
         await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps, y0 + (dy * i) / steps + (i % 3)) })
-        await sleep(16)
+        await sleep(16) // frame-paced step interval to produce realistic swipe velocity
       }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     }
@@ -103,7 +106,7 @@ module.exports = async t => {
     })
     console.log(`  (real swipe starts on ${JSON.stringify(at)} in the ${what})`)
     await finger(at.x, at.y, -240, 6)
-    await sleep(500)
+    await rp.locator('.canvas-panel').waitFor({ timeout: 3000 }).catch(() => {})
     check((await rp.locator('.canvas-panel').count()) === 1, `a real finger swiping left on a ${what} opens the canvas`)
     await rctx.close()
   }
@@ -114,14 +117,14 @@ module.exports = async t => {
     await rp.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-wide', profile: 'default' })))
     await rp.goto(WEB + '/')
     await rp.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
-    await sleep(500)
+    await rp.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
     const cdp = await rctx.newCDPSession(rp)
     const finger = async (x0, y0, dx, dy, steps = 12) => {
       const pt = (x, y) => [{ x, y, id: 1 }]
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0, y0) })
       for (let i = 1; i <= steps; i++) {
         await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps, y0 + (dy * i) / steps + (i % 3)) })
-        await sleep(16)
+        await sleep(16) // frame-paced step interval to produce realistic swipe velocity
       }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     }
@@ -140,11 +143,14 @@ module.exports = async t => {
     })
     console.log(`  (wide chat: swipe starts on ${JSON.stringify(at)})`)
     await finger(at.x, at.y, -240, 6)
-    await sleep(500)
+    await rp.locator('.canvas-panel').waitFor({ timeout: 3000 }).catch(() => {})
     check((await rp.locator('.canvas-panel').count()) === 1, 'a real finger swiping left on plain text opens the canvas in a chat with long unbroken words')
-    if (await rp.locator('.canvas-panel').count()) { await rp.evaluate(() => window.hermesBack()); await sleep(500) }
+    if (await rp.locator('.canvas-panel').count()) {
+      await rp.evaluate(() => window.hermesBack())
+      await rp.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    }
     await finger(at.x - 100, at.y, 240, 6)
-    await sleep(500)
+    await rp.locator('.drawer.open').waitFor({ timeout: 3000 }).catch(() => {})
     check((await rp.locator('.drawer.open').count()) === 1, 'a real finger swiping right on plain text opens the drawer in a chat with long unbroken words')
     await rctx.close()
   }
@@ -158,7 +164,7 @@ module.exports = async t => {
   await cvw.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
   await cvw.locator('.canvas-btn').click()
   await cvw.locator('.canvas-panel').waitFor({ timeout: 3000 })
-  await sleep(400)
+  await cvw.waitForFunction(() => { const b = document.querySelector('.canvas-panel')?.getBoundingClientRect(); const a = document.querySelector('.app'); return !!b && !!a && Math.abs(b.x + b.width - 1100) <= 1 && Math.abs(parseFloat(getComputedStyle(a).marginRight) - b.width) <= 2 }, null, { timeout: 3000 }).catch(() => {})
   {
     const b = await cvw.locator('.canvas-panel').boundingBox()
     const mr = await cvw.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginRight))
@@ -175,7 +181,7 @@ module.exports = async t => {
     await cvw.locator('.set-row', { hasText: 'Uninstall Hermux' }).click()
     const sh = cvw.locator('.sheet', { hasText: 'Uninstall Hermux' }).last()
     await sh.waitFor({ timeout: 3000 })
-    await sleep(300)
+    await cvw.waitForFunction(() => { const s = [...document.querySelectorAll('.sheet')].pop(); return !!s && s.getBoundingClientRect().width > 0 && s.getAnimations().every(a => a.playState !== 'running') }, null, { timeout: 3000 }).catch(() => {})
     // The sheet is centred on a wide screen (spec 3.20): probe a point that lies over both the sheet and the docked list.
     const top = await cvw.evaluate(() => {
       const s = [...document.querySelectorAll('.sheet')].pop()
@@ -186,27 +192,29 @@ module.exports = async t => {
       return { inSheet: Boolean(el && el.closest('.sheet')), overList: x > d.left && x < d.right, left: r.left, width: r.width, list: d.right }
     })
     check(top.inSheet && top.overList, `wide screen: a page's sheet is on top of the docked chat list (${JSON.stringify(top)})`)
-    for (let i = 0; i < 4 && (await cvw.locator('.screen, .sheet').count()); i++) {
+    for (let i = 0; i < 4; i++) {
+      const openCount = await cvw.locator('.screen, .sheet').count()
+      if (!openCount) break
       await cvw.evaluate(() => window.hermesBack())
-      await sleep(250)
+      await cvw.waitForFunction(n => document.querySelectorAll('.screen, .sheet').length < n, openCount, { timeout: 3000 }).catch(() => {})
     }
     // ☰ hides the list (the chat gets the whole width), the choice survives a reload, ☰ docks it again.
     const menu = cvw.getByRole('button', { name: 'Hide chat list' })
     await menu.waitFor({ timeout: 3000 }).then(() => check(true, 'wide screen: ☰ offers Hide chat list'), () => check(false, 'wide screen: ☰ offers Hide chat list'))
     await menu.click()
-    await sleep(400)
+    await cvw.waitForFunction(() => (document.querySelector('.drawer')?.getBoundingClientRect().x ?? 0) < 0 && parseFloat(getComputedStyle(document.querySelector('.app')).marginLeft) === 0, null, { timeout: 3000 }).catch(() => {})
     const ml = await cvw.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginLeft))
     check((await listX()) < 0 && ml === 0, `wide screen: ☰ hides the chat list and the chat takes the width (list x ${await listX()}, margin ${ml})`)
     await cvw.reload()
     await cvw.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
-    await sleep(300)
+    await cvw.waitForFunction(() => (document.querySelector('.drawer')?.getBoundingClientRect().x ?? 0) < 0, null, { timeout: 3000 }).catch(() => {})
     check((await listX()) < 0, 'wide screen: the hidden chat list stays hidden after a restart')
     await cvw.getByRole('button', { name: 'Show chat list' }).click()
-    await sleep(400)
+    await cvw.waitForFunction(() => (document.querySelector('.drawer')?.getBoundingClientRect().x ?? -1) >= 0, null, { timeout: 3000 }).catch(() => {})
     check((await listX()) >= 0, 'wide screen: ☰ docks the chat list again')
     // « at the top of the docked list hides it too.
     await cvw.getByRole('button', { name: 'Hide the chat list' }).click()
-    await sleep(400)
+    await cvw.waitForFunction(() => (document.querySelector('.drawer')?.getBoundingClientRect().x ?? 0) < 0, null, { timeout: 3000 }).catch(() => {})
     check((await listX()) < 0 && (await cvw.locator('.drawer-backdrop.show').count()) === 0, 'wide screen: « hides the docked list, no backdrop left')
     await cvw.evaluate(() => localStorage.removeItem('hm.sideHidden.v1'))
   }
@@ -220,7 +228,8 @@ module.exports = async t => {
   await tab.addInitScript(nativeShell)
   await tab.goto(WEB + '/')
   await tab.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
-  await sleep(300)
+  await tab.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+  await tab.waitForFunction(() => window.__edgeGrab === true, null, { timeout: 3000 }).catch(() => {})
   {
     const width = async () => (await tab.locator('.canvas-panel').boundingBox())?.width ?? 0
     const chatW = () => tab.locator('.chat-wrap').evaluate(el => el.getBoundingClientRect().width)
@@ -238,7 +247,7 @@ module.exports = async t => {
     }
     await tab.locator('.canvas-pull').click()
     await tab.locator('.canvas-panel').waitFor({ timeout: 3000 })
-    await sleep(400)
+    await tab.waitForFunction(() => { const b = document.querySelector('.canvas-panel')?.getBoundingClientRect(); const a = document.querySelector('.app'); return !!b && !!a && Math.abs(b.x + b.width - 800) <= 1 && Math.abs(parseFloat(getComputedStyle(a).marginRight) - b.width) <= 2 }, null, { timeout: 3000 }).catch(() => {})
     const b = await tab.locator('.canvas-panel').boundingBox()
     const mr = await tab.locator('.app').evaluate(el => parseFloat(getComputedStyle(el).marginRight))
     check(b && b.x > 300 && Math.abs(b.x + b.width - 800) <= 1 && Math.abs(mr - b.width) <= 2, `tablet upright (800 px): tapping the pull tab opens the canvas as a column beside the chat (${JSON.stringify(b)})`)
@@ -248,12 +257,13 @@ module.exports = async t => {
       return { x: h.x + h.width / 2, y: h.y + h.height / 2 }
     }
     const dragTo = async x => {
+      const w0 = await width()
       const g = await grip()
       await tab.mouse.move(g.x, g.y)
       await tab.mouse.down()
       for (let i = 1; i <= 8; i++) await tab.mouse.move(g.x + ((x - g.x) * i) / 8, g.y)
       await tab.mouse.up()
-      await sleep(400)
+      await tab.waitForFunction(prev => { const p = document.querySelector('.canvas-panel'); return !p || Math.abs(p.getBoundingClientRect().width - prev) > 1 }, w0, { timeout: 3000 }).catch(() => {})
     }
     await dragTo(500)
     check(Math.abs((await width()) - 300) <= 3, `tablet: dragging the divider resizes the canvas (${await width()})`)
@@ -263,10 +273,10 @@ module.exports = async t => {
     check(Math.abs((await width()) - 460) <= 3 && (await chatW()) >= 339, `tablet: the chat keeps at least 340 px (canvas ${await width()}, chat ${await chatW()})`)
     await tab.locator('.canvas-split').focus()
     await tab.keyboard.press('ArrowRight')
-    await sleep(400)
+    await tab.waitForFunction(() => (document.querySelector('.canvas-panel')?.getBoundingClientRect().width ?? 999) < 460, null, { timeout: 3000 }).catch(() => {})
     check((await width()) < 460, `tablet: ArrowRight on the divider narrows the canvas (${await width()})`)
     await tab.locator('.canvas-split').dblclick()
-    await sleep(400)
+    await tab.waitForFunction(() => localStorage.getItem('hm.canvasSplit.v1') === null && Math.abs((document.querySelector('.canvas-panel')?.getBoundingClientRect().width ?? 0) - 368) <= 3, null, { timeout: 3000 }).catch(() => {})
     check((await tab.evaluate(() => localStorage.getItem('hm.canvasSplit.v1'))) === null && Math.abs((await width()) - 368) <= 3, `tablet: a double-tap on the divider resets the width (${await width()})`)
     // Past 85 % the canvas goes full screen; under 20 % it closes. While dragging, the divider says which.
     {
@@ -276,11 +286,11 @@ module.exports = async t => {
       for (let i = 1; i <= 8; i++) await tab.mouse.move(g.x + ((40 - g.x) * i) / 8, g.y)
       check(await tab.locator('.hint-max').isVisible(), 'tablet: dragging the divider far left shows "Full screen"')
       await tab.mouse.up()
-      await sleep(400)
+      await tab.locator('.canvas-panel.size-max').waitFor({ timeout: 3000 }).catch(() => {})
     }
     check((await tab.locator('.canvas-panel.size-max').count()) === 1, 'tablet: letting go past 85 % fills the screen')
     await tab.getByRole('button', { name: 'Exit full screen' }).click()
-    await sleep(400)
+    await tab.locator('.canvas-panel.size-side').waitFor({ timeout: 3000 }).catch(() => {})
     await dragTo(780)
     check((await tab.locator('.canvas-panel').count()) === 0, 'tablet: letting go under 20 % closes the canvas')
     await tab.reload()
@@ -299,29 +309,32 @@ module.exports = async t => {
     await ep.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-panel', profile: 'default' })))
     await ep.goto(WEB + '/')
     await ep.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
-    await sleep(400)
+    await ep.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
     const cdp = await ectx.newCDPSession(ep)
     const finger = async (x0, y0, dx, steps, wait) => {
       const pt = x => [{ x, y: y0, id: 1 }]
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(x0) })
       for (let i = 1; i <= steps; i++) {
         await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(x0 + (dx * i) / steps) })
-        await sleep(wait)
+        await sleep(wait) // step interval controls pull vs flick gesture velocity
       }
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-      await sleep(500)
     }
     const width = async () => (await ep.locator('.canvas-panel').boundingBox())?.width ?? 0
     await finger(1095, 300, -400, 40, 40)
+    await ep.locator('.canvas-panel').waitFor({ timeout: 3000 }).catch(() => {})
     check((await ep.locator('.canvas-panel').count()) === 1 && Math.abs((await width()) - 405) <= 8, `wide screen: a slow pull from the right edge opens the canvas where the finger lets go (${await width()})`)
     const kept = await width()
     await ep.getByRole('button', { name: 'Close canvas' }).click()
-    await sleep(300)
+    await ep.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     await finger(1095, 300, -120, 4, 16)
+    await ep.locator('.canvas-panel').waitFor({ timeout: 3000 }).catch(() => {})
     check((await ep.locator('.canvas-panel').count()) === 1 && Math.abs((await width()) - kept) <= 3, `wide screen: a flick from the right edge opens the canvas at its last width (${await width()} vs ${kept})`)
     await ep.getByRole('button', { name: 'Close canvas' }).click()
-    await sleep(300)
+    await ep.locator('.canvas-panel').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     await finger(1095, 300, -60, 12, 40)
+    // Negative check: confirm a short slow pull from the edge leaves the canvas closed.
+    await sleep(300)
     check((await ep.locator('.canvas-panel').count()) === 0, 'wide screen: a short slow pull from the edge leaves the canvas closed')
     await ectx.close()
   }
@@ -334,7 +347,7 @@ module.exports = async t => {
     check((await pp.locator('.canvas-pull').count()) === 0, 'phone: no pull tab')
     await pp.locator('.canvas-btn').click()
     await pp.locator('.canvas-panel').waitFor({ timeout: 3000 })
-    await sleep(300)
+    await pp.waitForFunction(() => (document.querySelector('.canvas-panel')?.getBoundingClientRect().width ?? 0) >= 374, null, { timeout: 3000 }).catch(() => {})
     const b = await pp.locator('.canvas-panel').boundingBox()
     check(b && b.width >= 374 && (await pp.locator('.canvas-split').count()) === 0, `phone: the canvas still covers the chat, no divider (${JSON.stringify(b)})`)
     await pp.close()
@@ -410,13 +423,14 @@ module.exports = async t => {
       return cb.getByRole('dialog').filter({ hasText: 'Version history' })
     }
     // Rename: asks for the title and stores it.
-    await (await more()).getByRole('button', { name: 'Rename' }).click()
+    await (await more()).getByRole('button', { name: 'Rename', exact: true }).click()
     const ask = cb.getByRole('alertdialog')
     await ask.getByRole('textbox').fill('Plan B')
-    await ask.getByRole('button', { name: 'Rename' }).click()
-    await panel.getByText('Plan B', { exact: true }).waitFor({ timeout: 3000 }).catch(() => {})
+    await ask.getByRole('button', { name: 'Rename', exact: true }).click()
+    const planBTab = panel.getByRole('button', { name: 'Plan B', exact: true })
+    await planBTab.waitFor({ timeout: 3000 }).catch(() => {})
     const ren = calls().filter(c => c.t >= since && c.path === '/api/plugins/hermes-mobile/canvas/rename')
-    check(ren.length === 1 && ren[0].body.title === 'Plan B' && (await panel.getByText('Plan B', { exact: true }).count()) === 1, `canvas menu: Rename stores the new title and the tab shows it (${JSON.stringify(ren.map(c => c.body.title))})`)
+    check(ren.length === 1 && ren[0].body.title === 'Plan B' && (await planBTab.count()) === 1, `canvas menu: Rename stores the new title and the tab shows it (${JSON.stringify(ren.map(c => c.body.title))})`)
     // Version history lists the versions, the current one marked.
     await (await more()).getByRole('button', { name: /Version history/ }).click()
     const hist = cb.getByRole('dialog').filter({ hasText: 'Version history' })
@@ -425,11 +439,11 @@ module.exports = async t => {
     await cb.evaluate(() => window.hermesBack())
     await hist.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     // Close this document asks first, then removes it from the canvas.
-    await (await more()).getByRole('button', { name: 'Close this document' }).click()
+    await (await more()).getByRole('button', { name: 'Close this document', exact: true }).click()
     await cb.getByRole('alertdialog').getByRole('button', { name: 'Close', exact: true }).click()
-    await panel.getByText('Plan B', { exact: true }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await planBTab.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     const del = calls().filter(c => c.t >= since && c.http === 'DELETE' && c.path === '/api/plugins/hermes-mobile/canvas/doc')
-    check(del.length === 1 && /session=s-40/.test(del[0].query) && (await panel.getByText('Plan B', { exact: true }).count()) === 0, `canvas menu: Close this document asks, then removes it (${JSON.stringify(del.map(c => c.query))})`)
+    check(del.length === 1 && /session=s-40/.test(del[0].query) && (await planBTab.count()) === 0, `canvas menu: Close this document asks, then removes it (${JSON.stringify(del.map(c => c.query))})`)
     await cb.close()
     // Wide screens: Open the canvas (the tab at the right edge) brings it in; Resize the canvas moves with the arrow keys.
     await addDoc('s-41', 'Wide plan')
@@ -447,7 +461,7 @@ module.exports = async t => {
     const before = await split.getAttribute('aria-valuenow').catch(() => null)
     await split.focus().catch(() => {})
     await cw.keyboard.press('ArrowLeft')
-    await cw.waitForTimeout(150)
+    await cw.waitForFunction(b => document.querySelector('[role="separator"][aria-label="Resize the canvas"]')?.getAttribute('aria-valuenow') !== b, before, { timeout: 3000 }).catch(() => {})
     const after = await split.getAttribute('aria-valuenow').catch(() => null)
     check(after !== null && after !== before, `canvas: Resize the canvas moves the divider with the arrow keys (${before} → ${after})`)
     await cw.close()
@@ -488,7 +502,7 @@ module.exports = async t => {
     check(await openBtn.isVisible(), 'canvas open-file: server refusal leaves the user in Files with the preview open')
     await openBtn.click()
     const panel = p.getByRole('dialog', { name: 'Canvas' })
-    await panel.getByText('config.yaml', { exact: true }).waitFor({ timeout: 5000 })
+    await panel.getByRole('button', { name: 'config.yaml', exact: true }).waitFor({ timeout: 5000 })
     const savesBefore = calls().filter(c => c.path === '/api/plugins/hermes-mobile/canvas/save-file').length
     await panel.getByRole('button', { name: 'More' }).click()
     const docMenu = p.getByRole('dialog').filter({ hasText: 'Version history' })
@@ -507,7 +521,7 @@ module.exports = async t => {
     await p.getByRole('button', { name: 'Phone', exact: true }).click()
     await p.getByRole('button', { name: /note\.txt/ }).click()
     await p.getByRole('button', { name: 'Open in canvas', exact: true }).click()
-    await panel.getByText('note.txt', { exact: true }).waitFor({ timeout: 5000 })
+    await panel.getByRole('button', { name: 'note.txt', exact: true }).waitFor({ timeout: 5000 })
     await mock({ canvasFileChanged: '/sdcard/note.txt' })
     const since = Date.now()
     await panel.getByRole('button', { name: 'More' }).click()
