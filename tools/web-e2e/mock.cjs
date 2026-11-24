@@ -36,14 +36,17 @@ function canvasPathError(rawPath, forSave) {
   if (!s || (!s.startsWith('/') && s !== '~' && !s.startsWith('~/'))) return { status: 400, detail: 'give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)' }
   if (forSave && s.split('/').includes('..')) return { status: 403, detail: 'refused: invalid path' }
   const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
-  const p = path.posix.normalize(expanded)
+  const keepDoubleSlash = expanded.startsWith('//') && !expanded.startsWith('///')
+  // Like Python's pathlib and canvas.ts, a trailing slash doesn't count, so /root/ is the bare root (refused on save).
+  const norm = path.posix.normalize(expanded).replace(/\/+$/, '') || '/'
+  const p = keepDoubleSlash ? '/' + norm : norm
   const segs = p.split('/').filter(Boolean)
   const low = segs.map(foldSegmentMock)
   const name = low[low.length - 1] || ''
   if (forSave) {
     const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
     if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
-    const inRoot = allowed.some(r => p !== r && p.startsWith((r === '/' ? '' : r) + '/'))
+    const inRoot = !p.startsWith('//') && allowed.some(r => p !== r && p.startsWith((r === '/' ? '' : r) + '/'))
     if (!inRoot) return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
   }
   if (low.length && KERNEL_ROOTS_MOCK.has(low[0])) return { status: 403, detail: 'refused: Hermux won’t open system or device files in the canvas' }

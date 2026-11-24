@@ -357,17 +357,22 @@ def _plugin_dir() -> Path:
     return Path(os.path.realpath(str(Path(__file__).resolve().parent)))
 
 
+_EXTRA_SAVE_ROOTS: Tuple[str, ...] = ("/sdcard", "/storage/emulated/0")
+
+
 def _allowed_root_pairs() -> List[Tuple[Path, Path]]:
-    """Folders Files may save to: the user's home and Android shared storage, as (raw, real) pairs."""
+    """Folders Files may save to: the user's home and Android shared storage, as (raw, real) pairs.
+    Deduped by (raw, real) so aliases that resolve to the same real directory (e.g. /sdcard and
+    /storage/emulated/0) each keep their raw prefix."""
     pairs: List[Tuple[Path, Path]] = []
-    seen: set[str] = set()
+    seen: set[Tuple[str, str]] = set()
     home = os.path.expanduser("~")
-    for candidate in (home, "/sdcard", "/storage/emulated/0"):
+    for candidate in (home, *_EXTRA_SAVE_ROOTS):
         if candidate != home and not os.path.exists(candidate):
             continue
         raw_r = Path(os.path.normpath(candidate))
         real_r = Path(os.path.realpath(candidate))
-        key = str(real_r)
+        key = (str(raw_r), str(real_r))
         if key not in seen:
             seen.add(key)
             pairs.append((raw_r, real_r))

@@ -545,6 +545,12 @@ here but not installed on a phone, and going back has not been tried on one.
   `ReferenceError: window is not defined` under load, noted under task 02b). `tools/test_hermes_patches.sh` now removes
   the Hermes clone it made itself on exit (about 186 MB a run; a checkout given on the command line is kept). Test
   tools only; nothing a user sees changes.
+- **Canvas save guard Low follow-ups (`canvas.ts`, `canvas.py`, `mock.cjs`, `tools/canvas-path-vectors.json`, PR against `redesign`).**
+  - `normalizePosix` / `isInSaveRoot` in `web/src/canvas.ts` and `canvasPathError` in `tools/web-e2e/mock.cjs` now preserve POSIX's exact leading `//` (while collapsing `///+` to `/`), so `//root/...`, `//sdcard/...`, and `//storage/emulated/0/...` are refused on save in the app and mock just as `pathlib.Path.relative_to` refuses them in `canvas.py` (`canvasOpenBlockReason` already matches `canvas.py` on `//`).
+  - `_allowed_root_pairs` in `hermes-plugin/hermes-mobile/canvas.py` now dedupes by `(raw, real)` pair instead of `realpath` alone, so when `/sdcard` and `/storage/emulated/0` resolve to the same real folder both raw prefixes stay allowed while all symlink, bare-root, leading-`//`, and denylist refusals hold.
+  - Added shared leading-`//` / `///` parity vectors to `tools/canvas-path-vectors.json` and dual-alias root tests to `tools/test_canvas.py`. Not verified on a phone.
+  - After the security review: the browser-test mock no longer treats a bare root written with a trailing slash or `./`
+    (`/root/`, `/sdcard/`, `~//`) as a folder under it; five shared vectors check it.
 
 **Links:** [decision: the redesign stays on its branch](../decisions/redesign-branch-until-tried.md),
 [decision: no UI-coverage project before the revamp](../decisions/no-ui-test-work-before-revamp.md) (held until it
