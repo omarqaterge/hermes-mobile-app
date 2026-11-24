@@ -9,6 +9,83 @@ const HTML_REPLY = 'Page:\n\n```html\n<!doctype html>\n<h1 id="t">Hello frame</h
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+
+const SHELL_INIT_MOCK = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout', '.shinit', '.cshrc', '.tcshrc', '.kshrc'])
+const OPEN_SECRET_SEGS_MOCK = new Set(['.hermes-mobile', '.ssh', '.gnupg', '.aws', '.android', '.termux'])
+const SAVE_BLOCKED_SEGS_MOCK = OPEN_SECRET_SEGS_MOCK
+const CONTAINER_SEGS_MOCK = new Set(['proot-distro', 'chroot-distro'])
+const KERNEL_ROOTS_MOCK = new Set(['proc', 'sys', 'dev'])
+const HERMES_SECRET_FILES_MOCK = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
+const foldSegmentMock = s => s.normalize('NFKD').replace(/\p{Cf}/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
+const isEnvNameMock = name => {
+  const f = foldSegmentMock(name)
+  return f === '.env' || f.startsWith('.env.')
+}
+const hasPairMock = (low, a, b) => low.some((x, i) => x === a && low[i + 1] === b)
+function isHomeBinMock(low) {
+  if (low.length >= 2 && low[0] === 'root' && low[1] === 'bin') return true
+  if (low.length >= 6 && low[0] === 'data' && low[1] === 'data' && low[2] === 'com.termux' && low[3] === 'files' && low[4] === 'home' && low[5] === 'bin') return true
+  if (low.length >= 7 && low[0] === 'data' && low[1] === 'user' && low[3] === 'com.termux' && low[4] === 'files' && low[5] === 'home' && low[6] === 'bin') return true
+  const homeSegs = path.posix.normalize(os.homedir()).split('/').filter(Boolean).map(foldSegmentMock)
+  if (homeSegs.length && low.length >= homeSegs.length + 1 && homeSegs.every((s, i) => low[i] === s) && low[homeSegs.length] === 'bin') return true
+  return false
+}
+function canvasPathError(rawPath, forSave) {
+  const s = String(rawPath || '').trim()
+  if (s.includes('\0') || (s.startsWith('~') && s !== '~' && !s.startsWith('~/'))) return { status: 403, detail: 'refused: invalid path' }
+  if (!s || (!s.startsWith('/') && s !== '~' && !s.startsWith('~/'))) return { status: 400, detail: 'give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)' }
+  if (forSave && s.split('/').includes('..')) return { status: 403, detail: 'refused: invalid path' }
+  const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
+  const p = path.posix.normalize(expanded)
+  const segs = p.split('/').filter(Boolean)
+  const low = segs.map(foldSegmentMock)
+  const name = low[low.length - 1] || ''
+  if (forSave) {
+    const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
+    if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
+    const inRoot = allowed.some(r => p !== r && p.startsWith((r === '/' ? '' : r) + '/'))
+    if (!inRoot) return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+  }
+  if (low.length && KERNEL_ROOTS_MOCK.has(low[0])) return { status: 403, detail: 'refused: Hermux won’t open system or device files in the canvas' }
+  if (low.some(x => CONTAINER_SEGS_MOCK.has(x))) return { status: 403, detail: 'refused: Hermux won’t open container rootfs files in the canvas' }
+  if (hasPairMock(low, 'etc', 'ssh')) return { status: 403, detail: 'refused: Hermux won’t open secrets or key files in the canvas' }
+  if (isEnvNameMock(name)) {
+    return { status: 403, detail: forSave ? 'refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.' : 'refused: Hermux won’t open secrets or key files in the canvas' }
+  }
+  if (low.some(x => OPEN_SECRET_SEGS_MOCK.has(x)) || name === '.netrc') {
+    return { status: 403, detail: forSave ? 'refused: this file is outside the folders Hermux can save to' : 'refused: Hermux won’t open secrets or key files in the canvas' }
+  }
+  if (low.includes('.hermes')) {
+    if (forSave) return { status: 403, detail: 'refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.' }
+    for (let i = 0; i < low.length; i++) {
+      if (low[i] !== '.hermes') continue
+      const inside = low.slice(i + 1)
+      if (!inside.length) continue
+      if (HERMES_SECRET_FILES_MOCK.has(name)) {
+        return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
+      }
+      const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
+      if (sub.length && sub[0] === 'mobile') {
+        return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
+      }
+    }
+  }
+  if (forSave) {
+    if (low.some(x => SAVE_BLOCKED_SEGS_MOCK.has(x)) || hasPairMock(low, '.local', 'bin') || hasPairMock(low, '.config', 'git') || hasPairMock(low, '.config', 'fish') || isHomeBinMock(low)) {
+      return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+    }
+    if (SHELL_INIT_MOCK.has(name) || name === '.gitconfig') {
+      return { status: 403, detail: SHELL_INIT_MOCK.has(name) ? 'refused: Hermux won’t overwrite shell start-up files from the canvas' : 'refused: this file is outside the folders Hermux can save to' }
+    }
+  }
+  return null
+}
+
+if (require.main !== module) {
+  module.exports = { canvasPathError, foldSegment: foldSegmentMock }
+  return
+}
+
 const { WebSocketServer } = require('ws')
 
 const LOG = process.env.HM_E2E_LOG || path.join(os.tmpdir(), 'hm-web-e2e-calls.jsonl')
@@ -159,59 +236,6 @@ const FILE_TEXT = {
   'code.py': 'print("x")',
   'config.yaml': 'approvals:\n  mode: manual\n',
   '.env': 'OPENAI_API_KEY=sk-mock\n'
-}
-const SHELL_INIT_MOCK = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout', '.shinit', '.cshrc', '.tcshrc', '.kshrc'])
-const OPEN_SECRET_SEGS_MOCK = new Set(['.hermes-mobile', '.ssh', '.gnupg', '.aws', '.android', '.termux'])
-const SAVE_BLOCKED_SEGS_MOCK = new Set([...OPEN_SECRET_SEGS_MOCK, 'bin'])
-const CONTAINER_SEGS_MOCK = new Set(['proot-distro', 'chroot-distro'])
-const KERNEL_ROOTS_MOCK = new Set(['proc', 'sys', 'dev'])
-const HERMES_SECRET_FILES_MOCK = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
-const hasPairMock = (low, a, b) => low.some((x, i) => x === a && low[i + 1] === b)
-function canvasPathError(rawPath, forSave) {
-  const s = String(rawPath || '').trim()
-  if (s.includes('\0') || (s.startsWith('~') && s !== '~' && !s.startsWith('~/'))) return { status: 403, detail: 'refused: invalid path' }
-  if (!s || (!s.startsWith('/') && s !== '~' && !s.startsWith('~/'))) return { status: 400, detail: 'give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)' }
-  if (forSave && s.split('/').includes('..')) return { status: 403, detail: 'refused: invalid path' }
-  const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
-  const p = path.posix.normalize(expanded)
-  const segs = p.split('/').filter(Boolean)
-  const low = segs.map(x => x.toLowerCase())
-  const name = low[low.length - 1] || ''
-  if (forSave) {
-    const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
-    if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
-    const inRoot = allowed.some(r => p !== r && p.startsWith((r === '/' ? '' : r) + '/'))
-    if (!inRoot) return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
-  }
-  if (low.length && KERNEL_ROOTS_MOCK.has(low[0])) return { status: 403, detail: 'refused: Hermux won’t open system or device files in the canvas' }
-  if (low.some(x => CONTAINER_SEGS_MOCK.has(x))) return { status: 403, detail: 'refused: Hermux won’t open container rootfs files in the canvas' }
-  if (hasPairMock(low, 'etc', 'ssh')) return { status: 403, detail: 'refused: Hermux won’t open secrets or key files in the canvas' }
-  if (/^\.env(?:\.|$)/i.test(name)) {
-    return { status: 403, detail: forSave ? 'refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.' : 'refused: Hermux won’t open secrets or key files in the canvas' }
-  }
-  if (low.some(x => OPEN_SECRET_SEGS_MOCK.has(x)) || name === '.netrc') {
-    return { status: 403, detail: forSave ? 'refused: this file is outside the folders Hermux can save to' : 'refused: Hermux won’t open secrets or key files in the canvas' }
-  }
-  if (low.includes('.hermes')) {
-    if (forSave) return { status: 403, detail: 'refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.' }
-    for (let i = 0; i < low.length; i++) {
-      if (low[i] !== '.hermes') continue
-      const inside = low.slice(i + 1)
-      const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
-      if (sub.length && (HERMES_SECRET_FILES_MOCK.has(name) || sub[0] === 'mobile')) {
-        return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
-      }
-    }
-  }
-  if (forSave) {
-    if (low.some(x => SAVE_BLOCKED_SEGS_MOCK.has(x)) || hasPairMock(low, '.local', 'bin') || hasPairMock(low, '.config', 'git') || hasPairMock(low, '.config', 'fish')) {
-      return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
-    }
-    if (SHELL_INIT_MOCK.has(name) || name === '.gitconfig') {
-      return { status: 403, detail: SHELL_INIT_MOCK.has(name) ? 'refused: Hermux won’t overwrite shell start-up files from the canvas' : 'refused: this file is outside the folders Hermux can save to' }
-    }
-  }
-  return null
 }
 const server = http.createServer((req, res) => {
   let body = ''

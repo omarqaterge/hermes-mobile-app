@@ -29,10 +29,17 @@ vi.mock('./lockview', async () => {
 })
 
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { ApiError } from './api'
-import { canvasOpenBlockReason, canvasSaveBlockReason, openFileInCanvas, saveToFile } from './canvas'
+import { canvasOpenBlockReason, canvasSaveBlockReason, foldSegment, openFileInCanvas, saveToFile } from './canvas'
 import { getState, setState, type ActiveSession } from './store'
+
+const cjsRequire = createRequire(import.meta.url)
+const mockCanvas = cjsRequire(path.resolve(__dirname, '../../tools/web-e2e/mock.cjs')) as {
+  canvasPathError: (rawPath: string, forSave: boolean) => { status: number; detail: string } | null
+  foldSegment: (s: string) => string
+}
 
 interface VectorCase {
   path: string
@@ -65,16 +72,31 @@ const chat = (storedId = 's-cv'): ActiveSession => ({
 })
 
 describe('shared canvas-path-vectors.json parity', () => {
-  it('matches every open and save vector in tools/canvas-path-vectors.json', () => {
-    expect(vectors.cases.length).toBeGreaterThan(40)
+  it('matches every open and save vector in tools/canvas-path-vectors.json in both canvas.ts and mock.cjs', () => {
+    expect(vectors.cases.length).toBeGreaterThan(80)
     for (const c of vectors.cases) {
       const p = c.path.replace('{HOME}', '/root')
       const openReason = canvasOpenBlockReason(p)
       const saveReason = canvasSaveBlockReason(p)
-      if (c.open === 'refuse') expect(openReason, `open refuse: ${p} (${c.note})`).not.toBeNull()
-      else expect(openReason, `open allow: ${p} (${c.note})`).toBeNull()
-      if (c.save === 'refuse') expect(saveReason, `save refuse: ${p} (${c.note})`).not.toBeNull()
-      else expect(saveReason, `save allow: ${p} (${c.note})`).toBeNull()
+      const mockOpen = mockCanvas.canvasPathError(p, false)
+      const mockSave = mockCanvas.canvasPathError(p, true)
+      if (c.open === 'refuse') {
+        expect(openReason, `canvas.ts open refuse: ${p} (${c.note})`).not.toBeNull()
+        expect(mockOpen, `mock.cjs open refuse: ${p} (${c.note})`).not.toBeNull()
+      } else {
+        expect(openReason, `canvas.ts open allow: ${p} (${c.note})`).toBeNull()
+        expect(mockOpen, `mock.cjs open allow: ${p} (${c.note})`).toBeNull()
+      }
+      if (c.save === 'refuse') {
+        expect(saveReason, `canvas.ts save refuse: ${p} (${c.note})`).not.toBeNull()
+        expect(mockSave, `mock.cjs save refuse: ${p} (${c.note})`).not.toBeNull()
+      } else {
+        expect(saveReason, `canvas.ts save allow: ${p} (${c.note})`).toBeNull()
+        expect(mockSave, `mock.cjs save allow: ${p} (${c.note})`).toBeNull()
+      }
+      for (const seg of p.split('/').filter(Boolean)) {
+        expect(foldSegment(seg), `foldSegment parity: ${seg}`).toBe(mockCanvas.foldSegment(seg))
+      }
     }
   })
 })

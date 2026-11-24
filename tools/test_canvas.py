@@ -201,6 +201,18 @@ def _server_save_check(p: str, needs_sdcard: bool = False) -> str | None:
             clean = Path(raw_abs)
             if ".." in clean.parts:
                 raise canvas.CanvasError("refused: invalid path")
+            matched = False
+            for cand in (Path("/sdcard"), Path("/storage/emulated/0")):
+                try:
+                    rel = clean.relative_to(cand)
+                except ValueError:
+                    continue
+                if not rel.parts:
+                    raise canvas.CanvasError("refused: target is not a regular file")
+                matched = True
+                break
+            if not matched:
+                raise canvas.CanvasError("refused: this file is outside the folders Hermux can save to")
             canvas._check_save_denylist(clean)
             return None
         real_root, rel_parts = canvas._match_save_root(raw_abs)
@@ -228,7 +240,68 @@ check(f"canvas.py matches all {len(vectors)} shared vectors in canvas-path-vecto
 check("_is_in_secret_reach matches .hermes/.hermes-mobile segments at any depth",
       canvas._is_in_secret_reach(Path("/data/data/com.termux/files/home/.hermes/config.yaml"))
       and canvas._is_in_secret_reach(Path("/sdcard/.hermes-mobile/key"))
+      and canvas._is_in_secret_reach(Path("/sdcard/.herme\u017f/config.yaml"))
       and not canvas._is_in_secret_reach(Path(REAL_HOME) / "ordinary.txt"))
+
+# //proc/... is refused before os.path.realpath is ever called (Finding 2).
+_orig_realpath = os.path.realpath
+def _fail_realpath(p):
+    raise AssertionError(f"realpath should not be called for {p}")
+os.path.realpath = _fail_realpath
+try:
+    err_p1 = raises(canvas.open_file, S, "//proc/self/environ")
+    err_p2 = raises(canvas.open_file, S, "//proc/self/root/etc/hosts")
+    err_p3 = raises(canvas.open_file, S, "/PROC/self/environ")
+    check("open_file refuses //proc and /PROC before os.path.realpath",
+          all("refused" in (e or "") for e in (err_p1, err_p2, err_p3)),
+          f"{err_p1} | {err_p2} | {err_p3}")
+finally:
+    os.path.realpath = _orig_realpath
+
+# Verify Python _fold matches mock.cjs foldSegment on every segment of every vector (and mock.cjs matches all vectors).
+if shutil.which("node"):
+    import subprocess as _sp
+    _mock_js = os.path.join(HERE, "web-e2e", "mock.cjs")
+    _node_script = (
+        "const fs=require('fs');"
+        f"const m=require({_mock_js!r});"
+        f"const v=JSON.parse(fs.readFileSync({vec_file!r},'utf8')).cases;"
+        "const out={bad:[],folded:{}};"
+        "for(const c of v){"
+        "  const p=c.path.replace('{HOME}','/root');"
+        "  const oe=m.canvasPathError(p,false), se=m.canvasPathError(p,true);"
+        "  if(c.open==='refuse'&&!oe) out.bad.push('open refuse '+c.path);"
+        "  if(c.open==='allow'&&oe) out.bad.push('open allow '+c.path+': '+oe.detail);"
+        "  if(c.save==='refuse'&&!se) out.bad.push('save refuse '+c.path);"
+        "  if(c.save==='allow'&&se) out.bad.push('save allow '+c.path+': '+se.detail);"
+        "  for(const seg of p.split('/').filter(Boolean)) out.folded[seg]=m.foldSegment(seg);"
+        "}"
+        "console.log(JSON.stringify(out));"
+    )
+    _nr = _sp.run(["node", "-e", _node_script], capture_output=True, text=True)
+    _nd = json.loads(_nr.stdout) if _nr.returncode == 0 else {"bad": [_nr.stderr], "folded": {}}
+    check(f"mock.cjs canvasPathError matches all {len(vectors)} shared vectors", _nr.returncode == 0 and not _nd["bad"], "; ".join(_nd["bad"][:5]))
+    _fold_diff = [f"{k}: py={canvas._fold(k)!r} js={v!r}" for k, v in _nd["folded"].items() if canvas._fold(k) != v]
+    check("Python _fold matches JS foldSegment on all vector segments", not _fold_diff, "; ".join(_fold_diff[:5]))
+
+# Nested project bin/ under home is allowed on save_file (Finding 4).
+S_EXTRA = "chat-extra"
+nested_bin_f = os.path.join(REAL_HOME, "src", "bin", "main.rs")
+os.makedirs(os.path.dirname(nested_bin_f), exist_ok=True)
+open(nested_bin_f, "w").write("fn main() {}\n")
+nb_doc = canvas.open_file(S_EXTRA, nested_bin_f)
+canvas.write(S_EXTRA, nb_doc["id"], "fn main() { println!(\"ok\"); }\n", by="user")
+canvas.save_file(S_EXTRA, nb_doc["id"])
+check("save_file allows nested project src/bin/main.rs under home", "println!" in open(nested_bin_f).read())
+
+# Unicode look-alike save paths (.baſhrc, .config/ﬁsh) are refused on save_file (Finding 1).
+for ulabel, upath in [
+    ("Unicode .ba\u017fhrc", os.path.join(REAL_HOME, ".ba\u017fhrc")),
+    ("Unicode .config/\ufb01sh/config.fish", os.path.join(REAL_HOME, ".config", "\ufb01sh", "config.fish")),
+]:
+    fd_u = canvas.create(S_EXTRA, f"Forged-{ulabel}", "evil", path=upath)
+    err_u = raises(canvas.save_file, S_EXTRA, fd_u["id"], force=True)
+    check(f"save_file refuses {ulabel}", "refused" in (err_u or ""), str(err_u))
 
 # Secrets & internal files refused on open_file (including symlinked profiles, Finding 2 & 3).
 hermes_dir = os.path.join(REAL_HOME, ".hermes")
@@ -282,6 +355,11 @@ for label, secret_p in [
     (".ssh key", ssh_path), (".android/adbkey", android_key), (".gnupg key", gnupg_key),
     (".netrc", netrc_path), (".aws/credentials", aws_creds), (".termux/termux.properties", termux_props),
     ("mobile/auto.json", auto_path), (".env.local", proj_env), (".ENV.PROD (case-insensitive)", upper_env),
+    ("Unicode .ſsh/id_ed25519", os.path.join(REAL_HOME, ".\u017fsh", "id_ed25519")),
+    ("Unicode .ßh/id_ed25519", os.path.join(REAL_HOME, ".\u00dfh", "id_ed25519")),
+    ("Unicode .hermeſ/auth.jſon", os.path.join(REAL_HOME, ".herme\u017f", "auth.j\u017fon")),
+    ("Unicode .e<ZWJ>nv", os.path.join(REAL_HOME, ".e\u200dnv")),
+    (".hermes/profiles/auth.json", os.path.join(hermes_dir, "profiles", "auth.json")),
 ]:
     check(f"open_file refuses {label}", "refused" in (raises(canvas.open_file, S, secret_p) or ""))
 

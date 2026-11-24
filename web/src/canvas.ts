@@ -311,11 +311,20 @@ const SHELL_INIT_FILES = new Set([
 const PROTECTED_SAVE_FILES = new Set([...SHELL_INIT_FILES, '.gitconfig', '.netrc'])
 const OPEN_SECRET_SEGMENTS = new Set(['.hermes-mobile', '.ssh', '.gnupg', '.aws', '.android', '.termux'])
 const OPEN_SECRET_FILES = new Set(['.netrc'])
-const SAVE_BLOCKED_SEGMENTS = new Set([...OPEN_SECRET_SEGMENTS, 'bin'])
+const SAVE_BLOCKED_SEGMENTS = OPEN_SECRET_SEGMENTS
 const CONTAINER_ROOTFS_SEGMENTS = new Set(['proot-distro', 'chroot-distro'])
 const KERNEL_PSEUDO_ROOTS = new Set(['proc', 'sys', 'dev'])
 const HERMES_SECRET_FILES = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
-const ENV_NAME = /^\.env(?:\.|$)/i
+
+/** Fold a path segment/name like casefolding filesystems (NFKD, drop Cf, map ſ→s and ß/ẞ→ss, lower). */
+export function foldSegment(s: string): string {
+  return s.normalize('NFKD').replace(/\p{Cf}/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
+}
+
+function isEnvName(name: string): boolean {
+  const f = foldSegment(name)
+  return f === '.env' || f.startsWith('.env.')
+}
 
 function normalizePosix(path: string): string {
   const expanded = path.startsWith('~/') ? `/root/${path.slice(2)}` : path === '~' ? '/root' : path
@@ -333,13 +342,22 @@ function hasPair(low: string[], a: string, b: string): boolean {
   return false
 }
 
+function isHomeBin(low: string[]): boolean {
+  if (low.length >= 2 && low[0] === 'root' && low[1] === 'bin') return true
+  if (low.length >= 6 && low[0] === 'data' && low[1] === 'data' && low[2] === 'com.termux' && low[3] === 'files' && low[4] === 'home' && low[5] === 'bin') return true
+  if (low.length >= 7 && low[0] === 'data' && low[1] === 'user' && low[3] === 'com.termux' && low[4] === 'files' && low[5] === 'home' && low[6] === 'bin') return true
+  return false
+}
+
 function isHermesSegmentSecret(low: string[]): boolean {
   const name = low[low.length - 1] || ''
   for (let i = 0; i < low.length; i++) {
     if (low[i] !== '.hermes') continue
     const inside = low.slice(i + 1)
+    if (!inside.length) continue
+    if (HERMES_SECRET_FILES.has(name)) return true
     const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
-    if (sub.length && (sub[0] === 'mobile' || HERMES_SECRET_FILES.has(name))) return true
+    if (sub.length && sub[0] === 'mobile') return true
   }
   return false
 }
@@ -362,12 +380,12 @@ export function canvasOpenBlockReason(path: string): string | null {
   if (raw.startsWith('~') && raw !== '~' && !raw.startsWith('~/')) return 'Invalid file path.'
   if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path.'
   const p = normalizePosix(raw)
-  const low = p.split('/').filter(Boolean).map(s => s.toLowerCase())
+  const low = p.split('/').filter(Boolean).map(foldSegment)
   const name = low[low.length - 1] || ''
   if (low.length && KERNEL_PSEUDO_ROOTS.has(low[0])) return 'Hermux won’t open system or device files in the canvas.'
   if (low.some(s => CONTAINER_ROOTFS_SEGMENTS.has(s))) return 'Hermux won’t open container rootfs files in the canvas.'
   if (hasPair(low, 'etc', 'ssh')) return 'Hermux won’t open secrets or key files in the canvas.'
-  if (ENV_NAME.test(name) || OPEN_SECRET_FILES.has(name) || low.some(s => OPEN_SECRET_SEGMENTS.has(s))) {
+  if (isEnvName(name) || OPEN_SECRET_FILES.has(name) || low.some(s => OPEN_SECRET_SEGMENTS.has(s))) {
     return 'Hermux won’t open secrets or key files in the canvas.'
   }
   if (isHermesSegmentSecret(low)) return 'Hermux won’t open secrets or internal files in the canvas.'
@@ -375,7 +393,7 @@ export function canvasOpenBlockReason(path: string): string | null {
 }
 
 /** Reason why saving back to `path` from the canvas is refused, or null when allowed (matches canvas.py's
- *  case-sensitive save allow-list and case-insensitive segment-based deny rules; the server also enforces
+ *  case-sensitive save allow-list and Unicode-folded segment-based deny rules; the server also enforces
  *  realpath, symlink, profile and plugin-dir checks on disk). */
 export function canvasSaveBlockReason(path: string): string | null {
   const raw = path.trim()
@@ -386,7 +404,7 @@ export function canvasSaveBlockReason(path: string): string | null {
   if (raw.split('/').includes('..')) return 'Invalid file path.'
   const p = normalizePosix(raw)
   const segs = p.split('/').filter(Boolean)
-  const low = segs.map(s => s.toLowerCase())
+  const low = segs.map(foldSegment)
   const name = low[low.length - 1] || ''
   if (!isInSaveRoot(segs)) {
     return 'This file is outside the folders Hermux can save to from the canvas.'
@@ -394,7 +412,7 @@ export function canvasSaveBlockReason(path: string): string | null {
   if (low.includes('.hermes') || low.includes('.hermes-mobile')) {
     return 'Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.'
   }
-  if (ENV_NAME.test(name)) {
+  if (isEnvName(name)) {
     return 'Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.'
   }
   if (
@@ -404,7 +422,8 @@ export function canvasSaveBlockReason(path: string): string | null {
     low.some(s => SAVE_BLOCKED_SEGMENTS.has(s)) ||
     hasPair(low, '.local', 'bin') ||
     hasPair(low, '.config', 'git') ||
-    hasPair(low, '.config', 'fish')
+    hasPair(low, '.config', 'fish') ||
+    isHomeBin(low)
   ) {
     return 'This file is outside the folders Hermux can save to from the canvas.'
   }
