@@ -461,19 +461,21 @@ here but not installed on a phone, and going back has not been tried on one.
 
 - **Reply text, notifications, badge and read-aloud fixes (`fix-reply-text-notifications`, PR against `redesign`).**
   Captured reply text from Hermes's synchronous `post_llm_call` hook (`assistant_response`) in `hermes-plugin/hermes-mobile/__init__.py`
-  (keeping `on_stream_end` as fallback, filtering to text blocks only, capping at 64 KiB, clearing stale text on turn
-  start, tool calls and final API errors, skipping `/btw` and background reviews even without a `turn_id`, and popping
-  `_last_text` before early `on_session_end` returns) so Codex Responses and non-streaming turns deliver reply text to
-  the Done chip, reply cards, island Done state, background read-aloud (`speak_text`), and scheduled-job cards; mapped
-  internal `turn_exit_reason` values to plain words (`_plain_exit_reason`) and preferred them on failed turns.
-  Added `source: 'mobile'` to `session.resume` in `web/src/gateway.ts` so resumed chats keep `platform: 'mobile'` for
-  background read-aloud. Added `NotifyPrivacy.java` and `BadgePlan.java` and updated `HermesService.java` so chats that
-  have read phone data (`PhoneDataRoute.chats`) redact reply/error/cron bodies, Done chip, island Done state and
-  momentary flashes to generic words and skip background read-aloud; every reply, error, Done and cron notification sets
-  `VISIBILITY_PRIVATE` with a generic `setPublicVersion`; failed-turn error cards use `error:<chat>` outside the badge
-  plan; per-card reply badge counts sum to unseen chats with `BADGE_ICON_LARGE` above 0 and `BADGE_ICON_NONE` at 0; and
-  `RemoteInput` answers dismiss cleanly via `dismissAnsweredCard` without reposting after `clear`, counting dismissing
-  cards in `updateBadge`, or cancelling the summary under a newly arrived card.
+  keyed by `(session_id, turn_id)` and source (`_turn_replies`, `_ended_turns`, `_clear_reply`, `_take_reply`) so
+  `post_llm_call` always beats async worker-thread `on_stream_end` (which only fills in for `finished` final model
+  calls when empty and never overwrites), `_on_pre_tool_call` clears commentary before `auto_mode` / `_taint_directive`
+  early returns without letting late parallel tool workers wipe newer/ended turns, thinking/reasoning blocks are skipped
+  and text is capped at 64 KiB, `/btw` and background reviews are skipped even without `turn_id`, and failed turns
+  always prefer `_plain_exit_reason`. Added synchronous `_chat_has_read_phone_data` (including compression lineage and
+  `_inherit_read` for branches) so the plugin redacts `reply`/`flash`/`error`/`cron`/`status`/`ask`/`learning` first
+  with `phone_data: true` and empty `speak_text`. Added `source: 'mobile'` to `session.resume` in `web/src/gateway.ts`
+  and hid `ActivityBanner` in lock view (`web/src/App.tsx`). Added `NotifyPrivacy.java` and `BadgePlan.java` and updated
+  `HermesService.java` so `hasReadPhoneData` fails closed on null/empty/invalid ids and `isPhoneData` only tightens;
+  every notification from a phone-data chat (`working`, `ask`, `learning`, `reply`, `error`, `Done`, `flash`, `cron`)
+  uses generic words, skips `bgThumb` and `readAloud`, and applies `makePrivate` (never cloning into `publicVersion`);
+  `error:<chat>` and private zero-badge `answer_fail:<chat>` stay outside `BadgePlan`; `answerAction` uses boolean
+  `error_card` via `BadgePlan.answerTag`; API 26–30 empty inline answers keep the card when locked; and
+  `dismissAnsweredCard` synchronizes and guards all notification calls on `HermesService.this`.
   Needs a phone: verify Done chip/card/island reply text, phone-data redaction, lock-screen private versions, background
   read-aloud, scheduled-job cards, HyperOS badge behaviour on `Learning`/`Scheduled jobs`/`error` cards, and
   `RemoteInput` dismissal on a real phone.
