@@ -100,7 +100,14 @@ export function readProfileConfig(profile = getState().profile, { force = true }
 export function recheckApprovalsMode(profile?: string): void {
   const target = profile || getState().profile
   if (!profile) {
-    for (const k of [...answers.keys()]) if (k !== target) answers.delete(k)
+    // Every other bot's cached answer and in-flight read go stale (e.g. after "Apply to all bots"): bump its counter so a
+    // read started before the save can't put the old mode back.
+    for (const k of new Set([...answers.keys(), ...inFlight.keys(), ...reqSeq.keys()])) {
+      if (k === target) continue
+      answers.delete(k)
+      inFlight.delete(k)
+      reqSeq.set(k, (reqSeq.get(k) ?? 0) + 1)
+    }
   }
   if (getState().conn === 'open') void readProfileConfig(target)
 }
@@ -161,25 +168,25 @@ export function autoButtonText(mode: Access, hermesMode: ApprovalsMode | null): 
 export function autoButtonLabel(mode: Access, hermesMode: ApprovalsMode | null): string {
   if (mode === 'auto') return 'Auto access is on'
   if (mode === 'full') return 'Full access is on'
-  if (hermesMode === 'smart') return 'Auto is off. Hermes approves low-risk commands by itself'
-  if (hermesMode === 'off') return 'Auto is off. Hermes approves every command without asking'
+  if (hermesMode === 'smart') return 'Auto is off. Hermux approves low-risk commands by itself'
+  if (hermesMode === 'off') return 'Auto is off. Hermux approves every command without asking'
   return 'Auto is off'
 }
 
 /** Subtitle of the Off option in the Auto picker. Unknown (`null`) stays neutral and never implies Hermes asks. */
 export function offOptionSub(hermesMode: ApprovalsMode | null): string {
   if (hermesMode === 'manual') return 'Hermux asks before risky commands'
-  if (hermesMode === 'smart') return 'Hermes approves low-risk commands by itself and asks for the rest'
-  if (hermesMode === 'off') return 'Hermes approves every command without asking'
-  return 'Follows Hermes’s approvals setting'
+  if (hermesMode === 'smart') return 'Hermux approves low-risk commands by itself and asks for the rest'
+  if (hermesMode === 'off') return 'Hermux approves every command without asking'
+  return 'Follows the approvals setting'
 }
 
 /** Toast / notice shown after switching a chat's Auto to Off. Unknown (`null`) stays neutral. */
 export function doneOffToast(hermesMode: ApprovalsMode | null): string {
   if (hermesMode === 'manual') return 'Auto off: Hermux asks before risky commands again'
-  if (hermesMode === 'smart') return 'Auto off: Hermes still approves low-risk commands by itself'
-  if (hermesMode === 'off') return 'Auto off: Hermes still approves every command without asking'
-  return 'Auto off for this chat (follows Hermes’s approvals setting)'
+  if (hermesMode === 'smart') return 'Auto off: Hermux still approves low-risk commands by itself'
+  if (hermesMode === 'off') return 'Auto off: Hermux still approves every command without asking'
+  return 'Auto off for this chat (follows the approvals setting)'
 }
 
 /** Value shown on the Settings main page's Access & privacy row. Blank when offline/unknown so it never implies Hermes asks. */
@@ -196,24 +203,24 @@ export function accessSummary(access: Access, hermesMode: ApprovalsMode | null):
 export function defaultAccessSub(access: Access, hermesMode: ApprovalsMode | null): string {
   if (access === 'auto') return 'Auto access'
   if (access === 'full') return 'Full access'
-  if (hermesMode === 'smart') return 'Off · Hermes approves low-risk commands by itself'
-  if (hermesMode === 'off') return 'Off · Hermes approves every command without asking'
+  if (hermesMode === 'smart') return 'Off · Hermux approves low-risk commands by itself'
+  if (hermesMode === 'off') return 'Off · Hermux approves every command without asking'
   if (hermesMode === 'manual') return 'Off'
-  return 'Off · follows Hermes’s approvals setting'
+  return 'Off · follows the approvals setting'
 }
 
 /** Title and body for the calm note shown where Auto is chosen while Hermes is in smart or off mode. */
 export function approvalsModeNote(hermesMode: 'smart' | 'off'): { title: string; sub: string; value: string } {
   if (hermesMode === 'smart') {
     return {
-      title: 'Hermes approvals mode',
+      title: 'Approvals mode',
       value: 'Smart',
-      sub: 'Hermes approves low-risk commands by itself, even when Auto is off. Open approvals.mode in Advanced settings.'
+      sub: 'Hermux approves low-risk commands by itself, even when Auto is off. Open approvals.mode in Advanced settings.'
     }
   }
   return {
-    title: 'Hermes approvals mode',
+    title: 'Approvals mode',
     value: 'Off',
-    sub: 'Hermes approves every command without asking, even when Auto is off. Open approvals.mode in Advanced settings.'
+    sub: 'Hermux approves every command without asking, even when Auto is off. Open approvals.mode in Advanced settings.'
   }
 }

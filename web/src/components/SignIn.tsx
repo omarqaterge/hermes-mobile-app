@@ -61,7 +61,7 @@ export function withPoolStatus<P extends { id: string; status?: Status }>(provid
 
 /** After a new login: the default model, and the live model list once so the new models show up in the pickers. */
 export function afterSignIn(): void {
-  void loadDefaultModel()
+  void loadDefaultModel(true)
   modelsChanged()
   void rpc('model.options', { refresh: true }).catch(() => {})
 }

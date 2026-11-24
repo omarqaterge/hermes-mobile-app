@@ -657,7 +657,7 @@ module.exports = async t => {
     const startPuts = putsBefore()
     await p.goto(WEB + '/')
     await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-    const smartBtn = p.getByRole('button', { name: /Hermes approves low-risk commands by itself.*\. Change how much Hermux may do without asking$/ })
+    const smartBtn = p.getByRole('button', { name: /Hermux approves low-risk commands by itself.*\. Change how much Hermux may do without asking$/ })
     await smartBtn.waitFor({ timeout: 5000 })
     check((await smartBtn.innerText()).trim() === 'Auto · smart', `approvals.mode smart: Auto button shows Auto · smart (${JSON.stringify(await smartBtn.innerText())})`)
     check(
@@ -689,7 +689,7 @@ module.exports = async t => {
     // Live mode (hideWhenOff): Auto reminder still shows while Hermes approvals.mode is smart.
     await p.getByRole('button', { name: 'Live conversation' }).click()
     await p.getByText(/Live · /).waitFor({ timeout: 3000 })
-    const liveAuto = p.locator('.live-bar').getByRole('button', { name: /Hermes approves low-risk commands by itself/ })
+    const liveAuto = p.locator('.live-bar').getByRole('button', { name: /Hermux approves low-risk commands by itself/ })
     check((await liveAuto.count()) === 1, 'approvals.mode smart: Live mode bar shows Auto reminder when chat Auto is off')
     await p.getByRole('button', { name: 'End', exact: true }).click()
     await p.getByText(/Live · /).waitFor({ state: 'detached', timeout: 3000 })
@@ -713,9 +713,9 @@ module.exports = async t => {
     const pickerText = await picker.innerText()
     check(
       !pickerText.includes('Hermux asks before risky commands') && pickerText.includes('low-risk commands by itself'),
-      'approvals.mode smart: Auto picker says Hermes approves low-risk commands and does not imply every risky command asks'
+      'approvals.mode smart: Auto picker says Hermux approves low-risk commands and does not imply every risky command asks'
     )
-    const openSetting = picker.getByRole('button', { name: /Hermes approvals mode · Smart/ })
+    const openSetting = picker.getByRole('button', { name: /Approvals mode · Smart/ })
     check((await openSetting.count()) === 1, 'approvals.mode smart: Auto picker offers a link to the setting')
     await openSetting.click()
     await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
@@ -729,23 +729,23 @@ module.exports = async t => {
     await cfgSheet.getByRole('button', { name: 'off', exact: true }).click()
     const putsBeforeWarn = putsBefore()
     await cfgSheet.getByRole('button', { name: 'Save', exact: true }).click()
-    await p.getByText('Give Hermux full access?').waitFor({ timeout: 3000 })
+    await p.getByText('Turn off approvals?').waitFor({ timeout: 3000 })
     check((await p.getByText(/in every chat of this bot/).count()) === 1, 'approvals.mode save off: warns before writing for this bot')
     await p.getByRole('button', { name: 'Cancel', exact: true }).last().click()
-    await p.getByText('Give Hermux full access?').waitFor({ state: 'detached', timeout: 3000 })
+    await p.getByText('Turn off approvals?').waitFor({ state: 'detached', timeout: 3000 })
     check(putsBefore() === putsBeforeWarn, 'approvals.mode save off: Cancel writes no PUT /api/config')
 
     await cfgSheet.getByRole('switch', { name: /Apply to all bots/ }).click()
     await cfgSheet.getByRole('button', { name: 'Save', exact: true }).click()
-    await p.getByText('Give Hermux full access?').waitFor({ timeout: 3000 })
+    await p.getByText('Turn off approvals?').waitFor({ timeout: 3000 })
     check((await p.getByText(/in every chat of every bot/).count()) === 1, 'approvals.mode save off (all bots): warning says every bot')
     await p.getByRole('button', { name: 'Cancel', exact: true }).last().click()
-    await p.getByText('Give Hermux full access?').waitFor({ state: 'detached', timeout: 3000 })
+    await p.getByText('Turn off approvals?').waitFor({ state: 'detached', timeout: 3000 })
     check(putsBefore() === putsBeforeWarn, 'approvals.mode save off (all bots): Cancel writes no PUT /api/config')
 
     await cfgSheet.getByRole('switch', { name: /Apply to all bots/ }).click()
     await cfgSheet.getByRole('button', { name: 'Save', exact: true }).click()
-    await p.getByRole('button', { name: 'Allow full access', exact: true }).click()
+    await p.getByRole('button', { name: 'Turn off approvals', exact: true }).click()
     await cfgSheet.waitFor({ state: 'detached', timeout: 3000 })
     check(putsBefore() === putsBeforeWarn + 1, 'approvals.mode save off: confirming writes PUT /api/config')
 
@@ -756,7 +756,23 @@ module.exports = async t => {
     await cfgSheet2.getByRole('button', { name: 'manual', exact: true }).click()
     await cfgSheet2.getByRole('button', { name: 'Save', exact: true }).click()
     await cfgSheet2.waitFor({ state: 'detached', timeout: 3000 })
-    check((await p.getByText('Give Hermux full access?').count()) === 0 && putsBefore() === putsBeforeWarn + 2, 'approvals.mode save manual: saves without a warning dialog')
+    check((await p.getByText(/^(Turn off approvals|Let a model approve commands|Give Hermux full access)\?$/).count()) === 0 && putsBefore() === putsBeforeWarn + 2, 'approvals.mode save manual: saves without a warning dialog')
+
+    // smart gets its own warning (not "full access"); Cancel writes nothing.
+    await modeRow.waitFor({ timeout: 5000 })
+    await modeRow.click()
+    const cfgSheet3 = p.getByRole('dialog')
+    await cfgSheet3.getByRole('button', { name: 'smart', exact: true }).click()
+    await cfgSheet3.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByText('Let a model approve commands?').waitFor({ timeout: 3000 })
+    check(
+      (await p.getByRole('button', { name: 'Use smart approvals', exact: true }).count()) === 1 && (await p.getByText('Give Hermux full access?').count()) === 0,
+      'approvals.mode save smart: its own warning title and button, not Full access'
+    )
+    await p.getByRole('button', { name: 'Cancel', exact: true }).last().click()
+    await p.getByText('Let a model approve commands?').waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === putsBeforeWarn + 2, 'approvals.mode save smart: Cancel writes no PUT /api/config')
+    await p.evaluate(() => window.hermesBack())
 
     // Back from Advanced settings returns to the chat.
     await p.getByRole('button', { name: 'Back', exact: true }).click()
@@ -778,13 +794,13 @@ module.exports = async t => {
     await p.getByText(/Full access on for this chat/).waitFor({ timeout: 5000 })
     await p.getByPlaceholder('Message Hermux').fill('/yolo off')
     await p.getByRole('button', { name: 'Send', exact: true }).click()
-    await p.getByText('Auto off: Hermes still approves low-risk commands by itself').waitFor({ timeout: 5000 })
+    await p.getByText('Auto off: Hermux still approves low-risk commands by itself').waitFor({ timeout: 5000 })
     check(true, 'approvals.mode smart: /yolo off notice uses mode-aware wording')
 
     await mock({ approvalsMode: 'off', profile: 'work' })
     await p.getByPlaceholder('Message Hermux').fill('/approvals manual')
     await p.getByRole('button', { name: 'Send', exact: true }).click()
-    const offBtn = p.getByRole('button', { name: /Hermes approves every command without asking.*\. Change how much Hermux may do without asking$/ })
+    const offBtn = p.getByRole('button', { name: /Hermux approves every command without asking.*\. Change how much Hermux may do without asking$/ })
     await offBtn.waitFor({ timeout: 5000 })
     check((await offBtn.innerText()).trim() === 'Approvals off', 'approvals.mode: /approvals triggers a fresh mode recheck')
     await rowFits360('off')
@@ -819,8 +835,8 @@ module.exports = async t => {
     await p.getByRole('heading', { level: 1, name: 'Access & privacy' }).waitFor({ timeout: 5000 })
     const autoAll = p.getByRole('button', { name: /^Auto for all chats/ })
     check((await autoAll.innerText()).includes('low-risk commands by itself'), `approvals.mode smart: Auto for all chats explains smart mode (${JSON.stringify(await autoAll.innerText())})`)
-    const hermesRow = p.getByRole('button', { name: /^Hermes approvals mode/ })
-    check((await hermesRow.count()) === 1 && (await hermesRow.innerText()).includes('Smart'), 'approvals.mode smart: Access & privacy shows the Hermes approvals mode row')
+    const hermesRow = p.getByRole('button', { name: /^Approvals mode/ })
+    check((await hermesRow.count()) === 1 && (await hermesRow.innerText()).includes('Smart'), 'approvals.mode smart: Access & privacy shows the Approvals mode row')
     await hermesRow.click()
     await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
     check((await p.getByRole('note', { name: 'Bot: Work' }).count()) === 1, 'approvals.mode: Access & privacy opens Advanced settings on the active bot (Work), not a stale scope')

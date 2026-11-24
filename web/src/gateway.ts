@@ -416,7 +416,8 @@ export async function loadDefaultModel(fresh = false): Promise<void> {
     const ag = (cfg as { agent?: { reasoning_effort?: string; reasoning_overrides?: Record<string, string> } } | null)?.agent
     // A per-model override (agent.reasoning_overrides) beats the general default.
     const effort = (model && ag?.reasoning_overrides?.[model]) || ag?.reasoning_effort || ''
-    setState({ defaultModel: model || getState().defaultModel, defaultEffort: effort })
+    // No config (offline, or the read failed): keep the last reasoning level instead of clearing it.
+    setState({ defaultModel: model || getState().defaultModel, defaultEffort: cfg ? effort : getState().defaultEffort })
   } catch {
     /* keep the last one */
   }
@@ -1161,7 +1162,7 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
     try {
       const now = await setYolo(a, want)
-      const notice = now === 'off' ? doneOffToast(currentApprovalsMode(getState().profile)) : YOLO_NOTICE[now]
+      const notice = now === 'off' ? doneOffToast(lockView() ? null : currentApprovalsMode(getState().profile)) : YOLO_NOTICE[now]
       pushItem({ kind: 'notice', id: newId('n'), text: notice, level: now === 'full' ? 'warn' : 'info' })
     } catch (err) {
       pushItem({ kind: 'notice', id: newId('n'), text: `/yolo: ${errText(err)}`, level: 'error' })

@@ -520,7 +520,7 @@ function ConfigTab({ scope, setScope, initialQuery = '' }: { scope: string; setS
       toastNewChats(`Saved${all ? ' for all bots' : ''}`)
       reload()
       if (key === 'model' || key.startsWith('model.')) void loadProfiles()
-      if (key.startsWith('agent.reasoning') || key === 'model' || key.startsWith('model.')) void loadDefaultModel()
+      if (key.startsWith('agent.reasoning') || key === 'model' || key.startsWith('model.')) void loadDefaultModel(true)
       if (key === 'approvals.mode') recheckApprovalsMode(all ? undefined : scope)
     }
     return ok

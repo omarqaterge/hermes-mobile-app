@@ -57,11 +57,11 @@ describe('approvals mode wording', () => {
     expect(autoButtonText('off', null)).toBe('Auto')
     expect(autoButtonLabel('off', null)).toBe('Auto is off')
     expect(offOptionSub(null)).not.toContain('asks before risky commands')
-    expect(offOptionSub(null)).toContain('Hermes')
+    expect(offOptionSub(null)).toContain('approvals setting')
     expect(doneOffToast(null)).not.toContain('asks before risky commands')
-    expect(doneOffToast(null)).toContain('Hermes')
+    expect(doneOffToast(null)).toContain('approvals setting')
     expect(accessSummary('off', null)).toBe('')
-    expect(defaultAccessSub('off', null)).toContain('Hermes')
+    expect(defaultAccessSub('off', null)).toContain('approvals setting')
   })
 
   it('says plainly when Hermes is in smart mode without implying every risky command asks', () => {
