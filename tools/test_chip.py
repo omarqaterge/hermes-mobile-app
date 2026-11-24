@@ -743,6 +743,26 @@ try:
           and plugin._chat_has_read_phone_data("s-cpar-2") is True,
           (pd_mod.compression_ancestors("s-cpar-clean-br"), pd_mod.compression_ancestors("s-cpar-2"),
            plugin._chat_has_read_phone_data("s-cpar-clean-br"), plugin._chat_has_read_phone_data("s-cpar-2")))
+
+    # 9. subagent_descendants depth >= 1 excludes _branched_from in SQL before LIMIT so branches of a compressed
+    # sub-agent cannot crowd out its real compression continuation.
+    con = sqlite3.connect(db_path)
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-d1-par", None, None, "{}", now_t - 600))
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                ("s-d1-sub", "s-d1-par", "compression", json.dumps({"_delegate_from": "s-d1-par"}), now_t - 500))
+    # Continuation is older than the 140 branches made later from s-d1-sub; with ORDER BY started_at DESC LIMIT 64,
+    # branches would crowd out s-d1-cont unless excluded in SQL before LIMIT.
+    con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)", ("s-d1-cont", "s-d1-sub", None, "{}", now_t - 450))
+    for idx in range(140):
+        con.execute("INSERT INTO sessions VALUES (?, ?, ?, ?, ?)",
+                    (f"s-d1-br-{idx}", "s-d1-sub", None, json.dumps({"_branched_from": "s-d1-sub"}), now_t - 300 + idx))
+    con.commit()
+    con.close()
+    pt.mark(["s-d1-cont"])
+    found_d1 = pd_mod.subagent_descendants(["s-d1-par"])
+    check("subagent_descendants excludes _branched_from at depth >= 1 in SQL before LIMIT so a compressed sub-agent's continuation is found past 140 branches",
+          "s-d1-sub" in found_d1 and "s-d1-cont" in found_d1 and plugin._chat_has_read_phone_data("s-d1-par") is True,
+          found_d1)
 finally:
     pt.PATH = orig_pt_path
     pt._mem.clear()

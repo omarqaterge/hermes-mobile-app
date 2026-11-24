@@ -480,7 +480,7 @@ def subagent_descendants(sids: Any, limit: int = 64, budget: float = 1.0, db=Non
                 kind_sql = (
                     "c.model_config LIKE '%_delegate_from%'"
                     if depth == 0
-                    else "(c.model_config LIKE '%_delegate_from%' OR p.end_reason = 'compression')"
+                    else "(c.model_config LIKE '%_delegate_from%' OR (p.end_reason = 'compression' AND (c.model_config IS NULL OR c.model_config NOT LIKE '%_branched_from%')))"
                 )
                 rows = con.execute(
                     f"SELECT c.id, c.parent_session_id, c.model_config, p.end_reason "
