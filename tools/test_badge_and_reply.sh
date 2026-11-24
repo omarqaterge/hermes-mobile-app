@@ -158,6 +158,12 @@ public class BadgePlanTest {
                 && "Hermux".equals(NotifyPrivacy.publicTitle("learning"))
                 && "Hermux".equals(NotifyPrivacy.publicTitle("done")),
                 "publicTitle returns generic lock-screen titles with no chat or reply content");
+        check(NotifyPrivacy.redactApproval(true, true)
+                && !NotifyPrivacy.redactApproval(true, false)
+                && !NotifyPrivacy.redactApproval(false, true)
+                && !NotifyPrivacy.redactApproval(false, false)
+                && "Hermux needs your approval".equals(NotifyPrivacy.APPROVAL_LOCKED),
+                "redactApproval redacts phone-data approvals only while keyguard is locked, using generic APPROVAL_LOCKED wording");
 
         System.out.println(fails == 0 ? "ALL PASSED" : fails + " FAILED");
         System.exit(fails == 0 ? 0 : 1);
@@ -306,10 +312,23 @@ app_ia = body(svc, "synchronized java.util.List<IslandState.Approval> islandAppr
 app_intent = body(svc, "PendingIntent approveIntent(")
 app_refuse = body(svc, "private String panelRefusal(")
 pd_ev = body(svc, "static JSONObject phoneDataEvent(")
-check("hideOnLockScreen(b, CH_ALERT, isPhoneData(ev, session))" in app_case
-      and "hideOnLockScreen(b, CH_STATUS, isPhoneData(a," in app_chip
-      and "hideOnLockScreen(b, CH_ALERT, isPhoneData(e, session))" in app_re,
-      "all three hideOnLockScreen call sites (approval popup, status chip, re-alert) use isPhoneData so tainted-chat command approvals stay hidden on the lock screen")
+check("boolean phoneData = isPhoneData(ev, session);" in app_case
+      and "NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this))" in app_case
+      and "lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED" in app_case
+      and 'lockedPrivate ? "" :' in app_case
+      and "hideOnLockScreen(b, CH_ALERT, phoneData)" in app_case
+      and "boolean phoneData = isPhoneData(a," in app_chip
+      and "NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this))" in app_chip
+      and 'lockedPrivate ? "" : clip(a.optString("what"' in app_chip
+      and 'lockedPrivate ? "" : clip(a.optString("command"' in app_chip
+      and "lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED" in app_chip
+      and "hideOnLockScreen(b, CH_STATUS, phoneData)" in app_chip
+      and "boolean phoneData = isPhoneData(e, session);" in app_re
+      and "NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this))" in app_re
+      and "lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED" in app_re
+      and 'lockedPrivate ? "" :' in app_re
+      and "hideOnLockScreen(b, CH_ALERT, phoneData)" in app_re,
+      "all three approval notification sites (popup, status chip, re-alert) redact text while keyguardLocked (under 'Show all content') and also call hideOnLockScreen")
 check('"phone_data_read"' in pd_ev and 'c.remove("phone_data_read")' in pd_ev and 'c.remove("phone_data_unreadable")' in pd_ev
       and 'a.optBoolean("phone_data_read", false)' in app_chip
       and 'a.optBoolean("phone_data_read", false)' in app_ia

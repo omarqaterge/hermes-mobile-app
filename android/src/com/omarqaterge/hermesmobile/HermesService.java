@@ -1547,8 +1547,12 @@ public class HermesService extends Service {
                 if (!ticking) main.postDelayed(this::tickApproval, 1000);
                 if (MainActivity.visible) return; // no popup: the app shows its own sheet
                 if (!NotifyChoice.needsMe(this)) return; // "When Hermux needs me" is off: it waits in the app, no pop-up and no chip
-                Notification.Builder b = alertBuilder(CH_ALERT, title, clip(body, 600), session, true);
-                hideOnLockScreen(b, CH_ALERT, isPhoneData(ev, session));
+                boolean phoneData = isPhoneData(ev, session);
+                boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
+                Notification.Builder b = alertBuilder(CH_ALERT,
+                        lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED : title,
+                        lockedPrivate ? "" : clip(body, 600), session, true);
+                hideOnLockScreen(b, CH_ALERT, phoneData);
                 // Answer right from the popup, like the in-app sheet.
                 if (!ev.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(ev, "once", "Allow once"));
                 if (ev.optBoolean("allow_session", true)) b.addAction(approveAction(ev, "session", "Allow session"));
@@ -2393,9 +2397,11 @@ public class HermesService extends Service {
         float frac = left / (float) total;
         int barColor = frac > 0.5f ? GOLD : frac > 0.2f ? AMBER : RED;
 
-        String what = clip(a.optString("what", ""), 280);
-        String cmd = clip(a.optString("command", ""), 400);
-        if (what.isEmpty() && cmd.isEmpty()) what = clip(a.optString("body", "a command"), 400);
+        boolean phoneData = isPhoneData(a, a.optString("session", null));
+        boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
+        String what = lockedPrivate ? "" : clip(a.optString("what", ""), 280);
+        String cmd = lockedPrivate ? "" : clip(a.optString("command", ""), 400);
+        if (!lockedPrivate && what.isEmpty() && cmd.isEmpty()) what = clip(a.optString("body", "a command"), 400);
         android.text.SpannableStringBuilder t = new android.text.SpannableStringBuilder();
         if (!what.isEmpty()) {
             t.append(what.substring(0, 1).toUpperCase() + what.substring(1));
@@ -2412,7 +2418,8 @@ public class HermesService extends Service {
         Notification.Builder b = new Notification.Builder(this, CH_STATUS)
                 .setSmallIcon(R.drawable.ic_stat_shield)
                 .setColor(barColor)
-                .setContentTitle(a.optBoolean("phone_data_read", false) ? "Hermux wants to read your phone" : "Hermux wants to run a command")
+                .setContentTitle(lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED
+                        : (a.optBoolean("phone_data_read", false) ? "Hermux wants to read your phone" : "Hermux wants to run a command"))
                 .setContentText(t)
                 .setSubText((sub != null ? sub + " · " : "") + (sending ? SENDING_ANSWER : "expires in " + secs + "s"))
                 .setOngoing(true)
@@ -2438,19 +2445,20 @@ public class HermesService extends Service {
                 b.addAction(unlockFirst(new Notification.Action.Builder(null, colored("Allow session", GOLD), approveIntent(a, "session"))).build());
             b.addAction(new Notification.Action.Builder(null, colored("Deny", RED), approveIntent(a, "deny")).build());
         }
-        hideOnLockScreen(b, CH_STATUS, isPhoneData(a, a.optString("session", null)));
+        hideOnLockScreen(b, CH_STATUS, phoneData);
         promote(b, secs + "s");
         return b.build();
     }
 
     /** Any approval for a phone-data read or a chat that has read phone data never shows its command, description,
-     *  kind or search text on the lock screen: private, with a generic public version on the same channel. */
+     *  kind or search text on the lock screen: private, with a generic public version on the same channel (in addition
+     *  to redacting the notification's own text while the phone is locked via NotifyPrivacy.redactApproval). */
     void hideOnLockScreen(Notification.Builder b, String channel, boolean phoneData) {
         if (!phoneData) return;
         b.setVisibility(Notification.VISIBILITY_PRIVATE);
         b.setPublicVersion(new Notification.Builder(this, channel)
                 .setSmallIcon(R.drawable.ic_stat_shield)
-                .setContentTitle("Hermux needs your approval")
+                .setContentTitle(NotifyPrivacy.APPROVAL_LOCKED)
                 .build());
     }
 
@@ -2466,9 +2474,13 @@ public class HermesService extends Service {
         JSONObject e = pendingApproval;
         if (e == null) return;
         String session = e.optString("session", null);
+        boolean phoneData = isPhoneData(e, session);
+        boolean lockedPrivate = NotifyPrivacy.redactApproval(phoneData, MainActivity.keyguardLocked(this));
         NotificationManager nm = getSystemService(NotificationManager.class);
-        Notification.Builder b = alertBuilder(CH_ALERT, e.optString("title", "Hermux"), "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
-        hideOnLockScreen(b, CH_ALERT, isPhoneData(e, session));
+        Notification.Builder b = alertBuilder(CH_ALERT,
+                lockedPrivate ? NotifyPrivacy.APPROVAL_LOCKED : e.optString("title", "Hermux"),
+                lockedPrivate ? "" : "Still waiting for your answer: " + clip(e.optString("body", ""), 600), session, true);
+        hideOnLockScreen(b, CH_ALERT, phoneData);
         if (!e.optBoolean("phone_data_unreadable", false)) b.addAction(approveAction(e, "once", "Allow once"));
         if (e.optBoolean("allow_session", true)) b.addAction(approveAction(e, "session", "Allow session"));
         b.addAction(approveAction(e, "deny", "Deny"));
