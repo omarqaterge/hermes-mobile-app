@@ -4,6 +4,8 @@ const { WEB, sleep, check, fail, mock, nativeShell } = require('../lib.cjs')
 
 module.exports = async t => {
   const { browser, page } = t
+  // Run standalone (--only 18) as well as after 17: pages here model a fresh install (no hm.connectedOnce).
+  t.established = false
   // ── the setup flow: works out what is set up and resumes at the first missing step ──
   const OK = { termux: true, runCommand: true, notifications: true, batteryApp: true, batteryTermux: true, startError: '' }
   const flowPage = async setup => {
@@ -52,7 +54,9 @@ module.exports = async t => {
     await fb.getByText('Set up Hermux', { exact: true }).waitFor({ state: 'detached', timeout: 4000 }).then(() => check(true, 'flow: Done goes to the chat'), () => check(false, 'flow: Done goes to the chat'))
     await fb.reload()
     await fb.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-    await sleep(2000)
+    await fb.locator('.conn-banner').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
+    // Negative check: wait briefly after reconnect to confirm the setup flow does not reopen after Done.
+    await sleep(400)
     check(!(await flowShown(fb)), 'flow: not shown again after Done')
     check(await fb.evaluate(() => localStorage.getItem('hm.setupFlowDone') === '1'), 'flow: hm.setupFlowDone is set')
     await fb.close()
@@ -144,7 +148,7 @@ module.exports = async t => {
     const fd = await flowPage(XIAOMI)
     await fd.goto(WEB + '/')
     await fd.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-    await sleep(2500)
+    await fd.waitForFunction(() => localStorage.getItem('hm.setupFlowDone') === '1', null, { timeout: 8000 }).catch(() => {})
     check(!(await flowShown(fd)), 'flow: the Autostart tip alone does not open the flow')
     await fd.locator('.conn-dot').click()
     await fd.getByRole('button', { name: 'Setup check' }).click()
@@ -330,8 +334,9 @@ module.exports = async t => {
     await fe.getByRole('button', { name: 'Open Shizuku' }).click()
     check((await fe.evaluate(() => window.__fixes || [])).includes('open-shizuku'), 'app-first: Open Shizuku opens it')
     check((await fe.getByText('Shizuku uses Android’s own wireless debugging to start itself').count()) === 1, 'Wireless debugging step explains why it is needed')
-    // Shizuku auto-detect: the step stays put while the app says Shizuku is not running, then shows a green row and moves on by itself
-    await fe.waitForTimeout(3600)
+    // Shizuku auto-detect: wait for at least one 3 s setupState poll while Shizuku is not running, then check the step stayed put
+    const shizukuPolls = await fe.evaluate(() => window.__nativeCalls.filter(c => c === 'setupState').length)
+    await fe.waitForFunction(n => window.__nativeCalls.filter(c => c === 'setupState').length > n, shizukuPolls, { timeout: 6000 })
     check((await fe.getByRole('button', { name: /skip/i }).count()) === 0, 'shizuku required: no Skip button on Start Shizuku')
     check((await fe.getByText('Hermux needs Shizuku', { exact: false }).count()) === 1 && (await fe.getByText(/recommended|optional|skip it/i).count()) === 0, 'shizuku required: the step says Hermes needs Shizuku, never recommended/optional')
     check((await fe.locator('.setup-item.ok', { hasText: 'Shizuku is running' }).count()) === 0, 'shizuku-check: no green row before it runs')
@@ -372,7 +377,7 @@ module.exports = async t => {
     await push([ 'phone: tap Allow on Android’s prompt, so Hermux can read and save your files', 'STEP android limit', 'android: child-process limit lifted (via Shizuku)', 'STEP debian Debian'])
     check((await fe.locator('.install-step', { hasText: 'Termux packages' }).locator('.install-time').textContent()) === '1:42', 'step times: a finished step shows how long it took (1:42)')
     const t0 = await fe.locator('.install-step.run .install-time').textContent()
-    await sleep(2300)
+    await fe.waitForFunction(prev => document.querySelector('.install-step.run .install-time')?.textContent !== prev, t0, { timeout: 4000 }).catch(() => {})
     const t1 = await fe.locator('.install-step.run .install-time').textContent()
     check(t0 !== t1 && /^\d+:\d\d$/.test(t1), `step times: the running step counts up live (${t0} → ${t1})`)
     check(/^So far \d+:\d\d$/.test(((await fe.locator('.install-total').textContent()) || '').trim()), 'step times: a running total is shown')
@@ -390,6 +395,7 @@ module.exports = async t => {
     await fe.getByText('stopped without saying why', { exact: false }).waitFor({ timeout: 3000 }).then(() => check(true, 'app-first: a lost installer reads as stopped, saying why it may have stopped'), () => check(false, 'app-first: a lost installer reads as stopped, saying why it may have stopped'))
     check((await fe.locator('.install-step.bad', { hasText: 'Debian' }).count()) === 1, 'app-first: lost marks the step it was on')
     const lt0 = await fe.locator('.install-total').textContent()
+    // Timing check: wait past two 1 s clock ticks to confirm a stopped installer's clock stands still.
     await sleep(2200)
     const lt1 = await fe.locator('.install-total').textContent()
     check(lt0 === lt1, `app-first: a stopped installer's clock stands still (${lt0} → ${lt1})`)
@@ -410,7 +416,7 @@ module.exports = async t => {
     const ff = await flowPage({ ...OK, termuxApi: true, termuxBoot: true, termuxBootStopped: false, shizuku: true, canInstall: true, devOptions: true, wirelessDebugging: true, termuxSigner: 'fdroid', probe: true, maker: 'google' })
     await ff.goto(WEB + '/')
     await ff.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-    await sleep(2000)
+    await ff.waitForFunction(() => localStorage.getItem('hm.setupFlowDone') === '1', null, { timeout: 8000 }).catch(() => {})
     check(!(await flowShown(ff)), 'app-first: a set-up phone goes straight to chat')
     await ff.locator('.conn-dot').click()
     await ff.getByRole('button', { name: 'Setup check' }).click()
@@ -448,11 +454,12 @@ module.exports = async t => {
     await fg.getByRole('button', { name: 'Setup check' }).click()
     await fg.locator('.setup-hero-title', { hasText: 'All set' }).waitFor({ timeout: 6000 }).catch(() => {})
     check((await fg.locator('.setup-item', { hasText: 'Phone scripts' }).count()) === 0, 'phone scripts: no row while the shell says nothing about them')
+    const readsBefore = await fg.evaluate(() => window.__nativeCalls.filter(c => c === 'setupState').length)
     await fg.evaluate(() => {
       window.__setup = { ...window.__setup, phoneScriptsOld: false }
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    await sleep(800)
+    await fg.waitForFunction(n => window.__nativeCalls.filter(c => c === 'setupState').length > n, readsBefore, { timeout: 3000 }).catch(() => {})
     check((await fg.locator('.setup-item', { hasText: 'Phone scripts' }).count()) === 0, 'phone scripts: no row when they are current')
     await fg.evaluate(() => {
       window.__setup = { ...window.__setup, phoneScriptsOld: true }
@@ -484,11 +491,12 @@ module.exports = async t => {
     const dlg = fh.locator('.dialog', { hasText: 'Replace the plugin?' })
     await dlg.waitFor({ timeout: 3000 }).then(() => check(true, 'phone scripts, hand-changed plugin: asks first, as Settings does'), () => check(false, 'phone scripts, hand-changed plugin: asks first, as Settings does'))
     await dlg.locator('button', { hasText: 'Cancel' }).click()
-    await sleep(200)
+    await dlg.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '[]', 'phone scripts, hand-changed plugin: Cancel replaces nothing')
     await row.getByRole('button', { name: 'Replace the plugin' }).click()
     await dlg.locator('button', { hasText: 'Replace' }).click()
-    await sleep(200)
+    await dlg.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await fh.waitForFunction(() => (window.__plugLog || []).length > 0, null, { timeout: 3000 }).catch(() => {})
     check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '[true]', 'phone scripts, hand-changed plugin: Replace runs the forced update')
 
     // An old plugin whose work can't be asked: the row's Update now asks first, with the same question as Settings.
@@ -503,7 +511,8 @@ module.exports = async t => {
     const cut = fh.locator('.dialog', { hasText: 'Update the plugin now?' })
     await cut.waitFor({ timeout: 3000 }).then(() => check(true, 'phone scripts, work that can’t be asked: asks first'), () => check(false, 'phone scripts, work that can’t be asked: asks first'))
     await cut.locator('button', { hasText: 'Update now' }).click()
-    await sleep(200)
+    await cut.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await fh.waitForFunction(() => (window.__plugLog || []).length > 0, null, { timeout: 3000 }).catch(() => {})
     check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '["confirmed"]', 'phone scripts, work that can’t be asked: then updates, the warning answered')
 
     // A switched phone with an older plugin: the row's Update now asks first too, and the update says it was confirmed.
@@ -514,7 +523,8 @@ module.exports = async t => {
     await row.getByRole('button', { name: 'Update now' }).click()
     await cut.waitFor({ timeout: 3000 }).then(() => check(true, 'phone scripts, switched phone: asks first'), () => check(false, 'phone scripts, switched phone: asks first'))
     await cut.locator('button', { hasText: 'Update now' }).click()
-    await sleep(200)
+    await cut.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await fh.waitForFunction(() => (window.__plugLog || []).length > 0, null, { timeout: 3000 }).catch(() => {})
     check(JSON.stringify(await fh.evaluate(() => window.__plugLog || [])) === '["confirmed"]', 'phone scripts, switched phone: then the confirmed update')
 
     // A held or newer plugin: nothing the app does clears the row, so no button and a plain line why.
@@ -522,7 +532,8 @@ module.exports = async t => {
       window.__setup = { ...window.__setup, phoneScriptsOld: true, phoneScriptsFix: 'none' }
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    await sleep(800)
+    await row.locator('button').waitFor({ state: 'detached', timeout: 6000 }).catch(() => {})
+    await row.getByText(/held for testing or newer/).waitFor({ timeout: 3000 }).catch(() => {})
     check((await row.locator('button').count()) === 0, 'phone scripts, held or newer plugin: no button')
     check(/held for testing or newer/.test(await row.innerText()), 'phone scripts, held or newer plugin: says why')
     await fh.close()

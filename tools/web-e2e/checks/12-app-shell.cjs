@@ -5,6 +5,14 @@ const { MOCK, WEB, calls, rpcs, sleep, check, fail, mock, nativeShell, settingsP
 
 module.exports = async t => {
   const { browser, page } = t
+  const waitFor = async (fn, ms = 5000) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      if (await fn()) return true
+      await sleep(50)
+    }
+    return Boolean(await fn())
+  }
   // Starts a shard of its own: the plugin is enabled (11-offline-and-start enables it in a full run).
   await mock({ pluginEnabled: true })
   // ── #19 in the app shell: the token comes asynchronously (no blocking getToken), every call carries the key ──
@@ -17,7 +25,8 @@ module.exports = async t => {
   const listsBefore = rpcs('session.list').length
   await np.goto(WEB + '/')
   await np.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-  await sleep(1500)
+  await np.waitForFunction(() => (window.__nativeCalls || []).includes('getTokenAsync'), null, { timeout: 5000 }).catch(() => {})
+  await waitFor(() => rpcs('session.list').length > listsBefore, 5000)
   const nc = await np.evaluate(() => window.__nativeCalls)
   check(nc.includes('getTokenAsync') && !nc.includes('getToken'), `token fetched asynchronously (${[...new Set(nc)].join(',')})`)
   check(rpcs('session.list').length > listsBefore, 'connected with it (session.list)')
@@ -97,13 +106,14 @@ module.exports = async t => {
   // ── #33 Live mode: an approval is read out and answered by voice ──
   await np.evaluate(() => window.hermesShortcut('live'))
   await np.waitForFunction(() => window.__nativeCalls.includes('startListening'), null, { timeout: 5000 })
+  const listensBeforeAsk = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
   await np.evaluate(() => window.__hmVoice('final', 'run the thing'))
   await np.waitForFunction(() => (window.__spoken || []).some(t => /Allow or deny/.test(t)), null, { timeout: 8000 }).catch(() => {})
   const spoken = await np.evaluate(() => (window.__spoken || []).join(' | '))
   check(/Hermux needs your permission\. Allow or deny\?/.test(spoken) && !/temp folder|rm -rf/.test(spoken), `approval asked in one short question, the command isn't read out (${spoken})`)
-  await sleep(300)
+  await np.waitForFunction(n => window.__nativeCalls.filter(c => c === 'startListening').length > n, listensBeforeAsk, { timeout: 5000 }).catch(() => {})
   await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
-  await sleep(2800)
+  await waitFor(() => calls().some(c => c.answer === 'srv-approval-1'), 6000)
   const va = calls().filter(c => c.answer === 'srv-approval-1')
   check(va.length === 1 && va[0].result && va[0].result.choice === 'once', `answered by voice (${JSON.stringify(va)})`)
   // Over the lock screen (the shell calls hermesLockView): talking works, allowing asks for an unlock first, Deny goes
@@ -122,29 +132,30 @@ module.exports = async t => {
     const listens = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
     await np.evaluate(() => window.hermesShortcut('live'))
     await np.waitForFunction(n => window.__nativeCalls.filter(c => c === 'startListening').length > n, listens, { timeout: 5000 })
+    const listens2 = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'startListening').length)
     await np.evaluate(() => window.__hmVoice('final', 'run the thing'))
     await np.locator('.sheet .sheet-title', { hasText: 'Approve' }).waitFor({ timeout: 8000 }).catch(() => {})
     await np.waitForFunction(() => (window.__spoken || []).filter(t => /Allow or deny/.test(t)).length >= 2, null, { timeout: 8000 }).catch(() => {})
-    await sleep(300)
+    await np.waitForFunction(n => window.__nativeCalls.filter(c => c === 'startListening').length > n, listens2, { timeout: 5000 }).catch(() => {})
     await np.evaluate(() => window.__hmVoice('final', 'yes allow it'))
-    await sleep(2800)
+    await np.waitForFunction(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length >= 1, null, { timeout: 6000 }).catch(() => {})
     check(yoloOn() === yoloBefore && autoPuts() === autoBefore, `locked: default Auto access is not applied to the Live chat (yolo on ${yoloOn() - yoloBefore}, auto PUTs ${autoPuts() - autoBefore})`)
     check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: "allow" by voice is not sent')
     check((await unlocks()) === 1, `locked: "allow" by voice asks for an unlock (${await unlocks()})`)
     await np.locator('.sheet').getByRole('button', { name: 'Allow once' }).click()
-    await sleep(300)
+    await np.waitForFunction(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length >= 2, null, { timeout: 3000 }).catch(() => {})
     check(calls().filter(c => c.answer === 'srv-approval-1').length === 1, 'locked: Allow once on the sheet is not sent')
     check((await unlocks()) === 2, `locked: Allow once asks for an unlock (${await unlocks()})`)
     await np.locator('.sheet').getByRole('button', { name: 'Deny' }).click()
-    await sleep(300)
+    await waitFor(() => calls().filter(c => c.answer === 'srv-approval-1').length >= 2, 3000)
     const dn = calls().filter(c => c.answer === 'srv-approval-1')
     check(dn.length === 2 && dn[1].result && dn[1].result.choice === 'deny', `locked: Deny goes through (${JSON.stringify(dn.slice(1))})`)
     await np.getByRole('button', { name: /^Sessions/ }).click().catch(() => {})
-    await sleep(300)
+    await np.waitForFunction(() => window.__nativeCalls.filter(c => c === 'requestUnlock').length >= 3, null, { timeout: 3000 }).catch(() => {})
     check((await np.locator('.drawer.open, .drawer-open').count()) === 0 && (await unlocks()) === 3, `locked: the chat list asks for an unlock instead of opening (${await unlocks()})`)
     check(await np.locator('.live-bar').count() === 1, 'locked: still talking in Live mode')
     await np.locator('.live-bar').getByRole('button', { name: 'End' }).click()
-    await sleep(200)
+    await np.waitForFunction(() => window.__nativeCalls.includes('leaveLockScreen'), null, { timeout: 3000 }).catch(() => {})
     check((await np.evaluate(() => window.__nativeCalls)).includes('leaveLockScreen'), 'locked: ending Live mode puts the lock screen back')
     await np.evaluate(() => window.hermesLockView(false))
     await np.evaluate(() => localStorage.removeItem('hm.defaultAccess.v1'))
@@ -171,6 +182,7 @@ module.exports = async t => {
     })
     await np.locator('.msg').first().waitFor({ timeout: 5000 }).catch(() => {})
     await setBg(mine({ session: 's-other' }))
+    // Timing check: wait over two 500 ms frame intervals to confirm no card or frame requests for another chat.
     await sleep(1300)
     check((await np.locator('.bg-card').count()) === 0 && (await nAsked()) === 0, 'bg app of another chat: no card, no frame requests')
     await setBg(mine())
@@ -195,7 +207,8 @@ module.exports = async t => {
     check((await np.locator('.bg-card select, .bg-viewer select, .bg-viewer input, .bg-viewer textarea, .bg-card input, dialog').count()) === 0, 'card and viewer use no native controls')
     await np.evaluate(() => window.hermesBack())
     await viewer.waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'Back closes the viewer'), () => check(false, 'Back closes the viewer'))
-    await sleep(900)
+    const askedAfterClose = await nAsked()
+    await np.waitForFunction(n => (window.__bgAsked || []).length > n, askedAfterClose, { timeout: 3000 }).catch(() => {})
     check(await np.evaluate(() => (window.__bgAsked || []).slice(-1).every(a => a.w <= 240) && (window.__bgAsked || []).length > 0), 'after closing the viewer only the small thumbnail is requested')
     check((await np.locator('.bg-card').count()) === 1, 'card stays after closing the viewer')
     // Page hidden: no more requests; visible again: they resume.
@@ -203,8 +216,9 @@ module.exports = async t => {
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    await sleep(500)
+    await np.waitForFunction(() => (window.__bgInflight || 0) === 0, null, { timeout: 3000 }).catch(() => {})
     const hiddenAt = await nAsked()
+    // Timing check: wait over three 500 ms frame intervals to confirm polling stays stopped while hidden.
     await sleep(1600)
     check((await nAsked()) === hiddenAt, `no frame requests while the page is hidden (${hiddenAt})`)
     await np.evaluate(() => {
@@ -218,8 +232,9 @@ module.exports = async t => {
     await np.locator('.bg-card').waitFor({ state: 'detached', timeout: 3000 }).then(() => check(true, 'card disappears once the state is cleared'), () => check(false, 'card disappears once the state is cleared'))
     check(JSON.stringify(await np.evaluate(() => window.__bgActs)) === '["take_over"]', `Take over calls bgAction once (${JSON.stringify(await np.evaluate(() => window.__bgActs))})`)
     check((await viewer.count()) === 0, 'viewer closes after Take over')
-    await sleep(400)
+    await np.waitForFunction(() => (window.__bgInflight || 0) === 0, null, { timeout: 3000 }).catch(() => {})
     const clearedAt = await nAsked()
+    // Timing check: wait over three 500 ms frame intervals to confirm polling stops once bg state is cleared.
     await sleep(1500)
     check((await nAsked()) === clearedAt, 'no frame requests once there is no bg app')
     // Stop.
@@ -233,8 +248,9 @@ module.exports = async t => {
     await np.locator('.bg-card').waitFor({ timeout: 3000 }).catch(() => {})
     await np.evaluate(() => window.hermesOpenSession('s-5'))
     await np.locator('.bg-card').waitFor({ state: 'detached', timeout: 5000 }).then(() => check(true, 'opening another chat hides the card'), () => check(false, 'opening another chat hides the card'))
-    await sleep(500)
+    await np.waitForFunction(() => (window.__bgInflight || 0) === 0, null, { timeout: 3000 }).catch(() => {})
     const swAt = await nAsked()
+    // Timing check: wait over three 500 ms frame intervals to confirm polling stops on another chat.
     await sleep(1500)
     check((await nAsked()) === swAt, 'no frame requests for a chat without the bg app')
     await setBg(null)
@@ -248,7 +264,8 @@ module.exports = async t => {
     check(/Off: Hermux won't open them in the background/.test((await bgRow.textContent({ timeout: 1500 }).catch(() => '')) || ''), 'row explains what Off means')
     check((await bgRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'false', 'switch starts off')
     await bgRow.click({ timeout: 1500 }).catch(() => {})
-    await sleep(500)
+    await bgRow.locator('[role="switch"][aria-checked="true"]').waitFor({ timeout: 3000 }).catch(() => {})
+    await waitFor(() => calls().some(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps'), 3000)
     {
       const puts = calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/bgapps')
       check(puts.length === 1 && puts[0].body.allow_sensitive === true, `toggling PUTs allow_sensitive (${JSON.stringify(puts.map(c => c.body))})`)
@@ -262,12 +279,14 @@ module.exports = async t => {
     await ouiRow.waitFor({ timeout: 5000 }).then(() => check(true, 'Settings has the cards row'), () => check(false, 'Settings has the cards row'))
     check((await ouiRow.getByRole('switch').getAttribute('aria-checked', { timeout: 1500 }).catch(() => null)) === 'true', 'cards: on by default')
     await ouiRow.click({ timeout: 1500 }).catch(() => {})
-    await sleep(500)
+    await ouiRow.locator('[role="switch"][aria-checked="false"]').waitFor({ timeout: 3000 }).catch(() => {})
+    await waitFor(() => calls().some(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/openui'), 3000)
     {
       const puts = calls().filter(c => c.http === 'PUT' && c.path === '/api/plugins/hermes-mobile/openui')
       check(puts.length === 1 && puts[0].body.enabled === false, `cards toggle PUTs enabled:false (${JSON.stringify(puts.map(c => c.body))})`)
     }
     await ouiRow.click({ timeout: 1500 }).catch(() => {}) // back on for the rest of the run
+    await ouiRow.locator('[role="switch"][aria-checked="true"]').waitFor({ timeout: 3000 }).catch(() => {})
     await np.evaluate(() => window.hermesBack()) // Behaviour → the main page
     await np.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     await np.evaluate(() => window.hermesBack())
@@ -298,7 +317,7 @@ module.exports = async t => {
     window.__assistant = true
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  await sleep(200)
+  await ar.getByText('On', { exact: true }).waitFor({ timeout: 3000 }).catch(() => {})
   check(/On/.test((await ar.textContent()) || ''), `assistant row says On after returning (${await ar.textContent()})`)
   // "Talk to Hermes on the lock screen": off by default, each change saved and pushed to the shell.
   const lr = np.locator('.set-row', { hasText: 'Talk to Hermux on the lock screen' })
@@ -310,10 +329,10 @@ module.exports = async t => {
   check(JSON.stringify(await np.evaluate(() => window.__lockAssist)) === '[true]' && (await np.evaluate(() => localStorage.getItem('hm.lockAssist.v1'))) === '1', `on: pushed to the shell and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`)
   await lr.click()
   check(JSON.stringify(await np.evaluate(() => window.__lockAssist)) === '[true,false]' && (await np.evaluate(() => localStorage.getItem('hm.lockAssist.v1'))) === '0', `off again: pushed and saved (${JSON.stringify(await np.evaluate(() => window.__lockAssist))})`)
-  await sleep(200)
   await np.evaluate(() => window.hermesBack())
-  await sleep(200)
+  await np.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 3000 })
   await np.evaluate(() => window.hermesBack())
+  await np.locator('.screen').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
   // ── setup check with the Android checks: ✗ items have buttons that ask the shell to fix them ──
   await np.evaluate(() => (window.__setup = { termux: true, runCommand: false, notifications: true, batteryApp: false, batteryTermux: true, startError: '' }))
@@ -344,8 +363,10 @@ module.exports = async t => {
   {
     const autoRow = np.locator('.setup-item', { hasText: 'Shizuku starts by itself' })
     const setAuto = a => np.evaluate(a => (window.__setup = { ...window.__setup, shizuku: true, batteryShizuku: true, ...(a ? { shizukuAuto: a } : { shizukuAuto: undefined }) }), a)
+    const setupCallsBefore = await np.evaluate(() => window.__nativeCalls.filter(c => c === 'setupState').length)
     await setAuto(null)
-    await sleep(500)
+    await np.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await np.waitForFunction(n => window.__nativeCalls.filter(c => c === 'setupState').length > n, setupCallsBefore, { timeout: 3000 }).catch(() => {})
     check((await autoRow.count()) === 0, 'shizuku auto: no row on an older app build (no shizukuAuto)')
     await setAuto({ sdk: true, wss: true, paired: true, last: 'ok' })
     await np.locator('.setup-item.ok', { hasText: 'Shizuku starts by itself' }).waitFor({ timeout: 6000 }).then(() => check(true, 'shizuku auto: ✓ when paired and allowed'), () => check(false, 'shizuku auto: ✓ when paired and allowed'))
@@ -455,8 +476,9 @@ module.exports = async t => {
     for (const [id, name] of [['termux-api', 'Termux:API'], ['termux-boot', 'Termux:Boot'], ['shizuku', 'Shizuku'], ['termux', 'Termux']]) {
       const b = sheet.locator(`[data-app="${id}"]`).getByRole('button', { name: `Uninstall ${name}`, exact: true })
       check(/danger-solid/.test((await b.getAttribute('class')) || ''), `uninstall: ${name} is the next one`)
+      const unLen = await np.evaluate(() => (window.__unLog || []).length)
       await b.click()
-      await sleep(100)
+      await np.waitForFunction(n => (window.__unLog || []).length > n, unLen, { timeout: 3000 }).catch(() => {})
       // Android's prompt removed it; back in the app the shell says so
       await np.evaluate(f => {
         window.__setup = { ...window.__setup, [f]: false }
@@ -585,6 +607,7 @@ module.exports = async t => {
     const stops = await lp.evaluate(() => window.__nativeCalls.filter(c => c === 'stopSpeaking').length)
     const echo = await lp.evaluate(() => (window.__spoken || []).at(-1).split(/\s+/).slice(0, 4).join(' '))
     await lp.evaluate(t => window.__hmVoice('partial', t), echo)
+    // Negative check: confirm Hermes's own echoed words do not interrupt speech.
     await sleep(200)
     check(await bar.getByText('Hermux is speaking…').isVisible(), `barge-in: Hermes's own voice doesn't cut it off ("${echo}")`)
     const sent = rpcs('prompt.submit').length
@@ -650,6 +673,7 @@ module.exports = async t => {
     await viewer.getByRole('button', { name: 'Stop' }).click()
     await viewer.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     await setNative(null)
+    // Negative check: confirm stopping from the viewer does not also show the "isn't using an app" toast.
     await sleep(300)
     check((await vp.locator('.toast', { hasText: "isn't using an app" }).count()) === 0, 'Stop from the viewer: only its own message')
     await vp.locator('.toast').first().waitFor({ state: 'detached', timeout: 8000 }).catch(() => {})
@@ -665,6 +689,7 @@ module.exports = async t => {
     // The request was used up: the app coming back later shows the card, not the viewer by itself.
     await setNative(st)
     await vp.locator('.bg-card').waitFor({ timeout: 3000 }).catch(() => {})
+    // Negative check: confirm the consumed viewer request does not reopen the viewer when the bg card returns.
     await sleep(500)
     check((await vp.locator('.bg-card').count()) === 1 && (await viewer.count()) === 0, 'a later app for that chat shows the card only')
     await setNative(null)
@@ -700,20 +725,23 @@ module.exports = async t => {
   check((await rp.evaluate(() => window.__watchHermes || 0)) === 0, 'no watch for Hermes while it answers')
   await mock({ drop: 60000 })
   await rp.getByPlaceholder(/^Offline/).waitFor({ timeout: 8000 })
-  await sleep(5200) // tries at about 0.6, 1.8 and 4.2 s have failed; the next is at about 9 s
+  // Timing check: let the ~0.6, 1.8 and 4.2 s reconnect tries fail (next backoff is ~9 s) and verify watchHermes ran once.
+  await sleep(5200)
   check((await rp.evaluate(() => window.__watchHermes)) === 1, 'the shell is asked to watch once in an outage, not on every try')
   await mock({ up: true })
+  const listsBeforeReady = rpcs('session.list').length
   const asked = Date.now()
   await rp.evaluate(() => window.__hmHermesReady())
   await rp.getByPlaceholder('Message Hermux').waitFor({ timeout: 2500 }).then(() => check(true, 'Hermes answers: connected at once'), () => check(false, 'Hermes answers: connected at once'))
   check(Date.now() - asked < 2500, `well before the next backoff step (${Date.now() - asked} ms)`)
-  await sleep(500)
+  await waitFor(() => rpcs('session.list').length > listsBeforeReady, 3000)
   const opened = rpcs('session.list').length
   await rp.evaluate(() => window.__hmHermesReady())
+  // Negative check: confirm a redundant ready signal while connected does not reconnect or re-list sessions.
   await sleep(300)
   check(rpcs('session.list').length === opened, 'with the socket open the signal does nothing')
   await rp.close()
-  await sleep(4000) // the other open pages are back on their own backoff by now
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 }) // wait for the shared page to reconnect after the outage
 
   // ── Task 10: the Settings pages, Bots and Setup check (one-sentence footers, About this, widths, Light) ──
   {
@@ -730,9 +758,17 @@ module.exports = async t => {
       await p.getByRole('button', { name: 'Settings', exact: true }).click()
       await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     }
+    const waitPageLoaded = p =>
+      p.waitForFunction(() => {
+        const sc = document.querySelector('.screen')
+        if (!sc) return false
+        if (sc.querySelector('[aria-busy="true"], .spinner')) return false
+        if ([...sc.querySelectorAll('.dim.pad')].some(e => /^Loading/.test(e.textContent.trim()))) return false
+        return sc.querySelectorAll('.set-row, .set-section, .empty-state').length > 0 && sc.getAnimations().every(a => a.playState !== 'running')
+      }, null, { timeout: 5000 }).catch(() => {})
     const up = async p => {
       await p.evaluate(() => window.hermesBack())
-      await sleep(200) // the page's slide-out ends before the next one opens
+      await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
     }
     const PAGES = ['Models', 'Connectors', 'Behaviour', 'Access & privacy', 'Appearance', 'Voice', 'Notifications', 'About & help']
 
@@ -743,7 +779,7 @@ module.exports = async t => {
       const long = []
       for (const name of PAGES) {
         await settingsPage(p, name)
-        await sleep(600) // the page's rows have loaded and slid in before the footers are read
+        await waitPageLoaded(p)
         for (const f of await p.locator('.screen .set-foot').allInnerTexts()) {
           // Phone data's footer is the protected section's own disclosure and stays as it is (Access & privacy).
           if (/^Results go to your chosen model provider/.test(f)) continue
@@ -768,7 +804,7 @@ module.exports = async t => {
       await toSettings(p)
       for (const name of PAGES) {
         await settingsPage(p, name)
-        await sleep(700) // the page's rows have loaded and slid in before widths and colours are read
+        await waitPageLoaded(p)
         const m = await p.evaluate(() => {
           const body = document.querySelector('.screen .screen-body')
           const kids = [...body.children].map(k => k.getBoundingClientRect()).filter(r => r.width)
@@ -807,7 +843,8 @@ module.exports = async t => {
       await settingsPage(p, 'About & help')
       await p.getByRole('button', { name: /^Setup check/ }).click()
       await p.locator('.setup-hero-title').waitFor({ timeout: 5000 })
-      await sleep(500) // the page's slide-in ends before colours are read
+      await p.locator('.setup-item.ok, .setup-item.bad').first().waitFor({ timeout: 5000 }).catch(() => {})
+      await p.waitForFunction(() => { const sc = document.querySelector('.screen'); return !!sc && !sc.querySelector('.spinner') && sc.getAnimations().every(a => a.playState !== 'running') }, null, { timeout: 5000 }).catch(() => {})
       const badS = await lowContrast(p, '.screen')
       check(badS.length === 0, `setup check, Light: text reaches 4.5:1 (${JSON.stringify(badS)})`)
       await p.close()

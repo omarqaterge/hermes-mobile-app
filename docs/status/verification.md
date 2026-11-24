@@ -15,8 +15,8 @@ on average, none for 25 of them, nine at most); the `Verified:` line in commit m
   waits for the owner (today the checklist item only asks for its own pull request and a sentence).
 - Property tests for `scrub`, the version-to-build-number round trip and the queue (`docs/verification.md`, "Which
   tests to write"): none written yet. A generator library would be a new dependency; a seeded loop needs none.
-- The fixed waits in `12-app-shell.cjs` and `18-setup-flow.cjs` (see `agent-workflow.md`) are what the
-  `flaky-test-workarounds` item is about: replace them with waits for a state.
+- Done for `12-app-shell.cjs` and `18-setup-flow.cjs` (and `08`, `16`, `29`; see `agent-workflow.md`): state-waiting
+  fixed sleeps and `waitForTimeout` were replaced with waits for state, leaving only commented timing/negative checks.
 
 **Needs a real phone:** no.
 
