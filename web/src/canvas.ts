@@ -329,13 +329,15 @@ function isEnvName(name: string): boolean {
 
 function normalizePosix(path: string): string {
   const expanded = path.startsWith('~/') ? `/root/${path.slice(2)}` : path === '~' ? '/root' : path
+  // POSIX keeps an exact leading `//` distinct from `/` (while 3+ slashes collapse to `/`), matching Python's posixpath/pathlib.
+  const prefix = expanded.startsWith('//') && !expanded.startsWith('///') ? '//' : '/'
   const parts: string[] = []
   for (const seg of expanded.split('/')) {
     if (!seg || seg === '.') continue
     if (seg === '..') parts.pop()
     else parts.push(seg)
   }
-  return '/' + parts.join('/')
+  return prefix + parts.join('/')
 }
 
 function hasPair(low: string[], a: string, b: string): boolean {
@@ -363,9 +365,11 @@ function isHermesSegmentSecret(low: string[]): boolean {
   return false
 }
 
-/** Whether `segs` (case-sensitive!) is strictly inside a phone save root: /root, /sdcard, or /storage/emulated/0.
- *  Matches the server's case-sensitive save roots on the phone (proot Debian HOME=/root plus Android shared storage). */
-function isInSaveRoot(segs: string[]): boolean {
+/** Whether `p` / `segs` (case-sensitive!) is strictly inside a phone save root: /root, /sdcard, or /storage/emulated/0.
+ *  Matches the server's case-sensitive save roots on the phone (proot Debian HOME=/root plus Android shared storage).
+ *  An exact leading `//` does not match single-`/` save roots, matching `pathlib.Path.relative_to` in canvas.py. */
+function isInSaveRoot(p: string, segs: string[]): boolean {
+  if (p.startsWith('//')) return false
   if (segs[0] === 'root') return segs.length > 1
   if (segs[0] === 'sdcard') return segs.length > 1
   if (segs[0] === 'storage' && segs[1] === 'emulated' && segs[2] === '0') return segs.length > 3
@@ -407,7 +411,7 @@ export function canvasSaveBlockReason(path: string): string | null {
   const segs = p.split('/').filter(Boolean)
   const low = segs.map(foldSegment)
   const name = low[low.length - 1] || ''
-  if (!isInSaveRoot(segs)) {
+  if (!isInSaveRoot(p, segs)) {
     return 'This file is outside the folders Hermux can save to from the canvas.'
   }
   if (low.includes('.hermes') || low.includes('.hermes-mobile')) {

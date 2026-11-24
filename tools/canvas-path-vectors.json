@@ -10,10 +10,19 @@
     { "path": "/storage/emulated/0/Download/note.txt", "open": "allow", "save": "allow", "needsSdcard": true, "note": "file in /storage/emulated/0" },
 
     { "path": "/", "open": "allow", "save": "refuse", "note": "bare filesystem root refused on save" },
+    { "path": "//", "open": "allow", "save": "refuse", "note": "POSIX bare // root refused on save" },
     { "path": "{HOME}", "open": "allow", "save": "refuse", "note": "bare home root refused on save" },
     { "path": "~", "open": "allow", "save": "refuse", "note": "bare tilde root refused on save" },
     { "path": "/sdcard", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "bare /sdcard root refused on save" },
     { "path": "/storage/emulated/0", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "bare /storage/emulated/0 root refused on save" },
+
+    { "path": "/{HOME}/notes.md", "open": "allow", "save": "refuse", "note": "POSIX leading // home path refused on save (distinct from /)" },
+    { "path": "//root/notes.md", "open": "allow", "save": "refuse", "note": "POSIX leading //root path refused on save" },
+    { "path": "//{HOME}/notes.md", "open": "allow", "save": "allow", "note": "POSIX three leading /// collapses to / inside home" },
+    { "path": "//sdcard/Documents/plan.md", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "POSIX leading //sdcard path refused on save" },
+    { "path": "//storage/emulated/0/Download/note.txt", "open": "allow", "save": "refuse", "needsSdcard": true, "note": "POSIX leading //storage/emulated/0 path refused on save" },
+    { "path": "///sdcard/Documents/plan.md", "open": "allow", "save": "allow", "needsSdcard": true, "note": "POSIX three leading ///sdcard collapses to /sdcard" },
+    { "path": "/{HOME}/.ssh/id_ed25519", "open": "refuse", "save": "refuse", "note": "POSIX leading // secret path refused on both open and save" },
 
     { "path": "/tmp/log.txt", "open": "allow", "save": "refuse", "note": "outside save roots: read-only open allowed, save refused" },
     { "path": "/etc/hosts", "open": "allow", "save": "refuse", "note": "/etc non-secret text file: read-only open allowed, save refused" },

@@ -438,6 +438,76 @@ forged = canvas.create(S, "Forged", "evil", path=outside.name)
 err = raises(canvas.save_file, S, forged["id"], force=True)
 check("save_file refuses tampered doc pointing outside allowed folders", "refused" in (err or "") and open(outside.name).read() == "outside", str(err))
 
+# Two raw save-root aliases resolving to the same real folder (like /sdcard and /storage/emulated/0):
+# _allowed_root_pairs keeps both raw prefixes; saves through either alias work, and protected paths / symlinks / leading // are still refused.
+alias_base = tempfile.mkdtemp(prefix="hm-canvas-alias-")
+atexit.register(lambda d=alias_base: shutil.rmtree(d, ignore_errors=True))
+_orig_extra_roots = canvas._EXTRA_SAVE_ROOTS
+try:
+    real_storage = os.path.join(alias_base, "real_storage")
+    os.makedirs(os.path.join(real_storage, ".hermes"), exist_ok=True)
+    alias_a = os.path.join(alias_base, "sdcard")
+    alias_b = os.path.join(alias_base, "storage", "emulated", "0")
+    os.makedirs(os.path.dirname(alias_b), exist_ok=True)
+    os.symlink(real_storage, alias_a)
+    os.symlink(real_storage, alias_b)
+
+    alias_note = os.path.join(real_storage, "note.md")
+    open(alias_note, "w").write("initial")
+    alias_env = os.path.join(real_storage, ".env")
+    open(alias_env, "w").write("API_KEY=keep\n")
+    alias_hcfg = os.path.join(real_storage, ".hermes", "config.yaml")
+    open(alias_hcfg, "w").write("approvals:\n  mode: manual\n")
+    alias_rc = os.path.join(real_storage, ".bashrc")
+    open(alias_rc, "w").write("export SAFE=1\n")
+    alias_hop = os.path.join(real_storage, "hop")
+    os.symlink(ext_dir, alias_hop)
+
+    canvas._EXTRA_SAVE_ROOTS = (alias_a, alias_b)
+    pairs = canvas._allowed_root_pairs()
+    raw_roots = {str(raw_r) for raw_r, _ in pairs}
+    real_storage_canon = os.path.realpath(real_storage)
+    check(
+        "_allowed_root_pairs keeps both aliases pointing to the same real folder",
+        os.path.normpath(alias_a) in raw_roots
+        and os.path.normpath(alias_b) in raw_roots
+        and all(str(real_r) == real_storage_canon for raw_r, real_r in pairs if str(raw_r) in (os.path.normpath(alias_a), os.path.normpath(alias_b))),
+        str(pairs),
+    )
+
+    S_ALIAS = "chat-alias"
+    doc_a = canvas.create(S_ALIAS, "AliasA", "saved via alias a", path=os.path.join(alias_a, "note.md"))
+    res_a = canvas.save_file(S_ALIAS, doc_a["id"], force=True)
+    check("save_file allows save through first alias", res_a["path"] == os.path.join(real_storage_canon, "note.md") and open(alias_note).read() == "saved via alias a", str(res_a))
+
+    doc_b = canvas.create(S_ALIAS, "AliasB", "saved via alias b", path=os.path.join(alias_b, "note.md"))
+    res_b = canvas.save_file(S_ALIAS, doc_b["id"], force=True)
+    check("save_file allows save through second alias", res_b["path"] == os.path.join(real_storage_canon, "note.md") and open(alias_note).read() == "saved via alias b", str(res_b))
+
+    canvas.write(S_ALIAS, doc_b["id"], "saved via alias b again", by="user")
+    res_b2 = canvas.save_file(S_ALIAS, doc_b["id"])
+    check("subsequent non-force save through second alias succeeds", open(alias_note).read() == "saved via alias b again", str(res_b2))
+
+    for alias_label, alias_root in (("first alias", alias_a), ("second alias", alias_b)):
+        for rel_name, disk_path, keep_text in (
+            (".env", alias_env, "API_KEY=keep\n"),
+            (".hermes/config.yaml", alias_hcfg, "approvals:\n  mode: manual\n"),
+            (".bashrc", alias_rc, "export SAFE=1\n"),
+            ("hop/victim.txt", ext_target, "keep me"),
+        ):
+            p_doc = canvas.create(S_ALIAS, f"Prot-{alias_label}-{rel_name}", "pwned", path=os.path.join(alias_root, rel_name))
+            p_err = raises(canvas.save_file, S_ALIAS, p_doc["id"], force=True)
+            check(f"save_file refuses {rel_name} through {alias_label}", "refused" in (p_err or "") and open(disk_path).read() == keep_text, str(p_err))
+        bare_doc = canvas.create(S_ALIAS, f"Bare-{alias_label}", "pwned", path=alias_root)
+        check(f"save_file refuses bare {alias_label} root", "refused" in (raises(canvas.save_file, S_ALIAS, bare_doc["id"], force=True) or ""))
+        dbl_doc = canvas.create(S_ALIAS, f"Dbl-{alias_label}", "pwned", path="/" + os.path.join(alias_root, "note.md"))
+        check(f"save_file refuses leading // on {alias_label}", "refused" in (raises(canvas.save_file, S_ALIAS, dbl_doc["id"], force=True) or ""))
+    out_doc = canvas.create(S_ALIAS, "OutsideAlias", "pwned", path=outside.name)
+    check("save_file still refuses outside path with alias roots active", "refused" in (raises(canvas.save_file, S_ALIAS, out_doc["id"], force=True) or "") and open(outside.name).read() == "outside")
+finally:
+    canvas._EXTRA_SAVE_ROOTS = _orig_extra_roots
+    shutil.rmtree(alias_base, ignore_errors=True)
+
 print("agent tool")
 def call(**a):
     return json.loads(canvas.tool_handler(a, session_id="tool-chat"))
