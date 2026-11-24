@@ -95,63 +95,183 @@ os.unlink(f)
 check("save_file refuses when original file was removed", "conflict" in (raises(canvas.save_file, S, o["id"]) or ""))
 check("save_file with force=True recreates removed file", canvas.save_file(S, o["id"], force=True)["chars"] == 16 and open(f).read() == "canvas overwrite")
 
-bin_file = os.path.join(REAL_HOME, "bin.dat")
-open(bin_file, "wb").write(b"\x00\x01\x02binary")
-check("binary refused inside home", "binary" in (raises(canvas.open_file, S, bin_file) or ""))
+# Permission bits are preserved across save_file (Finding 8).
+perm_f = os.path.join(REAL_HOME, "private-note.md")
+open(perm_f, "w").write("secret note")
+os.chmod(perm_f, 0o600)
+po = canvas.open_file(S, perm_f)
+canvas.write(S, po["id"], "updated secret note", by="user")
+canvas.save_file(S, po["id"])
+check("save_file preserves existing permission bits (0600)", (os.stat(perm_f).st_mode & 0o777) == 0o600, oct(os.stat(perm_f).st_mode & 0o777))
+
+check("binary refused", "binary" in (raises(canvas.open_file, S, "/bin/ls") or ""))
 check("relative path refused", raises(canvas.open_file, S, "notes.md") is not None)
-check("missing file inside home refused", "no such file" in (raises(canvas.open_file, S, os.path.join(REAL_HOME, "nothing.txt")) or ""))
+check("missing file refused", "no such file" in (raises(canvas.open_file, S, "/nope/nothing.txt") or ""))
+check("NUL byte in open_file path raises refused CanvasError", "refused" in (raises(canvas.open_file, S, os.path.join(REAL_HOME, "a\x00b")) or ""))
 check("save without a linked file refused", "isn't linked" in (raises(canvas.save_file, S, d["id"]) or ""))
 
 print("file path safety")
+# Files outside save roots (e.g. /tmp) may be opened read-only, but saving back is refused (Finding 5).
 outside = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
 outside.write(b"outside")
 outside.close()
 atexit.register(lambda p=outside.name: os.path.exists(p) and os.unlink(p))
-check("open_file refuses path outside allowed folders", "refused" in (raises(canvas.open_file, S, outside.name) or ""))
-check("open_file refuses /bin/ls outside allowed folders", "refused" in (raises(canvas.open_file, S, "/bin/ls") or ""))
-# Symlink escaping home is refused on open_file.
-esc_link = os.path.join(REAL_HOME, "escape.txt")
-os.symlink(outside.name, esc_link)
-check("open_file refuses symlink escaping home", "refused" in (raises(canvas.open_file, S, esc_link) or ""))
+od_out = canvas.open_file(S, outside.name)
+check("open_file allows read-only open outside save roots (/tmp)", od_out["content"] == "outside")
+canvas.write(S, od_out["id"], "changed", by="user")
+check("save_file refuses path outside allowed save roots", "refused" in (raises(canvas.save_file, S, od_out["id"], force=True) or "") and open(outside.name).read() == "outside")
 
-# Secrets & internal files refused on open_file.
+# FIFO (non-regular file) is refused without blocking (O_NONBLOCK + fstat).
+fifo_p = os.path.join(REAL_HOME, "pipe.fifo")
+os.mkfifo(fifo_p)
+check("open_file refuses FIFO without blocking", "no such file" in (raises(canvas.open_file, S, fifo_p) or ""))
+
+# Intermediate directory symlink between allowed root and file is refused on save_file (Finding 1).
+ext_dir = tempfile.mkdtemp(prefix="hm-canvas-ext-")
+atexit.register(lambda d=ext_dir: shutil.rmtree(d, ignore_errors=True))
+ext_target = os.path.join(ext_dir, "victim.txt")
+open(ext_target, "w").write("keep me")
+mid_parent = os.path.join(REAL_HOME, "sub")
+os.makedirs(mid_parent, exist_ok=True)
+mid_link = os.path.join(mid_parent, "hop")
+os.symlink(ext_dir, mid_link)
+forged_mid = canvas.create(S, "ForgedMid", "pwned", path=os.path.join(mid_link, "victim.txt"))
+err = raises(canvas.save_file, S, forged_mid["id"], force=True)
+check("save_file refuses intermediate directory symlink", "refused" in (err or "") and open(ext_target).read() == "keep me", str(err))
+
+# dir_fd fallback (e.g. FUSE /sdcard raising EOPNOTSUPP) still saves regular files and refuses intermediate symlinks.
+import errno as _errno
+_orig_save_dir_fd = canvas._save_with_dir_fd
+def _raise_eopnotsupp(*a, **kw):
+    raise OSError(_errno.EOPNOTSUPP, "dir_fd unsupported")
+canvas._save_with_dir_fd = _raise_eopnotsupp
+try:
+    fb_f = os.path.join(REAL_HOME, "fallback.txt")
+    open(fb_f, "w").write("before")
+    os.chmod(fb_f, 0o640)
+    fb_doc = canvas.open_file(S, fb_f)
+    canvas.write(S, fb_doc["id"], "after", by="user")
+    canvas.save_file(S, fb_doc["id"])
+    check("dir_fd fallback saves and preserves mode", open(fb_f).read() == "after" and (os.stat(fb_f).st_mode & 0o777) == 0o640)
+    err = raises(canvas.save_file, S, forged_mid["id"], force=True)
+    check("dir_fd fallback still refuses intermediate symlink", "refused" in (err or "") and open(ext_target).read() == "keep me", str(err))
+finally:
+    canvas._save_with_dir_fd = _orig_save_dir_fd
+
+# Secrets & internal files refused on open_file (including symlinked profiles, Finding 2 & 3).
 hermes_dir = os.path.join(REAL_HOME, ".hermes")
-os.makedirs(os.path.join(hermes_dir, "profiles", "work"), exist_ok=True)
+os.makedirs(os.path.join(hermes_dir, "profiles", "work", "mobile"), exist_ok=True)
 os.makedirs(os.path.join(hermes_dir, "mobile"), exist_ok=True)
-os.makedirs(os.path.join(REAL_HOME, ".hermes-mobile"), exist_ok=True)
-os.makedirs(os.path.join(REAL_HOME, ".ssh"), exist_ok=True)
-os.makedirs(os.path.join(REAL_HOME, "bin"), exist_ok=True)
+linked_prof_real = tempfile.mkdtemp(prefix="hm-linked-prof-")
+atexit.register(lambda d=linked_prof_real: shutil.rmtree(d, ignore_errors=True))
+os.makedirs(os.path.join(linked_prof_real, "mobile"), exist_ok=True)
+os.symlink(linked_prof_real, os.path.join(hermes_dir, "profiles", "linked"))
+
+for sub in (".hermes-mobile", ".ssh", ".android", ".gnupg", ".aws", "bin", ".local/bin", ".termux", ".config/git", ".config/fish"):
+    os.makedirs(os.path.join(REAL_HOME, sub), exist_ok=True)
+
 env_path = os.path.join(hermes_dir, ".env")
 open(env_path, "w").write("OPENAI_API_KEY=secret\n")
 auth_path = os.path.join(hermes_dir, "auth.json")
 open(auth_path, "w").write("{}")
+prof_auth = os.path.join(hermes_dir, "profiles", "work", "auth.json")
+open(prof_auth, "w").write("{}")
+prof_mobile = os.path.join(hermes_dir, "profiles", "work", "mobile", "auto.json")
+open(prof_mobile, "w").write("{}")
+linked_auth = os.path.join(linked_prof_real, "auth.json")
+open(linked_auth, "w").write("{}")
+linked_mobile = os.path.join(linked_prof_real, "mobile", "state.json")
+open(linked_mobile, "w").write("{}")
 key_path = os.path.join(REAL_HOME, ".hermes-mobile", "key")
 open(key_path, "w").write("deadbeef")
 ssh_path = os.path.join(REAL_HOME, ".ssh", "id_ed25519")
 open(ssh_path, "w").write("PRIVATE")
+android_key = os.path.join(REAL_HOME, ".android", "adbkey")
+open(android_key, "w").write("PRIVATE")
+gnupg_key = os.path.join(REAL_HOME, ".gnupg", "secring.gpg")
+open(gnupg_key, "w").write("PRIVATE")
+netrc_path = os.path.join(REAL_HOME, ".netrc")
+open(netrc_path, "w").write("machine x password y\n")
+aws_creds = os.path.join(REAL_HOME, ".aws", "credentials")
+open(aws_creds, "w").write("[default]\n")
 auto_path = os.path.join(hermes_dir, "mobile", "auto.json")
 open(auto_path, "w").write("{}")
 proj_env = os.path.join(REAL_HOME, ".env.local")
 open(proj_env, "w").write("SECRET=1\n")
-for label, secret_p in [(".hermes/.env", env_path), ("auth.json", auth_path), (".hermes-mobile/key", key_path), (".ssh key", ssh_path), ("mobile/auto.json", auto_path), (".env.local", proj_env)]:
+upper_env = os.path.join(REAL_HOME, ".ENV.PROD")
+open(upper_env, "w").write("SECRET=2\n")
+
+for label, secret_p in [
+    (".hermes/.env", env_path), ("auth.json", auth_path), ("profile auth.json", prof_auth),
+    ("profile mobile/", prof_mobile), ("symlinked profile auth.json", linked_auth),
+    ("symlinked profile mobile/", linked_mobile), (".hermes-mobile/key", key_path),
+    (".ssh key", ssh_path), (".android/adbkey", android_key), (".gnupg key", gnupg_key),
+    (".netrc", netrc_path), (".aws/credentials", aws_creds), ("mobile/auto.json", auto_path),
+    (".env.local", proj_env), (".ENV.PROD (case-insensitive)", upper_env),
+]:
     check(f"open_file refuses {label}", "refused" in (raises(canvas.open_file, S, secret_p) or ""))
 
-# Config files, profile configs, shell init and ~/bin are refused on save_file (even with force=True).
+# Hardlink inside Hermes home is refused on open_file, while hardlink outside Hermes home is allowed (Finding 8).
+hl_hermes = os.path.join(hermes_dir, "hardlink-alias.txt")
+os.link(auth_path, hl_hermes)
+check("open_file refuses hard-linked file inside Hermes home", "refused" in (raises(canvas.open_file, S, hl_hermes) or ""))
+hl_src = os.path.join(REAL_HOME, "ordinary-a.txt")
+hl_dst = os.path.join(REAL_HOME, "ordinary-b.txt")
+open(hl_src, "w").write("ordinary")
+os.link(hl_src, hl_dst)
+check("open_file still allows hard-linked ordinary user file outside Hermes home", canvas.open_file(S, hl_dst)["content"] == "ordinary")
+
+# Case-insensitive path component checks (Finding 4).
+from pathlib import Path
+check("case-insensitive open deny (.AWS/credentials)", "refused" in (raises(canvas._check_open_path, Path(REAL_HOME) / ".AWS" / "credentials") or ""))
+check("case-insensitive save deny (.Hermes/Config.YAML)", "refused" in (raises(canvas._check_save_denylist, Path(REAL_HOME) / ".Hermes" / "Config.YAML") or ""))
+check("case-insensitive save deny (.Config/Fish/config.fish)", "refused" in (raises(canvas._check_save_denylist, Path(REAL_HOME) / ".Config" / "Fish" / "config.fish") or ""))
+check("case-insensitive save deny (.GitConfig)", "refused" in (raises(canvas._check_save_denylist, Path(REAL_HOME) / ".GitConfig") or ""))
+check("case-insensitive save deny (.ShInit)", "refused" in (raises(canvas._check_save_denylist, Path(REAL_HOME) / ".ShInit") or ""))
+check("plugin own directory is always refused on save", "refused" in (raises(canvas._check_save_denylist, canvas._plugin_dir() / "canvas.py") or ""))
+
+# Config files, profile configs (including symlinked profiles), code-exec dirs and shell rc files are refused on save_file (even with force=True).
 cfg_path = os.path.join(hermes_dir, "config.yaml")
 open(cfg_path, "w").write("approvals:\n  mode: manual\n")
 prof_cfg = os.path.join(hermes_dir, "profiles", "work", "config.yaml")
 open(prof_cfg, "w").write("approvals:\n  mode: manual\n")
-bashrc = os.path.join(REAL_HOME, ".bashrc")
-open(bashrc, "w").write("export X=1\n")
-bin_script = os.path.join(REAL_HOME, "bin", "hm-local")
-open(bin_script, "w").write("#!/bin/sh\n")
-
-for label, prot_p in [("config.yaml", cfg_path), ("profile config.yaml", prof_cfg), (".bashrc", bashrc), ("~/bin script", bin_script)]:
+linked_prof_cfg = os.path.join(linked_prof_real, "config.yaml")
+open(linked_prof_cfg, "w").write("approvals:\n  mode: manual\n")
+protected_save_files = [
+    ("config.yaml", cfg_path),
+    ("profile config.yaml", prof_cfg),
+    ("symlinked profile config.yaml", linked_prof_cfg),
+    (".bashrc", os.path.join(REAL_HOME, ".bashrc")),
+    (".shinit", os.path.join(REAL_HOME, ".shinit")),
+    (".cshrc", os.path.join(REAL_HOME, ".cshrc")),
+    (".tcshrc", os.path.join(REAL_HOME, ".tcshrc")),
+    (".kshrc", os.path.join(REAL_HOME, ".kshrc")),
+    (".gitconfig", os.path.join(REAL_HOME, ".gitconfig")),
+    (".config/git/config", os.path.join(REAL_HOME, ".config", "git", "config")),
+    (".config/fish/config.fish", os.path.join(REAL_HOME, ".config", "fish", "config.fish")),
+    ("~/bin script", os.path.join(REAL_HOME, "bin", "hm-local")),
+    ("~/.local/bin script", os.path.join(REAL_HOME, ".local", "bin", "tool")),
+    ("~/.termux/termux.properties", os.path.join(REAL_HOME, ".termux", "termux.properties")),
+]
+for label, prot_p in protected_save_files:
+    if not os.path.exists(prot_p):
+        open(prot_p, "w").write("safe\n")
     orig = open(prot_p).read()
     od = canvas.open_file(S, prot_p)
     canvas.write(S, od["id"], "approvals:\n  mode: off\n", by="user")
     err = raises(canvas.save_file, S, od["id"], force=True)
     check(f"save_file refuses {label} even with force=True", "refused" in (err or "") and open(prot_p).read() == orig, str(err))
+
+# Forged docs pointing to secret dirs (.android, .gnupg, .netrc, .aws) are also refused on save_file.
+for label, sec_p in [(".android/adbkey", android_key), (".gnupg/secring.gpg", gnupg_key), (".netrc", netrc_path), (".aws/credentials", aws_creds)]:
+    orig = open(sec_p).read()
+    fd_sec = canvas.create(S, f"Forged-{label}", "evil", path=sec_p)
+    err = raises(canvas.save_file, S, fd_sec["id"], force=True)
+    check(f"save_file refuses forged doc for {label}", "refused" in (err or "") and open(sec_p).read() == orig, str(err))
+
+# Forged doc with NUL byte in path raises refused CanvasError, not ValueError.
+forged_nul = canvas.create(S, "ForgedNul", "evil", path=os.path.join(REAL_HOME, "bad\x00.txt"))
+check("save_file refuses NUL byte path", "refused" in (raises(canvas.save_file, S, forged_nul["id"], force=True) or ""))
 
 # Symlink swap after open_file is refused on save_file.
 swap_f = os.path.join(REAL_HOME, "swap.md")
@@ -227,21 +347,27 @@ try:
     app = FastAPI()
     app.include_router(papi.router, prefix="/api/plugins/hermes-mobile")
     client = TestClient(app)
-    r_env = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S, "path": env_path})
+    S_HTTP = "chat-http"
+    import inspect
+    for fn_name in ("canvas_list", "canvas_get", "canvas_version", "canvas_create", "canvas_write", "canvas_restore", "canvas_rename", "canvas_open_file", "canvas_save_file", "canvas_delete"):
+        check(f"plugin_api.{fn_name} is sync def (off event loop)", not inspect.iscoroutinefunction(getattr(papi, fn_name)))
+    r_nul = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S_HTTP, "path": os.path.join(REAL_HOME, "bad\x00.txt")})
+    check("HTTP /canvas/open-file returns 403 for NUL byte path", r_nul.status_code == 403, r_nul.status_code)
+    r_env = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S_HTTP, "path": env_path})
     check("HTTP /canvas/open-file returns 403 for .env", r_env.status_code == 403, r_env.status_code)
-    r_cfg_open = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S, "path": cfg_path})
+    r_cfg_open = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S_HTTP, "path": cfg_path})
     check("HTTP /canvas/open-file opens config.yaml read-only", r_cfg_open.status_code == 200, r_cfg_open.status_code)
-    r_cfg_save = client.post("/api/plugins/hermes-mobile/canvas/save-file", json={"session": S, "id": r_cfg_open.json()["id"]})
+    r_cfg_save = client.post("/api/plugins/hermes-mobile/canvas/save-file", json={"session": S_HTTP, "id": r_cfg_open.json()["id"]})
     check("HTTP /canvas/save-file returns 403 for config.yaml", r_cfg_save.status_code == 403, r_cfg_save.status_code)
     http_f = os.path.join(REAL_HOME, "http-note.md")
     open(http_f, "w").write("v1")
-    r_open = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S, "path": http_f})
+    r_open = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S_HTTP, "path": http_f})
     hid = r_open.json()["id"]
-    canvas.write(S, hid, "v2 from canvas", by="user")
+    canvas.write(S_HTTP, hid, "v2 from canvas", by="user")
     open(http_f, "w").write("v1 changed on disk")
-    r_conf = client.post("/api/plugins/hermes-mobile/canvas/save-file", json={"session": S, "id": hid})
+    r_conf = client.post("/api/plugins/hermes-mobile/canvas/save-file", json={"session": S_HTTP, "id": hid})
     check("HTTP /canvas/save-file returns 409 on disk change", r_conf.status_code == 409 and open(http_f).read() == "v1 changed on disk", r_conf.status_code)
-    r_force = client.post("/api/plugins/hermes-mobile/canvas/save-file", json={"session": S, "id": hid, "force": True})
+    r_force = client.post("/api/plugins/hermes-mobile/canvas/save-file", json={"session": S_HTTP, "id": hid, "force": True})
     check("HTTP /canvas/save-file returns 200 with force=True", r_force.status_code == 200 and open(http_f).read() == "v2 from canvas", r_force.status_code)
 except ImportError:
     pass

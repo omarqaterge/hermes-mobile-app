@@ -1643,53 +1643,53 @@ class CanvasRef(BaseModel):
 
 
 @router.get("/canvas")
-async def canvas_list(session: str):
+def canvas_list(session: str):
     return {"docs": _canvas().list_docs(session)}
 
 
 @router.get("/canvas/doc")
-async def canvas_get(session: str, id: str):
+def canvas_get(session: str, id: str):
     return _cv(lambda c: c.get, session, id)
 
 
 @router.get("/canvas/version")
-async def canvas_version(session: str, id: str, rev: int):
+def canvas_version(session: str, id: str, rev: int):
     return _cv(lambda c: c.get_version, session, id, rev)
 
 
 @router.post("/canvas/doc")
-async def canvas_create(body: CanvasCreate):
+def canvas_create(body: CanvasCreate):
     return _cv(lambda c: c.create, body.session, body.title, body.content, body.type, body.lang, by="user")
 
 
 @router.put("/canvas/doc")
-async def canvas_write(body: CanvasWrite):
+def canvas_write(body: CanvasWrite):
     return _cv(lambda c: c.write, body.session, body.id, body.content, by="user", note=body.note, base_rev=body.base_rev,
                title=body.title, type=body.type, lang=body.lang)
 
 
 @router.post("/canvas/restore")
-async def canvas_restore(body: CanvasRef):
+def canvas_restore(body: CanvasRef):
     return _cv(lambda c: c.restore, body.session, body.id, body.rev, by="user")
 
 
 @router.post("/canvas/rename")
-async def canvas_rename(body: CanvasRef):
+def canvas_rename(body: CanvasRef):
     return _cv(lambda c: c.rename, body.session, body.id, body.title)
 
 
 @router.post("/canvas/open-file")
-async def canvas_open_file(body: CanvasRef):
+def canvas_open_file(body: CanvasRef):
     return _cv(lambda c: c.open_file, body.session, body.path, by="user")
 
 
 @router.post("/canvas/save-file")
-async def canvas_save_file(body: CanvasRef):
+def canvas_save_file(body: CanvasRef):
     return _cv(lambda c: c.save_file, body.session, body.id, force=body.force)
 
 
 @router.delete("/canvas/doc")
-async def canvas_delete(session: str, id: str):
+def canvas_delete(session: str, id: str):
     _cv(lambda c: c.delete, session, id)
     return {"ok": True}
 

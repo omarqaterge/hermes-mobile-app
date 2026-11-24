@@ -5,10 +5,11 @@
 # the Hermes talks to (fake-model.py). No real model or key is used.
 # Usage: tools/hermes-contract/run.sh [work dir]   (default: a new temp dir; pass one to reuse the clone and venv)
 set -euo pipefail
-cd "$(dirname "$0")"
-port=${HM_CONTRACT_PORT:-9229}
 work=${1:-$(mktemp -d)}
 mkdir -p "$work"
+work=$(cd "$work" && pwd)
+cd "$(dirname "$0")"
+port=${HM_CONTRACT_PORT:-9229}
 [ -d ../web-e2e/node_modules ] || (cd ../web-e2e && npm ci --silent)
 cleanup() {
   kill "${MOCK:-}" 2>/dev/null || true
