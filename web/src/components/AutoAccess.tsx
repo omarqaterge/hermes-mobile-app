@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { accessOf, defaultAccess, errText, newSession, setAccess, setDefaultAccess, type Access } from '../gateway'
 import { getState, toast, useStore } from '../store'
 import { viewSettled } from '../chatview'
 import { confirmDialog } from '../dialog'
 import { confirmFullAccess } from '../access-confirm'
+import { askUnlock, lockView } from '../lockview'
+import { useLockView } from '../needsyou'
 import {
   approvalsModeNote,
   autoButtonLabel,
@@ -71,9 +73,15 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
   const settled = useStore(viewSettled)
   const mode = useStore(s => (!viewSettled(s) ? 'off' : s.active ? accessOf(s.active) : defaultAccess()))
   const offline = useStore(s => s.conn !== 'open')
+  const locked = useLockView()
   const hermesMode = useApprovalsMode()
+  const shownHermesMode = locked ? null : hermesMode
   const [open, setOpen] = useState(false)
-  const options = useMemo(() => autoOptions(hermesMode), [hermesMode])
+  const options = useMemo(() => autoOptions(shownHermesMode), [shownHermesMode])
+
+  useEffect(() => {
+    if (locked && open) setOpen(false)
+  }, [locked, open])
 
   const pick = async (v: string) => {
     const want = v as Access
@@ -87,31 +95,36 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
       }
       if (!a) throw new Error('No chat to change')
       const got = await setAccess(a, want)
-      toast(got === 'off' ? doneOffToast(hermesMode) : DONE[got])
+      toast(got === 'off' ? doneOffToast(shownHermesMode) : DONE[got])
     } catch (e) {
       toast(errText(e), 'error')
     }
   }
 
-  if (hideWhenOff && mode === 'off') return null // the Live bar shows it only as a reminder that approvals are off
-  const label = autoButtonLabel(mode, hermesMode)
-  const looseClass = mode === 'off' && isLooseApprovals(hermesMode) ? ` hermes-${hermesMode}` : ''
-  const chipText = autoButtonText(mode, hermesMode)
+  // The Live bar shows the button as a reminder whenever commands may run without asking (chat Auto/Full, or Hermes smart/off).
+  if (hideWhenOff && mode === 'off' && !isLooseApprovals(shownHermesMode)) return null
+  const label = autoButtonLabel(mode, shownHermesMode)
+  const looseClass = mode === 'off' && isLooseApprovals(shownHermesMode) ? ` hermes-${shownHermesMode}` : ''
+  const chipText = autoButtonText(mode, shownHermesMode)
   return (
     <>
       <button
-        key={`${mode}:${mode === 'off' ? (hermesMode ?? '') : ''}`}
+        key={`${mode}:${mode === 'off' ? (shownHermesMode ?? '') : ''}`}
         className={`auto-btn ${mode}${looseClass}`}
         aria-label={`${label}. Change how much Hermux may do without asking`}
         disabled={offline || !settled}
         onClick={() => {
+          if (lockView()) {
+            askUnlock('Unlock the phone to change Auto')
+            return
+          }
           recheckApprovalsMode()
           setOpen(true)
         }}
       >
-        {compact ? <Icon n={mode === 'full' ? 'zap' : 'shield'} /> : mode === 'full' ? <><Icon n="zap" /> {chipText}</> : chipText}
+        {compact ? <Icon n={mode === 'full' || (mode === 'off' && shownHermesMode === 'off') ? 'zap' : 'shield'} /> : mode === 'full' ? <><Icon n="zap" /> {chipText}</> : chipText}
       </button>
-      {open && (
+      {open && !locked && (
         <PickerSheet
           title="Auto: run without asking"
           options={options}
@@ -120,7 +133,7 @@ export function AutoButton({ hideWhenOff = false, compact = false }: { hideWhenO
           onClose={() => setOpen(false)}
           footer={
             <ApprovalsModePickerNote
-              hermesMode={hermesMode}
+              hermesMode={shownHermesMode}
               onOpen={() => {
                 setOpen(false)
                 openSettingsOn('config', 'close', 'approvals.mode')

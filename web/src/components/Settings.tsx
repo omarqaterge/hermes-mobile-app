@@ -4,6 +4,7 @@
 import { savedTheme, setTheme, type Theme } from '../theme'
 import { autoReadOn, loadVoices, saveTtsConfig, setAutoRead, testVoice, ttsAvailable, ttsConfig, useVoice, type TtsConfig } from '../voice'
 import { confirmDialog } from '../dialog'
+import { confirmLooseApprovals } from '../access-confirm'
 import { useEffect, useId, useMemo, useState } from 'react'
 import { api, qs, refreshLogins } from '../api'
 import { REASONING_EFFORT_VALUES } from '@hermes/shared/reasoning-effort'
@@ -509,6 +510,10 @@ function ConfigTab({ scope, setScope, initialQuery = '' }: { scope: string; setS
   )
 
   const save = async (key: string, value: unknown, all: boolean) => {
+    if (key === 'approvals.mode' && typeof value === 'string') {
+      const m = value.trim().toLowerCase()
+      if ((m === 'off' || m === 'smart') && !(await confirmLooseApprovals(m, all))) return false
+    }
     haptic()
     const ok = await forProfiles(all ? '*' : scope, p => api('PUT', `/api/config?${qs({ profile: p })}`, { config: nest(key, value) }, { profile: false }))
     if (ok) {
@@ -1011,7 +1016,7 @@ function Hub({ go, pick }: { go: (p: Page) => void; pick: (e: SettingsEntry) => 
         <Row icon="sparkles" tone="blue" title="Models" value={model || 'None yet'} chevron onClick={() => go('models')} />
         <Row icon="plug" tone="teal" title="Connectors" sub="Mail, web search, apps and services" chevron onClick={() => go('connectors')} />
         <Row icon="sliders" tone="purple" title="Behaviour" sub="Memory, long chats, limits, sub-agents" chevron onClick={() => go('hermes')} />
-        <Row icon="shield" tone="green" title="Access & privacy" value={accessSummary(access, hermesMode)} chevron onClick={() => go('access')} />
+        <Row icon="shield" tone="green" title="Access & privacy" value={accessSummary(access, hermesMode) || undefined} chevron onClick={() => go('access')} />
       </Section>
       <Section title="This app">
         <Row icon="palette" tone="purple" title="Appearance" value={THEME_NAME[theme]} chevron onClick={() => go('appearance')} />
@@ -1507,7 +1512,14 @@ export function SettingsScreen() {
         </EmbeddedShell.Provider>
       )}
       {page === 'config' && <ConfigTab scope={scope} setScope={setScope} initialQuery={configQuery} />}
-      {page === 'access' && <AccessPage openApprovalsMode={() => openConfig('approvals.mode', 'access')} />}
+      {page === 'access' && (
+        <AccessPage
+          openApprovalsMode={() => {
+            setScope(current)
+            openConfig('approvals.mode', 'access')
+          }}
+        />
+      )}
       {page === 'about' && <AboutPage />}
       {page === 'notifications' && <NotificationsPage />}
     </ScreenShell>

@@ -1,8 +1,8 @@
-// Hermes's own `approvals.mode` (`manual`, `smart`, or `off`) for the current bot, read from GET /api/config?profile=.
-// No polling and no timer: asked once per bot while connected (`fresh` asks again when a screen opens) and re-checked
-// when the user opens the Auto picker or saves `approvals.mode` in Advanced settings. The app never changes the mode
-// itself; it only makes sure the Auto control and Access & privacy never imply every risky command asks when Hermes is
-// approving on its own.
+// Hermes's own `approvals.mode` (`manual`, `smart`, or `off`) for each bot, read from GET /api/config?profile=.
+// No polling and no timer: shared with `loadDefaultModel()` on start-up and bot switches, and re-checked when the user
+// opens the Auto picker or Settings, runs `/approvals …`, or saves `approvals.mode` in Advanced settings. Unknown/failed
+// reads are never cached as `null` and never worded as if Hermes asks; per-profile sequence numbers and a connection
+// generation guard ensure the newest read wins and pre-reconnect replies are ignored. The app never changes the mode itself.
 import { useEffect, useSyncExternalStore } from 'react'
 import { api } from './api'
 import type { Access } from './gateway'
@@ -10,13 +10,22 @@ import { getState, subscribe, useStore } from './store'
 
 export type ApprovalsMode = 'manual' | 'smart' | 'off'
 
-const answers = new Map<string, ApprovalsMode | null>()
-const asking = new Set<string>()
+const answers = new Map<string, ApprovalsMode>()
+const reqSeq = new Map<string, number>()
+const inFlight = new Map<string, Promise<Record<string, unknown> | null>>()
 const subs = new Set<() => void>()
+let connGen = 0
 let version = 0
+let startupWait: () => Promise<void> = () => Promise.resolve()
+
 const changed = () => {
   version++
   subs.forEach(f => f())
+}
+
+/** Registered by `gateway.ts` so passive chat mounts wait for `afterChatOpens()` and share `loadDefaultModel()`'s read. */
+export function setApprovalsStartupWait(fn: () => Promise<void>): void {
+  startupWait = fn
 }
 
 let lastConn = getState().conn
@@ -24,9 +33,13 @@ subscribe(() => {
   const conn = getState().conn
   if (conn === lastConn) return
   lastConn = conn
-  if (conn !== 'open' && answers.size) {
-    answers.clear()
-    changed()
+  if (conn !== 'open') {
+    connGen++
+    inFlight.clear()
+    if (answers.size) {
+      answers.clear()
+      changed()
+    }
   }
 })
 
@@ -41,57 +54,96 @@ export function parseApprovalsMode(config: unknown): ApprovalsMode | null {
   return v === 'manual' || v === 'smart' || v === 'off' ? v : null
 }
 
-function ask(profile: string): void {
-  if (asking.has(profile)) return
-  asking.add(profile)
+/** Fetches `GET /api/config?profile=<profile>` and records `approvals.mode` if this read is still the newest for that bot
+ *  in the current connection. With `force: false`, shares any in-flight read for that bot so start-up (`loadDefaultModel`
+ *  and `useApprovalsMode`) sends only one request; `force: true` (default) always starts a fresh read. */
+export function readProfileConfig(profile = getState().profile, { force = true }: { force?: boolean } = {}): Promise<Record<string, unknown> | null> {
+  if (getState().conn !== 'open') return Promise.resolve(null)
+  if (!force) {
+    const existing = inFlight.get(profile)
+    if (existing) return existing
+  }
+  const gen = connGen
+  const seq = (reqSeq.get(profile) ?? 0) + 1
+  reqSeq.set(profile, seq)
   const path = profile ? `/api/config?profile=${encodeURIComponent(profile)}` : '/api/config'
-  void Promise.resolve(api<Record<string, unknown>>('GET', path, undefined, { profile: false }))
-    .then(cfg => {
-      if (getState().conn !== 'open') return
-      answers.set(profile, parseApprovalsMode(cfg))
-      changed()
-    })
-    .catch(() => {
-      if (getState().conn !== 'open') return
-      if (!answers.has(profile)) {
-        answers.set(profile, null)
+  const p = (async () => {
+    try {
+      const cfg = await Promise.resolve(api<Record<string, unknown>>('GET', path, undefined, { profile: false }))
+      if (gen !== connGen || getState().conn !== 'open' || reqSeq.get(profile) !== seq) return cfg
+      const parsed = parseApprovalsMode(cfg)
+      if (parsed) {
+        if (answers.get(profile) !== parsed) {
+          answers.set(profile, parsed)
+          changed()
+        }
+      } else if (answers.delete(profile)) {
         changed()
       }
-    })
-    .finally(() => asking.delete(profile))
+      return cfg
+    } catch {
+      // Never cache `null` on a failed read: clear any stale value if still latest, and retry on the next picker/Settings open.
+      if (gen === connGen && getState().conn === 'open' && reqSeq.get(profile) === seq) {
+        if (answers.delete(profile)) changed()
+      }
+      return null
+    } finally {
+      if (gen === connGen && reqSeq.get(profile) === seq) inFlight.delete(profile)
+    }
+  })()
+  inFlight.set(profile, p)
+  return p
 }
 
-/** Re-read `approvals.mode` for `profile` (or drop other bots' cached answers and re-read the active bot) without flashing null. */
+/** Re-read `approvals.mode` for `profile` (or drop other bots' cached answers and re-read the active bot). Always issues a
+ *  fresh read so a recheck after saving or `/approvals …` is never dropped by an earlier in-flight request. */
 export function recheckApprovalsMode(profile?: string): void {
   const target = profile || getState().profile
   if (!profile) {
     for (const k of [...answers.keys()]) if (k !== target) answers.delete(k)
   }
-  if (getState().conn === 'open') ask(target)
+  if (getState().conn === 'open') void readProfileConfig(target)
 }
 
-/** Test helper: clears cached answers without talking to Hermes. */
+/** Current known `approvals.mode` for `profile` (null when offline, not yet read, or unknown). */
+export function currentApprovalsMode(profile = getState().profile): ApprovalsMode | null {
+  return getState().conn === 'open' ? (answers.get(profile) ?? null) : null
+}
+
+/** Test helper: clears cached answers and bumps the connection generation without talking to Hermes. */
 export function resetApprovalsModeForTest(): void {
+  connGen++
   answers.clear()
-  asking.clear()
+  reqSeq.clear()
+  inFlight.clear()
   changed()
 }
 
-/** Hermes's `approvals.mode` for the active bot: `'manual'`, `'smart'`, `'off'`, or null when offline / unknown. */
-export function useApprovalsMode({ fresh = false }: { fresh?: boolean } = {}): ApprovalsMode | null {
+/** Hermes's `approvals.mode` for the active (or given) bot: `'manual'`, `'smart'`, `'off'`, or null when offline / unknown. */
+export function useApprovalsMode({ fresh = false, profile: wanted }: { fresh?: boolean; profile?: string } = {}): ApprovalsMode | null {
   const conn = useStore(s => s.conn)
-  const profile = useStore(s => s.profile)
-  const opening = useStore(s => s.opening)
+  const activeProfile = useStore(s => s.profile)
+  const target = wanted ?? activeProfile
   useSyncExternalStore(
     f => (subs.add(f), () => subs.delete(f)),
     () => version
   )
   useEffect(() => {
-    // Wait until a chat opening finishes so we never add a request to the start-up burst (14-start-up.cjs).
-    if (conn !== 'open' || opening) return
-    if (fresh || !answers.has(profile)) ask(profile)
-  }, [conn, profile, opening, fresh])
-  return conn === 'open' ? (answers.get(profile) ?? null) : null
+    if (conn !== 'open') return
+    if (fresh) {
+      void readProfileConfig(target)
+      return
+    }
+    let cancelled = false
+    void startupWait().then(() => {
+      if (cancelled || getState().conn !== 'open') return
+      if (!answers.has(target) && !inFlight.has(target)) void readProfileConfig(target, { force: false })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [conn, target, fresh])
+  return conn === 'open' ? (answers.get(target) ?? null) : null
 }
 
 export const isLooseApprovals = (m: ApprovalsMode | null): m is 'smart' | 'off' => m === 'smart' || m === 'off'
@@ -114,27 +166,30 @@ export function autoButtonLabel(mode: Access, hermesMode: ApprovalsMode | null):
   return 'Auto is off'
 }
 
-/** Subtitle of the Off option in the Auto picker. */
+/** Subtitle of the Off option in the Auto picker. Unknown (`null`) stays neutral and never implies Hermes asks. */
 export function offOptionSub(hermesMode: ApprovalsMode | null): string {
+  if (hermesMode === 'manual') return 'Hermux asks before risky commands'
   if (hermesMode === 'smart') return 'Hermes approves low-risk commands by itself and asks for the rest'
   if (hermesMode === 'off') return 'Hermes approves every command without asking'
-  return 'Hermux asks before risky commands'
+  return 'Follows Hermes’s approvals setting'
 }
 
-/** Toast shown after switching a chat's Auto to Off. */
+/** Toast / notice shown after switching a chat's Auto to Off. Unknown (`null`) stays neutral. */
 export function doneOffToast(hermesMode: ApprovalsMode | null): string {
+  if (hermesMode === 'manual') return 'Auto off: Hermux asks before risky commands again'
   if (hermesMode === 'smart') return 'Auto off: Hermes still approves low-risk commands by itself'
   if (hermesMode === 'off') return 'Auto off: Hermes still approves every command without asking'
-  return 'Auto off: Hermux asks before risky commands again'
+  return 'Auto off for this chat (follows Hermes’s approvals setting)'
 }
 
-/** Value shown on the Settings main page's Access & privacy row. */
+/** Value shown on the Settings main page's Access & privacy row. Blank when offline/unknown so it never implies Hermes asks. */
 export function accessSummary(access: Access, hermesMode: ApprovalsMode | null): string {
   if (access === 'auto') return 'Auto access'
   if (access === 'full') return 'Full access'
   if (hermesMode === 'smart') return 'Smart approvals'
   if (hermesMode === 'off') return 'Approvals off'
-  return 'Auto off'
+  if (hermesMode === 'manual') return 'Auto off'
+  return ''
 }
 
 /** Subtitle shown under Settings → Access & privacy → Auto for all chats. */
@@ -143,7 +198,8 @@ export function defaultAccessSub(access: Access, hermesMode: ApprovalsMode | nul
   if (access === 'full') return 'Full access'
   if (hermesMode === 'smart') return 'Off · Hermes approves low-risk commands by itself'
   if (hermesMode === 'off') return 'Off · Hermes approves every command without asking'
-  return 'Off'
+  if (hermesMode === 'manual') return 'Off'
+  return 'Off · follows Hermes’s approvals setting'
 }
 
 /** Title and body for the calm note shown where Auto is chosen while Hermes is in smart or off mode. */
