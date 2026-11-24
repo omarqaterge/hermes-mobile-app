@@ -104,7 +104,12 @@ canvas.write(S, po["id"], "updated secret note", by="user")
 canvas.save_file(S, po["id"])
 check("save_file preserves existing permission bits (0600)", (os.stat(perm_f).st_mode & 0o777) == 0o600, oct(os.stat(perm_f).st_mode & 0o777))
 
-check("binary refused", "binary" in (raises(canvas.open_file, S, "/bin/ls") or ""))
+bin_f = os.path.join(REAL_HOME, "bin.dat")
+open(bin_f, "wb").write(b"\x00\x01\x02binary")
+bin_err = raises(canvas.open_file, S, bin_f) or ""
+check("binary refused", "binary" in bin_err, bin_err)
+ls_err = raises(canvas.open_file, S, "/bin/ls") or ""
+check("/bin/ls refused as binary or too big", "binary" in ls_err or "too big" in ls_err, ls_err)
 check("relative path refused", raises(canvas.open_file, S, "notes.md") is not None)
 check("missing file refused", "no such file" in (raises(canvas.open_file, S, "/nope/nothing.txt") or ""))
 check("NUL byte in open_file path raises refused CanvasError", "refused" in (raises(canvas.open_file, S, os.path.join(REAL_HOME, "a\x00b")) or ""))
