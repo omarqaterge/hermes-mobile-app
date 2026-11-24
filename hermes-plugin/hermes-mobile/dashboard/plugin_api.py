@@ -1590,17 +1590,24 @@ async def auto_put(body: AutoMode):
 
 # ── canvas (documents shared by Hermes and the user, per chat) ──
 
+_CANVAS_LOCK = __import__("threading").Lock()
+
+
 def _canvas():
     import importlib.util
     import sys
 
     mod = sys.modules.get("hm_canvas")
-    if mod is None:
-        spec = importlib.util.spec_from_file_location("hm_canvas", Path(__file__).resolve().parent.parent / "canvas.py")
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["hm_canvas"] = mod
-        spec.loader.exec_module(mod)
-    return mod
+    if mod is not None:
+        return mod
+    with _CANVAS_LOCK:
+        mod = sys.modules.get("hm_canvas")
+        if mod is None:
+            spec = importlib.util.spec_from_file_location("hm_canvas", Path(__file__).resolve().parent.parent / "canvas.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            sys.modules["hm_canvas"] = mod
+        return mod
 
 
 def _cv(fn, *a, **k):

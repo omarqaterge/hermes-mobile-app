@@ -264,15 +264,17 @@ _SHELL_INIT_FILES = frozenset({
     ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout",
     ".shinit", ".cshrc", ".tcshrc", ".kshrc",
 })
-_PROTECTED_HOME_FILES = _SHELL_INIT_FILES | frozenset({".gitconfig", ".netrc"})
-_OPEN_SECRET_HOME_DIRS = frozenset({".hermes-mobile", ".ssh", ".android", ".gnupg", ".aws"})
-_OPEN_SECRET_HOME_FILES = frozenset({".netrc"})
-_SAVE_BLOCKED_HOME_DIRS = _OPEN_SECRET_HOME_DIRS | frozenset({"bin", ".termux"})
-_SAVE_BLOCKED_HOME_SUBDIRS = frozenset({
+_PROTECTED_SAVE_FILES = _SHELL_INIT_FILES | frozenset({".gitconfig", ".netrc"})
+_OPEN_SECRET_SEGMENTS = frozenset({".hermes-mobile", ".ssh", ".gnupg", ".aws", ".android", ".termux"})
+_OPEN_SECRET_FILES = frozenset({".netrc"})
+_SAVE_BLOCKED_SEGMENTS = _OPEN_SECRET_SEGMENTS | frozenset({"bin"})
+_SAVE_BLOCKED_PAIRS = frozenset({
     (".local", "bin"),
     (".config", "git"),
     (".config", "fish"),
 })
+_CONTAINER_ROOTFS_SEGMENTS = frozenset({"proot-distro", "chroot-distro"})
+_KERNEL_PSEUDO_ROOTS = frozenset({"proc", "sys", "dev"})
 _HERMES_SECRET_FILES = frozenset({
     "auth.json", ".anthropic_oauth.json", "google_token.json",
     "google_client_secret.json", "google_oauth_pending.json",
@@ -284,16 +286,15 @@ _DIR_FD_UNSUPPORTED = frozenset({
     errno.ENOSYS,
     errno.EOPNOTSUPP,
     getattr(errno, "ENOTSUP", errno.EOPNOTSUPP),
-    errno.EINVAL,
 })
 
 
-def _is_within(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+def _low_segments(path: Path) -> Tuple[str, ...]:
+    return tuple(s.lower() for s in path.parts if s not in ("", "/"))
+
+
+def _has_pair(low: Tuple[str, ...], a: str, b: str) -> bool:
+    return any(low[i] == a and low[i + 1] == b for i in range(len(low) - 1))
 
 
 def _rel_ci(path: Path, root: Path) -> Optional[Tuple[str, ...]]:
@@ -332,10 +333,6 @@ def _allowed_root_pairs() -> List[Tuple[Path, Path]]:
             seen.add(key)
             pairs.append((raw_r, real_r))
     return pairs
-
-
-def _allowed_roots() -> List[Path]:
-    return [real_r for _, real_r in _allowed_root_pairs()]
 
 
 def _hermes_homes() -> List[Path]:
@@ -380,59 +377,84 @@ def _is_env_file(name: str) -> bool:
 def _validate_raw_path(raw_path: str) -> str:
     if not isinstance(raw_path, str) or "\x00" in raw_path:
         raise CanvasError("refused: invalid path")
-    p = os.path.expanduser(raw_path.strip())
+    s = raw_path.strip()
+    if s.startswith("~") and s != "~" and not s.startswith("~/"):
+        raise CanvasError("refused: invalid path")
+    p = os.path.expanduser(s)
     if not os.path.isabs(p):
         raise CanvasError("give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)")
     return p
 
 
+def _is_hermes_segment_secret(low: Tuple[str, ...]) -> bool:
+    name = low[-1] if low else ""
+    for i, seg in enumerate(low):
+        if seg != ".hermes":
+            continue
+        inside = low[i + 1:]
+        sub = inside[2:] if len(inside) >= 2 and inside[0] == "profiles" else inside
+        if sub and (sub[0] == "mobile" or name in _HERMES_SECRET_FILES):
+            return True
+    return False
+
+
 def _check_open_path(path: Path) -> None:
-    """Refuse secrets and internal files on open, while allowing read-only opens outside save roots."""
-    if _is_env_file(path.name):
+    """Refuse secrets, container rootfs aliases, kernel pseudo-fs, etc/ssh and internal files by segment at any
+    depth (case-insensitively), plus resolved `_hermes_homes()` as an extra layer."""
+    low = _low_segments(path)
+    name = low[-1] if low else ""
+    if low and low[0] in _KERNEL_PSEUDO_ROOTS:
+        raise CanvasError("refused: Hermux won’t open system or device files in the canvas")
+    if any(seg in _CONTAINER_ROOTFS_SEGMENTS for seg in low):
+        raise CanvasError("refused: Hermux won’t open container rootfs files in the canvas")
+    if _has_pair(low, "etc", "ssh"):
         raise CanvasError("refused: Hermux won’t open secrets or key files in the canvas")
-    home = _home_dir()
-    rel_home = _rel_ci(path, home)
-    if rel_home:
-        if rel_home[0] in _OPEN_SECRET_HOME_DIRS or (len(rel_home) == 1 and rel_home[0] in _OPEN_SECRET_HOME_FILES):
-            raise CanvasError("refused: Hermux won’t open secrets or key files in the canvas")
+    if _is_env_file(name) or name in _OPEN_SECRET_FILES or any(seg in _OPEN_SECRET_SEGMENTS for seg in low):
+        raise CanvasError("refused: Hermux won’t open secrets or key files in the canvas")
+    if _is_hermes_segment_secret(low):
+        raise CanvasError("refused: Hermux won’t open secrets or internal files in the canvas")
     for hh in _hermes_homes():
         rel_hh = _rel_ci(path, hh)
         if rel_hh is not None:
-            if path.name.lower() in _HERMES_SECRET_FILES or (len(rel_hh) >= 1 and rel_hh[0] == "mobile"):
+            if name in _HERMES_SECRET_FILES or (len(rel_hh) >= 1 and rel_hh[0] == "mobile"):
                 raise CanvasError("refused: Hermux won’t open secrets or internal files in the canvas")
 
 
 def _is_in_secret_reach(real: Path) -> bool:
-    home = _home_dir()
-    if _is_within_ci(real, home / ".hermes-mobile"):
+    low = _low_segments(real)
+    if ".hermes" in low or ".hermes-mobile" in low:
         return True
     return any(_is_within_ci(real, hh) for hh in _hermes_homes())
 
 
 def _check_save_denylist(real: Path) -> None:
-    home = _home_dir()
+    low = _low_segments(real)
+    name = low[-1] if low else ""
     if (
-        _is_within_ci(real, _plugin_dir())
-        or _is_within_ci(real, home / ".hermes-mobile")
+        ".hermes" in low
+        or ".hermes-mobile" in low
+        or _is_within_ci(real, _plugin_dir())
         or any(_is_within_ci(real, hh) for hh in _hermes_homes())
     ):
         raise CanvasError("refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.")
-    if _is_env_file(real.name):
+    if _is_env_file(name):
         raise CanvasError("refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.")
-    rel = _rel_ci(real, home)
-    if rel:
-        if rel[0] in _SAVE_BLOCKED_HOME_DIRS:
-            raise CanvasError("refused: this file is outside the folders Hermux can save to")
-        if len(rel) >= 2 and (rel[0], rel[1]) in _SAVE_BLOCKED_HOME_SUBDIRS:
-            raise CanvasError("refused: this file is outside the folders Hermux can save to")
-        if len(rel) == 1 and rel[0] in _PROTECTED_HOME_FILES:
-            if rel[0] in _SHELL_INIT_FILES:
-                raise CanvasError("refused: Hermux won’t overwrite shell start-up files from the canvas")
-            raise CanvasError("refused: this file is outside the folders Hermux can save to")
+    if (
+        (low and low[0] in _KERNEL_PSEUDO_ROOTS)
+        or any(seg in _CONTAINER_ROOTFS_SEGMENTS for seg in low)
+        or _has_pair(low, "etc", "ssh")
+        or any(seg in _SAVE_BLOCKED_SEGMENTS for seg in low)
+        or any(_has_pair(low, a, b) for a, b in _SAVE_BLOCKED_PAIRS)
+    ):
+        raise CanvasError("refused: this file is outside the folders Hermux can save to")
+    if name in _PROTECTED_SAVE_FILES:
+        if name in _SHELL_INIT_FILES:
+            raise CanvasError("refused: Hermux won’t overwrite shell start-up files from the canvas")
+        raise CanvasError("refused: this file is outside the folders Hermux can save to")
 
 
 def _match_save_root(raw_abs: str) -> Tuple[Path, Tuple[str, ...]]:
-    """Match an absolute path to an allowed save root without collapsing intermediate symlinks."""
+    """Match an absolute path to an allowed save root (case-sensitively) without collapsing intermediate symlinks."""
     clean = Path(raw_abs)
     if ".." in clean.parts:
         raise CanvasError("refused: invalid path")
@@ -467,14 +489,16 @@ def _check_no_symlinks_under_root(real_root: Path, rel_parts: Sequence[str]) -> 
             raise CanvasError("the folder for this file no longer exists")
 
 
-def _check_save_path(raw_path: str) -> Path:
-    raw_abs = _validate_raw_path(raw_path)
-    real_root, rel_parts = _match_save_root(raw_abs)
-    _check_no_symlinks_under_root(real_root, rel_parts)
-    target = real_root.joinpath(*rel_parts)
-    _check_save_denylist(target)
-    _check_save_denylist(Path(os.path.realpath(str(target))))
-    return target
+def _fs_error(action: str, e: OSError) -> CanvasError:
+    if e.errno in (errno.EACCES, errno.EPERM):
+        return CanvasError(f"cannot {action} file: permission denied")
+    if e.errno == errno.EROFS:
+        return CanvasError(f"cannot {action} file: read-only file system")
+    if e.errno == errno.ENAMETOOLONG:
+        return CanvasError(f"cannot {action} file: file path is too long")
+    if e.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)):
+        return CanvasError(f"cannot {action} file: no space left on device")
+    return CanvasError(f"cannot {action} file: {e.strerror or e}")
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -504,7 +528,7 @@ def _write_all_fd(fd: int, data: bytes) -> None:
         written += n
 
 
-def _open_dir_chain(root: Path, dir_parts: Sequence[str], *, nofollow: bool) -> int:
+def _open_dir_chain(root: Path, dir_parts: Sequence[str], *, nofollow: bool, verb: str = "save") -> int:
     flags = os.O_RDONLY | _O_DIRECTORY
     step_flags = flags | (_O_NOFOLLOW if nofollow else 0)
     cur_fd = os.open(str(root), flags)
@@ -514,11 +538,11 @@ def _open_dir_chain(root: Path, dir_parts: Sequence[str], *, nofollow: bool) -> 
                 nxt = os.open(part, step_flags, dir_fd=cur_fd)
             except OSError as e:
                 if e.errno == errno.ELOOP:
-                    raise CanvasError("refused: won’t save through a symbolic link") from e
+                    raise CanvasError(f"refused: won’t {verb} through a symbolic link") from e
                 if e.errno == errno.ENOTDIR and nofollow:
                     with contextlib.suppress(OSError):
                         if stat.S_ISLNK(os.lstat(part, dir_fd=cur_fd).st_mode):
-                            raise CanvasError("refused: won’t save through a symbolic link") from e
+                            raise CanvasError(f"refused: won’t {verb} through a symbolic link") from e
                 if e.errno in (errno.ENOENT, errno.ENOTDIR):
                     raise CanvasError("the folder for this file no longer exists") from e
                 raise
@@ -532,13 +556,15 @@ def _open_dir_chain(root: Path, dir_parts: Sequence[str], *, nofollow: bool) -> 
 
 
 def _open_readonly_bounded(real: Path, raw_label: str) -> Tuple[bytes, os.stat_result]:
-    """Open `real` without following a raced leaf symlink, require a regular file, and read at most MAX_FILE_BYTES."""
+    """Open `real` walking its parent with O_NOFOLLOW (falling back only when openat/dir_fd is unsupported),
+    require a regular file, and read at most MAX_FILE_BYTES."""
     leaf_flags = os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK
     fd = -1
     parent_fd = -1
     try:
         try:
-            parent_fd = os.open(str(real.parent), os.O_RDONLY | _O_DIRECTORY)
+            parent_parts = [p for p in real.parent.parts if p not in ("", "/")]
+            parent_fd = _open_dir_chain(Path("/"), parent_parts, nofollow=True, verb="open")
             fd = os.open(real.name, leaf_flags, dir_fd=parent_fd)
         except (NotImplementedError, OSError) as e:
             if isinstance(e, OSError) and e.errno not in _DIR_FD_UNSUPPORTED:
@@ -548,12 +574,16 @@ def _open_readonly_bounded(real: Path, raw_label: str) -> Tuple[bytes, os.stat_r
                     os.close(parent_fd)
                 parent_fd = -1
             fd = os.open(str(real), leaf_flags)
+    except CanvasError as e:
+        if "folder for this file no longer exists" in str(e):
+            raise CanvasError(f"no such file: {raw_label}") from e
+        raise
     except OSError as e:
         if e.errno == errno.ELOOP:
             raise CanvasError("refused: won’t open through a symbolic link") from e
         if e.errno in (errno.ENOENT, errno.ENOTDIR, errno.EISDIR):
             raise CanvasError(f"no such file: {raw_label}") from e
-        raise CanvasError(f"cannot read file: {e.strerror or e}") from e
+        raise _fs_error("read", e) from e
     finally:
         if parent_fd >= 0:
             with contextlib.suppress(OSError):
@@ -568,21 +598,20 @@ def _open_readonly_bounded(real: Path, raw_label: str) -> Tuple[bytes, os.stat_r
         if len(raw) > MAX_FILE_BYTES:
             raise CanvasError(f"file is too big to open here ({len(raw):,} bytes, limit {MAX_FILE_BYTES:,})")
         return raw, st
+    except OSError as e:
+        raise _fs_error("read", e) from e
     finally:
         with contextlib.suppress(OSError):
             os.close(fd)
 
 
-def _phone_path(p: str) -> Path:
-    """Paths as the agent/app write them (/root/…, ~/…, /sdcard/…) → a real path inside this environment."""
-    raw_abs = _validate_raw_path(p)
-    return Path(os.path.realpath(raw_abs))
-
-
 def open_file(session: str, path: str, by: str = "agent") -> Dict[str, Any]:
     """Load a text file from the phone into a new canvas document linked to that path."""
     raw_abs = _validate_raw_path(path)
-    real = Path(os.path.realpath(raw_abs))
+    try:
+        real = Path(os.path.realpath(raw_abs))
+    except OSError as e:
+        raise _fs_error("read", e) from e
     _check_open_path(Path(os.path.abspath(raw_abs)))
     _check_open_path(real)
     raw, st = _open_readonly_bounded(real, path)
@@ -627,7 +656,7 @@ def _inspect_existing_fd(fd: int, doc: Dict[str, Any], force: bool) -> int:
     st = os.fstat(fd)
     if not stat.S_ISREG(st.st_mode):
         raise CanvasError("refused: target is not a regular file")
-    mode = stat.S_IMODE(st.st_mode)
+    mode = stat.S_IMODE(st.st_mode) & 0o777
     if not force:
         expected = _expected_digest(doc)
         if st.st_size > MAX_FILE_BYTES:
@@ -638,15 +667,27 @@ def _inspect_existing_fd(fd: int, doc: Dict[str, Any], force: bool) -> int:
     return mode
 
 
+class _DirFdUnsupported(Exception):
+    """Raised only before any write when openat/dir_fd itself is unsupported on this filesystem."""
+
+
 def _save_with_dir_fd(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, Any], data: bytes, force: bool) -> None:
     leaf = rel_parts[-1]
-    parent_fd = _open_dir_chain(real_root, rel_parts[:-1], nofollow=True)
+    try:
+        parent_fd = _open_dir_chain(real_root, rel_parts[:-1], nofollow=True, verb="save")
+    except (NotImplementedError, OSError) as e:
+        if isinstance(e, OSError) and e.errno not in _DIR_FD_UNSUPPORTED:
+            raise
+        raise _DirFdUnsupported() from e
+
     tmp_leaf: Optional[str] = None
     try:
         existing_mode: Optional[int] = None
         try:
             cur_fd = os.open(leaf, os.O_RDONLY | _O_NOFOLLOW | _O_NONBLOCK, dir_fd=parent_fd)
-        except OSError as e:
+        except (NotImplementedError, OSError) as e:
+            if isinstance(e, NotImplementedError) or e.errno in _DIR_FD_UNSUPPORTED:
+                raise _DirFdUnsupported() from e
             if e.errno == errno.ELOOP:
                 raise CanvasError("refused: won’t save through a symbolic link") from e
             if e.errno == errno.ENOENT:
@@ -661,7 +702,7 @@ def _save_with_dir_fd(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, 
                 with contextlib.suppress(OSError):
                     os.close(cur_fd)
 
-        create_mode = existing_mode if existing_mode is not None else 0o644
+        create_mode = (existing_mode & 0o777) if existing_mode is not None else 0o644
         tmp_fd = -1
         for _ in range(16):
             cand = f".{leaf}.{secrets.token_hex(6)}.hm.tmp"
@@ -677,7 +718,7 @@ def _save_with_dir_fd(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, 
             _write_all_fd(tmp_fd, data)
             if existing_mode is not None:
                 with contextlib.suppress(OSError):
-                    os.fchmod(tmp_fd, existing_mode)
+                    os.fchmod(tmp_fd, existing_mode & 0o777)
         finally:
             with contextlib.suppress(OSError):
                 os.close(tmp_fd)
@@ -694,6 +735,9 @@ def _save_with_dir_fd(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, 
 
 
 def _save_fallback(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, Any], data: bytes, force: bool) -> None:
+    """Path-based fallback used only when openat/dir_fd itself is unsupported (e.g. FUSE /sdcard).
+    Checks every component with lstat and opens the leaf with O_NOFOLLOW, but does not defend against
+    a concurrent racing symlink swap between lstat and replace."""
     _check_no_symlinks_under_root(real_root, rel_parts)
     real = real_root.joinpath(*rel_parts)
     existing_mode: Optional[int] = None
@@ -714,7 +758,7 @@ def _save_fallback(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, Any
             with contextlib.suppress(OSError):
                 os.close(cur_fd)
 
-    create_mode = existing_mode if existing_mode is not None else 0o644
+    create_mode = (existing_mode & 0o777) if existing_mode is not None else 0o644
     tmp_path: Optional[Path] = None
     tmp_fd = -1
     for _ in range(16):
@@ -732,7 +776,7 @@ def _save_fallback(real_root: Path, rel_parts: Sequence[str], doc: Dict[str, Any
             _write_all_fd(tmp_fd, data)
             if existing_mode is not None:
                 with contextlib.suppress(OSError):
-                    os.fchmod(tmp_fd, existing_mode)
+                    os.fchmod(tmp_fd, existing_mode & 0o777)
         finally:
             with contextlib.suppress(OSError):
                 os.close(tmp_fd)
@@ -756,14 +800,18 @@ def save_file(session: str, doc_id: str, force: bool = False) -> Dict[str, Any]:
         real_root, rel_parts = _match_save_root(raw_abs)
         target = real_root.joinpath(*rel_parts)
         _check_save_denylist(target)
-        _check_save_denylist(Path(os.path.realpath(str(target))))
+        try:
+            _check_save_denylist(Path(os.path.realpath(str(target))))
+        except OSError as e:
+            raise _fs_error("save", e) from e
         data = doc["content"].encode("utf-8")
         try:
-            _save_with_dir_fd(real_root, rel_parts, doc, data, force)
-        except (NotImplementedError, OSError) as e:
-            if isinstance(e, OSError) and e.errno not in _DIR_FD_UNSUPPORTED:
-                raise
-            _save_fallback(real_root, rel_parts, doc, data, force)
+            try:
+                _save_with_dir_fd(real_root, rel_parts, doc, data, force)
+            except _DirFdUnsupported:
+                _save_fallback(real_root, rel_parts, doc, data, force)
+        except OSError as e:
+            raise _fs_error("save", e) from e
         doc["file_sha256"] = _sha256_bytes(data)
         _write(d / f"{doc['id']}.json", doc)
         return {"path": str(target), "chars": len(doc["content"])}
