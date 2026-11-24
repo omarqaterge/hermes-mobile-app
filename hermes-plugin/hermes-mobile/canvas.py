@@ -290,12 +290,26 @@ _DIR_FD_UNSUPPORTED = frozenset({
 })
 
 
+# Default_Ignorable_Code_Point characters outside General_Category Cf (combining grapheme joiner, variation
+# selectors, Hangul fillers, Mongolian free variation selectors, ...). Android's casefolded ext4/f2fs (utf8nfdicf)
+# ignores every default-ignorable character, so these must go too, or `.e\u034fnv` would reach the real `.env`.
+_IGNORABLE_NON_CF = (
+    (0x034F, 0x034F), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180D), (0x180F, 0x180F), (0x2065, 0x2065),
+    (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0xE0000, 0xE0FFF),
+)
+
+
+def _ignorable(ch: str) -> bool:
+    if unicodedata.category(ch) == "Cf":
+        return True
+    o = ord(ch)
+    return any(lo <= o <= hi for lo, hi in _IGNORABLE_NON_CF)
+
+
 def _fold(s: str) -> str:
-    """Fold a path segment/name like casefolding filesystems (Android ext4/f2fs NFKD + drop Cf + casefold, APFS)."""
-    cleaned = "".join(
-        ch for ch in unicodedata.normalize("NFKD", s)
-        if unicodedata.category(ch) != "Cf"
-    )
+    """Fold a path segment/name like casefolding filesystems (Android ext4/f2fs: NFKD, drop every default-ignorable
+    character, casefold; APFS)."""
+    cleaned = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not _ignorable(ch))
     return cleaned.casefold()
 
 

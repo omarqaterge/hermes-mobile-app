@@ -16,7 +16,7 @@ const SAVE_BLOCKED_SEGS_MOCK = OPEN_SECRET_SEGS_MOCK
 const CONTAINER_SEGS_MOCK = new Set(['proot-distro', 'chroot-distro'])
 const KERNEL_ROOTS_MOCK = new Set(['proc', 'sys', 'dev'])
 const HERMES_SECRET_FILES_MOCK = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
-const foldSegmentMock = s => s.normalize('NFKD').replace(/\p{Cf}/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
+const foldSegmentMock = s => s.normalize('NFKD').replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
 const isEnvNameMock = name => {
   const f = foldSegmentMock(name)
   return f === '.env' || f.startsWith('.env.')

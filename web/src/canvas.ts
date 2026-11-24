@@ -316,9 +316,10 @@ const CONTAINER_ROOTFS_SEGMENTS = new Set(['proot-distro', 'chroot-distro'])
 const KERNEL_PSEUDO_ROOTS = new Set(['proc', 'sys', 'dev'])
 const HERMES_SECRET_FILES = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
 
-/** Fold a path segment/name like casefolding filesystems (NFKD, drop Cf, map ſ→s and ß/ẞ→ss, lower). */
+/** Fold a path segment/name like casefolding filesystems (NFKD, drop every default-ignorable character, map ſ→s and
+ *  ß/ẞ→ss, lower), as Android's casefolded ext4/f2fs does. */
 export function foldSegment(s: string): string {
-  return s.normalize('NFKD').replace(/\p{Cf}/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
+  return s.normalize('NFKD').replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
 }
 
 function isEnvName(name: string): boolean {
