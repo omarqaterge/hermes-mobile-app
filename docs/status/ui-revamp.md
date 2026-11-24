@@ -486,6 +486,33 @@ here but not installed on a phone, and going back has not been tried on one.
   read-aloud, scheduled-job cards, HyperOS badge behaviour on `Learning`/`Scheduled jobs`/`error` cards, and
   `RemoteInput` dismissal on a real phone.
 
+- **Notification and plugin follow-ups (F13, `fix-followups-notifications`, PR against `redesign`).**
+  Follow-ups from security reviews of PR #230:
+  - **Lock-screen privacy for tainted-chat approvals:** `_on_pre_approval_request` marks approvals from tainted chats
+    with `phone_data: true` (only tightening); `HermesService.phoneDataEvent` separates `phone_data_read` (actual
+    `phone_data` tool reads, stripping spoofed flags on ordinary approvals) from `phone_data` (chat taint); all three
+    `hideOnLockScreen` call sites (approval pop-up, status chip, 20 s / 40 s re-alert) use `isPhoneData` on the matching
+    channel so command approvals in tainted chats stay private on the lock screen while unlocked chip titles and the
+    island panel keep command wording and buttons distinct from phone-data reads.
+  - **`answerFromNotification` robustness & `RemoteInput` `fillIn` hardening:** `answerAction` encodes `kind`, `session`
+    and `error_card` in the base `Intent`'s data URI (`BadgePlan.answerUri` / `parseAnswerUri`) instead of mutable extras
+    so `FLAG_MUTABLE` `fillIn` cannot overwrite `kind`, `session`, `panel`, `error_card` or inject `text`;
+    `answerFromNotification` null-checks `i.getStringExtra("text")` before trimming, locks `pending.answered` +
+    `syncPending` + guarded `postStatus` on `HermesService.this`, and guards `nm.cancel`, `dropEmptySummary`
+    (`cancelCard`) and `postGrouped` (and null-checks `nm` in `dismissAnsweredCard`).
+  - **Plugin edge cases:** `_on_pre_llm_call` passes `turn_id` to `_clear_reply` and tracks `_last_text_owner`
+    (`_last_owner`), so a turn with `turn_id=None` neither clears nor steals another keyed turn's reply while still
+    clearing earlier untagged replies; `_chat_has_read_phone_data` follows sub-agent lineage in both directions
+    (`phone_taint.ancestors`/`descendants`, `_subagent_ancestors`/`_subagent_descendants`, and
+    `phone_data.subagent_descendants` over `state.db` including compressed sub-agents, never following branches
+    downward).
+  Verified with `tools/check.sh plugin android` (`tools/java-check.sh` including `tools/test_badge_and_reply.sh`,
+  `tools/api-check.sh`, `tools/test_island_state.sh`, `tools/test_notify_choice.sh`, `tools/test_notification_unlock.sh`,
+  all plugin tests including `tools/test_chip.py`, `tools/test_phone_taint.py`, `tools/test_phone_data.py`,
+  `tools/test_approval.py`, `check_spec.py`, `changelog.py check`, `check-no-emoji.py`); no real phone or emulator.
+  Needs a phone: lock-screen private approval rendering for a command approval in a tainted chat and `RemoteInput`
+  inline reply after the URI change.
+
 **Links:** [decision: the redesign stays on its branch](../decisions/redesign-branch-until-tried.md),
 [decision: no UI-coverage project before the revamp](../decisions/no-ui-test-work-before-revamp.md) (held until it
 started), [where the UI work stands](ui-revamp-overview.md), [UI inventory](../design/ui-inventory.md),

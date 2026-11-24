@@ -1,5 +1,8 @@
 package com.omarqaterge.hermesmobile;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -19,6 +22,7 @@ import java.util.Set;
  */
 final class BadgePlan {
     static final String REPLY_PREFIX = "reply:";
+    static final String ANSWER_URI_PREFIX = "hermux://answer?";
 
     private BadgePlan() {}
 
@@ -39,6 +43,60 @@ final class BadgePlan {
     static String answerTag(String kind, String session, boolean errorCard) {
         String prefix = "ask".equals(kind) ? "ask:" : ("reply".equals(kind) && errorCard ? "error:" : "reply:");
         return prefix + (session == null ? "" : session);
+    }
+
+    /** Immutable target carried in a RemoteInput PendingIntent's data URI (which Intent.fillIn(other, 0) cannot overwrite). */
+    static final class AnswerTarget {
+        final String kind;
+        final String session;
+        final boolean errorCard;
+
+        AnswerTarget(String kind, String session, boolean errorCard) {
+            this.kind = kind;
+            this.session = session;
+            this.errorCard = errorCard;
+        }
+    }
+
+    private static String encodeUtf8(String s) {
+        try {
+            return URLEncoder.encode(s == null ? "" : s, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Builds the data URI placed on a RemoteInput PendingIntent's base Intent so fillIn() cannot alter kind, session or error_card. */
+    static String answerUri(String kind, String session, boolean errorCard) {
+        String k = "ask".equals(kind) ? "ask" : "reply";
+        boolean err = "reply".equals(k) && errorCard;
+        return ANSWER_URI_PREFIX + "kind=" + k + "&session=" + encodeUtf8(session) + "&error_card=" + (err ? "1" : "0");
+    }
+
+    /** Parses a RemoteInput data URI built by {@link #answerUri}, or returns null when absent or malformed. */
+    static AnswerTarget parseAnswerUri(String raw) {
+        if (raw == null || !raw.startsWith(ANSWER_URI_PREFIX)) return null;
+        String query = raw.substring(ANSWER_URI_PREFIX.length());
+        String kind = null, session = "", errorCard = "0";
+        for (String pair : query.split("&", -1)) {
+            if (pair.isEmpty()) continue;
+            int eq = pair.indexOf('=');
+            if (eq <= 0) return null;
+            String k = pair.substring(0, eq);
+            String v;
+            try {
+                v = URLDecoder.decode(pair.substring(eq + 1), "UTF-8");
+            } catch (IllegalArgumentException | UnsupportedEncodingException e) {
+                return null;
+            }
+            if ("kind".equals(k)) kind = v;
+            else if ("session".equals(k)) session = v;
+            else if ("error_card".equals(k)) errorCard = v;
+            else return null;
+        }
+        if (!"ask".equals(kind) && !"reply".equals(kind)) return null;
+        if (!"0".equals(errorCard) && !"1".equals(errorCard)) return null;
+        return new AnswerTarget(kind, session, "reply".equals(kind) && "1".equals(errorCard));
     }
 
     static final class Plan {
