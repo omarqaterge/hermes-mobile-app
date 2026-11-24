@@ -40,12 +40,12 @@ mkdir -p "$home" "$dist"
 find "$home" -mindepth 1 -maxdepth 1 ! -name installs -exec rm -rf {} +
 printf '<!doctype html><html><head></head><body>hermes-contract</body></html>\n' > "$dist/index.html"
 
-# The fake model: a free port on 127.0.0.1, a note for its read_file call.
+# The fake model: a free port on 127.0.0.1, a note inside the throwaway HOME for read_file and /canvas/open-file.
 rm -f "$work/model.port" "$work/model.log" "$work/model-requests.jsonl"
-printf 'contract note\n' > "$work/note.txt"
+printf 'contract note\n' > "$uhome/note.txt"
 # The files of the other scripted turns (fake-model.py): x for the chmod Hermes asks to approve, site/ for the edits.
-rm -rf "$work/site" && mkdir -p "$work/site" && printf 'old\n' > "$work/site/b.txt" && : > "$work/x" && chmod 644 "$work/x"
-nohup "$src/.venv/bin/python" "$here/tools/hermes-contract/fake-model.py" "$work/model.port" "$work/note.txt" \
+rm -rf "$uhome/site" && mkdir -p "$uhome/site" && printf 'old\n' > "$uhome/site/b.txt" && : > "$uhome/x" && chmod 644 "$uhome/x"
+nohup "$src/.venv/bin/python" "$here/tools/hermes-contract/fake-model.py" "$work/model.port" "$uhome/note.txt" \
   "$work/model-requests.jsonl" > "$work/model.log" 2>&1 &
 echo $! > "$work/model.pid"
 for _ in $(seq 1 50); do [ -s "$work/model.port" ] && break; sleep 0.2; done

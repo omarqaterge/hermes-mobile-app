@@ -1590,27 +1590,35 @@ async def auto_put(body: AutoMode):
 
 # ── canvas (documents shared by Hermes and the user, per chat) ──
 
+_CANVAS_LOCK = __import__("threading").Lock()
+
+
 def _canvas():
     import importlib.util
     import sys
 
     mod = sys.modules.get("hm_canvas")
-    if mod is None:
-        spec = importlib.util.spec_from_file_location("hm_canvas", Path(__file__).resolve().parent.parent / "canvas.py")
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["hm_canvas"] = mod
-        spec.loader.exec_module(mod)
-    return mod
+    if mod is not None:
+        return mod
+    with _CANVAS_LOCK:
+        mod = sys.modules.get("hm_canvas")
+        if mod is None:
+            spec = importlib.util.spec_from_file_location("hm_canvas", Path(__file__).resolve().parent.parent / "canvas.py")
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            sys.modules["hm_canvas"] = mod
+        return mod
 
 
 def _cv(fn, *a, **k):
-    """Run a canvas call, turning its errors into HTTP errors (409 for edit conflicts)."""
+    """Run a canvas call, turning its errors into HTTP errors (409 for conflicts, 403 for refused paths)."""
     c = _canvas()
     try:
         return fn(c)(*a, **k)
     except c.CanvasError as e:
         msg = str(e)
-        raise HTTPException(status_code=409 if msg.startswith("conflict") else 400, detail=msg)
+        status = 409 if msg.startswith("conflict") else 403 if msg.startswith("refused") else 400
+        raise HTTPException(status_code=status, detail=msg)
 
 
 class CanvasCreate(BaseModel):
@@ -1638,56 +1646,57 @@ class CanvasRef(BaseModel):
     rev: int = 0
     title: str = ""
     path: str = ""
+    force: bool = False
 
 
 @router.get("/canvas")
-async def canvas_list(session: str):
+def canvas_list(session: str):
     return {"docs": _canvas().list_docs(session)}
 
 
 @router.get("/canvas/doc")
-async def canvas_get(session: str, id: str):
+def canvas_get(session: str, id: str):
     return _cv(lambda c: c.get, session, id)
 
 
 @router.get("/canvas/version")
-async def canvas_version(session: str, id: str, rev: int):
+def canvas_version(session: str, id: str, rev: int):
     return _cv(lambda c: c.get_version, session, id, rev)
 
 
 @router.post("/canvas/doc")
-async def canvas_create(body: CanvasCreate):
+def canvas_create(body: CanvasCreate):
     return _cv(lambda c: c.create, body.session, body.title, body.content, body.type, body.lang, by="user")
 
 
 @router.put("/canvas/doc")
-async def canvas_write(body: CanvasWrite):
+def canvas_write(body: CanvasWrite):
     return _cv(lambda c: c.write, body.session, body.id, body.content, by="user", note=body.note, base_rev=body.base_rev,
                title=body.title, type=body.type, lang=body.lang)
 
 
 @router.post("/canvas/restore")
-async def canvas_restore(body: CanvasRef):
+def canvas_restore(body: CanvasRef):
     return _cv(lambda c: c.restore, body.session, body.id, body.rev, by="user")
 
 
 @router.post("/canvas/rename")
-async def canvas_rename(body: CanvasRef):
+def canvas_rename(body: CanvasRef):
     return _cv(lambda c: c.rename, body.session, body.id, body.title)
 
 
 @router.post("/canvas/open-file")
-async def canvas_open_file(body: CanvasRef):
+def canvas_open_file(body: CanvasRef):
     return _cv(lambda c: c.open_file, body.session, body.path, by="user")
 
 
 @router.post("/canvas/save-file")
-async def canvas_save_file(body: CanvasRef):
-    return _cv(lambda c: c.save_file, body.session, body.id)
+def canvas_save_file(body: CanvasRef):
+    return _cv(lambda c: c.save_file, body.session, body.id, force=body.force)
 
 
 @router.delete("/canvas/doc")
-async def canvas_delete(session: str, id: str):
+def canvas_delete(session: str, id: str):
     _cv(lambda c: c.delete, session, id)
     return {"ok": True}
 

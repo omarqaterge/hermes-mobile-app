@@ -108,8 +108,14 @@ scanning with push protection is on, and a release is built only from a commit o
 ## Guard rails, and where to see them
 
 - **Content can't call the app.** Every call from the page into Android needs a key that changes on each page load.
-  Canvas pages run in a sandboxed frame with no access to the app, offline unless you switch them online. Cards are
-  drawn by the app and can only call read-only tools ([security model](spec/02-03-security-model.md)).
+  Canvas pages run in a sandboxed frame with no access to the app, offline unless you switch them online. Opening a
+  phone file in the canvas refuses `/proc`, `/sys`, `/dev` (including POSIX `//proc/...`, before `realpath`), `proot-distro` / `chroot-distro` container rootfs aliases,
+  `etc/ssh`, and secret or internal segments at any depth using Unicode case-folding (`.env*`, `.netrc`, `.ssh`, `.android`, `.gnupg`, `.aws`,
+  `.termux`, `.hermes-mobile`, and Hermes auth files anywhere under `.hermes` plus `mobile/`). Saving a canvas document back to disk is
+  restricted to your case-sensitive home and phone storage roots, refuses symlinks (leaf or intermediate directories),
+  `..` segments, bare roots, and protected paths using Unicode case-folding (`.hermes`, `.hermes-mobile`, profiles, secrets, plugin,
+  git/fish/Termux, home's top-level `bin`, `.local/bin`, and shell start-up files), and warns before overwriting a file that changed
+  on disk. Cards are drawn by the app and can only call read-only tools ([security model](spec/02-03-security-model.md)).
 - **Chat text is sanitised.** Markdown from the model passes `rehype-sanitize`.
 - **Remote debugging is off by default.** Turning it on needs Android's Developer options and your screen lock, and it
   switches itself off after an hour.

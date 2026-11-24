@@ -2,7 +2,9 @@
 // The panel UI is components/Canvas.tsx; the agent writes through its `canvas` tool, and the tool events in
 // gateway.ts call canvasToolDone() so the panel opens/refreshes the moment Hermes writes.
 import { useSyncExternalStore } from 'react'
-import { api } from './api'
+import { api, ApiError } from './api'
+import { confirmDialog } from './dialog'
+import { askUnlock, lockView } from './lockview'
 import { getState, subscribe, toast } from './store'
 import { screenChat } from './chatview'
 import { galleryToolDone } from './gallery'
@@ -301,13 +303,185 @@ export async function openFileInCanvas(path: string): Promise<boolean> {
   }
 }
 
+const SHELL_INIT_FILES = new Set([
+  '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile',
+  '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout',
+  '.shinit', '.cshrc', '.tcshrc', '.kshrc'
+])
+const PROTECTED_SAVE_FILES = new Set([...SHELL_INIT_FILES, '.gitconfig', '.netrc'])
+const OPEN_SECRET_SEGMENTS = new Set(['.hermes-mobile', '.ssh', '.gnupg', '.aws', '.android', '.termux'])
+const OPEN_SECRET_FILES = new Set(['.netrc'])
+const SAVE_BLOCKED_SEGMENTS = OPEN_SECRET_SEGMENTS
+const CONTAINER_ROOTFS_SEGMENTS = new Set(['proot-distro', 'chroot-distro'])
+const KERNEL_PSEUDO_ROOTS = new Set(['proc', 'sys', 'dev'])
+const HERMES_SECRET_FILES = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
+
+/** Fold a path segment/name like casefolding filesystems (NFKD, drop every default-ignorable character, map ſ→s and
+ *  ß/ẞ→ss, lower), as Android's casefolded ext4/f2fs does. */
+export function foldSegment(s: string): string {
+  return s.normalize('NFKD').replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
+}
+
+function isEnvName(name: string): boolean {
+  const f = foldSegment(name)
+  return f === '.env' || f.startsWith('.env.')
+}
+
+function normalizePosix(path: string): string {
+  const expanded = path.startsWith('~/') ? `/root/${path.slice(2)}` : path === '~' ? '/root' : path
+  const parts: string[] = []
+  for (const seg of expanded.split('/')) {
+    if (!seg || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return '/' + parts.join('/')
+}
+
+function hasPair(low: string[], a: string, b: string): boolean {
+  for (let i = 0; i < low.length - 1; i++) if (low[i] === a && low[i + 1] === b) return true
+  return false
+}
+
+function isHomeBin(low: string[]): boolean {
+  if (low.length >= 2 && low[0] === 'root' && low[1] === 'bin') return true
+  if (low.length >= 6 && low[0] === 'data' && low[1] === 'data' && low[2] === 'com.termux' && low[3] === 'files' && low[4] === 'home' && low[5] === 'bin') return true
+  if (low.length >= 7 && low[0] === 'data' && low[1] === 'user' && low[3] === 'com.termux' && low[4] === 'files' && low[5] === 'home' && low[6] === 'bin') return true
+  return false
+}
+
+function isHermesSegmentSecret(low: string[]): boolean {
+  const name = low[low.length - 1] || ''
+  for (let i = 0; i < low.length; i++) {
+    if (low[i] !== '.hermes') continue
+    const inside = low.slice(i + 1)
+    if (!inside.length) continue
+    if (HERMES_SECRET_FILES.has(name)) return true
+    const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
+    if (sub.length && sub[0] === 'mobile') return true
+  }
+  return false
+}
+
+/** Whether `segs` (case-sensitive!) is strictly inside a phone save root: /root, /sdcard, or /storage/emulated/0.
+ *  Matches the server's case-sensitive save roots on the phone (proot Debian HOME=/root plus Android shared storage). */
+function isInSaveRoot(segs: string[]): boolean {
+  if (segs[0] === 'root') return segs.length > 1
+  if (segs[0] === 'sdcard') return segs.length > 1
+  if (segs[0] === 'storage' && segs[1] === 'emulated' && segs[2] === '0') return segs.length > 3
+  return false
+}
+
+/** Reason why opening `path` in the canvas is always refused, or null when allowed (matches canvas.py's
+ *  segment-based open deny rules; the server also checks resolved `_hermes_homes()` and hard links on disk). */
+export function canvasOpenBlockReason(path: string): string | null {
+  const raw = path.trim()
+  if (!raw) return null
+  if (raw.includes('\0')) return 'Invalid file path.'
+  if (raw.startsWith('~') && raw !== '~' && !raw.startsWith('~/')) return 'Invalid file path.'
+  if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path.'
+  const p = normalizePosix(raw)
+  const low = p.split('/').filter(Boolean).map(foldSegment)
+  const name = low[low.length - 1] || ''
+  if (low.length && KERNEL_PSEUDO_ROOTS.has(low[0])) return 'Hermux won’t open system or device files in the canvas.'
+  if (low.some(s => CONTAINER_ROOTFS_SEGMENTS.has(s))) return 'Hermux won’t open container rootfs files in the canvas.'
+  if (hasPair(low, 'etc', 'ssh')) return 'Hermux won’t open secrets or key files in the canvas.'
+  if (isEnvName(name) || OPEN_SECRET_FILES.has(name) || low.some(s => OPEN_SECRET_SEGMENTS.has(s))) {
+    return 'Hermux won’t open secrets or key files in the canvas.'
+  }
+  if (isHermesSegmentSecret(low)) return 'Hermux won’t open secrets or internal files in the canvas.'
+  return null
+}
+
+/** Reason why saving back to `path` from the canvas is refused, or null when allowed (matches canvas.py's
+ *  case-sensitive save allow-list and Unicode-folded segment-based deny rules; the server also enforces
+ *  realpath, symlink, profile and plugin-dir checks on disk). */
+export function canvasSaveBlockReason(path: string): string | null {
+  const raw = path.trim()
+  if (!raw) return null
+  if (raw.includes('\0')) return 'Invalid file path.'
+  if (raw.startsWith('~') && raw !== '~' && !raw.startsWith('~/')) return 'Invalid file path.'
+  if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path to save.'
+  if (raw.split('/').includes('..')) return 'Invalid file path.'
+  const p = normalizePosix(raw)
+  const segs = p.split('/').filter(Boolean)
+  const low = segs.map(foldSegment)
+  const name = low[low.length - 1] || ''
+  if (!isInSaveRoot(segs)) {
+    return 'This file is outside the folders Hermux can save to from the canvas.'
+  }
+  if (low.includes('.hermes') || low.includes('.hermes-mobile')) {
+    return 'Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.'
+  }
+  if (isEnvName(name)) {
+    return 'Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.'
+  }
+  if (
+    (low.length && KERNEL_PSEUDO_ROOTS.has(low[0])) ||
+    low.some(s => CONTAINER_ROOTFS_SEGMENTS.has(s)) ||
+    hasPair(low, 'etc', 'ssh') ||
+    low.some(s => SAVE_BLOCKED_SEGMENTS.has(s)) ||
+    hasPair(low, '.local', 'bin') ||
+    hasPair(low, '.config', 'git') ||
+    hasPair(low, '.config', 'fish') ||
+    isHomeBin(low)
+  ) {
+    return 'This file is outside the folders Hermux can save to from the canvas.'
+  }
+  if (PROTECTED_SAVE_FILES.has(name)) {
+    if (SHELL_INIT_FILES.has(name)) return 'Hermux won’t overwrite shell start-up files from the canvas.'
+    return 'This file is outside the folders Hermux can save to from the canvas.'
+  }
+  return null
+}
+
 export async function saveToFile(id: string): Promise<void> {
+  const session = state.session
+  if (!session) return
+  const doc = state.loaded[id] ?? state.docs.find(d => d.id === id)
+  const blocked = doc?.path ? canvasSaveBlockReason(doc.path) : null
+  if (blocked) {
+    toast(blocked, 'error', 6000)
+    return
+  }
+  if (lockView()) {
+    askUnlock('Unlock the phone to save files')
+    return
+  }
   await flushSave()
+  if (state.session !== session || chatId() !== session) return
+  if (lockView()) {
+    askUnlock('Unlock the phone to save files')
+    return
+  }
+  if (state.save === 'conflict' || state.save === 'error') return
   try {
-    const r = await call<{ path: string }>('POST', `${P}/save-file`, { session: state.session, id })
+    const r = await call<{ path: string }>('POST', `${P}/save-file`, { session, id })
     toast(`Saved to ${r.path}`)
   } catch (e) {
-    toast(e instanceof Error ? e.message : String(e), 'error')
+    if (e instanceof ApiError && e.status === 409) {
+      const ok = await confirmDialog({
+        title: 'Overwrite changed file?',
+        message: `${doc?.path || 'The original file'} changed on disk since you opened it. Saving from the canvas will overwrite those changes.`,
+        confirmLabel: 'Overwrite',
+        icon: 'warning',
+        danger: true
+      })
+      if (!ok) return
+      if (state.session !== session || chatId() !== session) return
+      if (lockView()) {
+        askUnlock('Unlock the phone to save files')
+        return
+      }
+      try {
+        const r = await call<{ path: string }>('POST', `${P}/save-file`, { session, id, force: true })
+        toast(`Saved to ${r.path}`)
+      } catch (e2) {
+        toast(e2 instanceof Error ? e2.message : String(e2), 'error', 6000)
+      }
+      return
+    }
+    toast(e instanceof Error ? e.message : String(e), 'error', 6000)
   }
 }
 

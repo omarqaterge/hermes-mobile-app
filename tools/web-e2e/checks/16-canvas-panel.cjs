@@ -402,7 +402,7 @@ module.exports = async t => {
     await cb.getByText('answer s-40', { exact: true }).waitFor({ timeout: 8000 })
     await cb.getByRole('banner').getByRole('button', { name: 'Canvas' }).click()
     const panel = cb.getByRole('dialog', { name: 'Canvas' })
-    await panel.getByText('Plan', { exact: true }).waitFor({ timeout: 5000 })
+    await panel.getByRole('button', { name: 'Plan', exact: true }).waitFor({ timeout: 5000 })
     const since = Date.now()
     const more = async () => {
       await panel.getByRole('button', { name: 'More' }).click()
@@ -441,7 +441,7 @@ module.exports = async t => {
     const pulled = await pull.waitFor({ timeout: 3000 }).then(() => true, () => false)
     if (pulled) await pull.click()
     const wide = cw.getByRole('dialog', { name: 'Canvas' })
-    const opened = await wide.getByText('Wide plan', { exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    const opened = await wide.getByRole('button', { name: 'Wide plan', exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
     check(pulled && opened, 'canvas: on a wide screen Open the canvas brings the chat\'s canvas in')
     const split = cw.getByRole('separator', { name: 'Resize the canvas' })
     const before = await split.getAttribute('aria-valuenow').catch(() => null)
@@ -451,5 +451,85 @@ module.exports = async t => {
     const after = await split.getAttribute('aria-valuenow').catch(() => null)
     check(after !== null && after !== before, `canvas: Resize the canvas moves the divider with the arrow keys (${before} → ${after})`)
     await cw.close()
+  }
+
+  // ── Canvas save-file guards: protected Hermes files cannot be overwritten; disk-changed files ask via in-app dialog ──
+  {
+    const { WEB, MOCK, calls } = require('../lib.cjs')
+    const mock = b => fetch(MOCK + '/__mock', { method: 'POST', body: JSON.stringify(b) })
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    p.on('pageerror', e => { console.log('PAGEERROR', e.message); fail() })
+    await p.addInitScript(() => localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-42', profile: 'default' })))
+    await p.goto(WEB + '/')
+    await p.getByText('answer s-42', { exact: true }).waitFor({ timeout: 10000 })
+
+    // Open Files → Hermux → config.yaml → Open in canvas: Save to the original file is disabled and explains Settings.
+    const openFiles = async () => {
+      await p.getByRole('button', { name: /^Sessions/ }).click()
+      await p.getByRole('button', { name: /^Library/ }).click()
+      await p.getByRole('button', { name: 'Files', exact: true }).click()
+    }
+    // Open Files → Hermux → .env: Open in canvas is disabled for always-refused secrets.
+    await openFiles()
+    await p.getByRole('button', { name: 'Hermux', exact: true }).click()
+    await p.getByRole('button', { name: /^\.env\b/ }).click()
+    const envOpenBtn = p.getByRole('button', { name: 'Open in canvas', exact: true })
+    await envOpenBtn.waitFor({ timeout: 5000 })
+    check(await envOpenBtn.isDisabled(), 'canvas open-file: Open in canvas is disabled for /root/.hermes/.env')
+    await p.evaluate(() => window.hermesBack())
+    await envOpenBtn.waitFor({ state: 'detached', timeout: 3000 })
+
+    // If /canvas/open-file is refused by the server, Files stays open and the preview stays visible.
+    await p.route('**/api/plugins/hermes-mobile/canvas/open-file', r => r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ detail: 'refused: test refusal' }) }), { times: 1 })
+    await p.getByRole('button', { name: /config\.yaml/ }).click()
+    const openBtn = p.getByRole('button', { name: 'Open in canvas', exact: true })
+    await openBtn.click()
+    await p.getByText('refused: test refusal').waitFor({ timeout: 3000 })
+    check(await openBtn.isVisible(), 'canvas open-file: server refusal leaves the user in Files with the preview open')
+    await openBtn.click()
+    const panel = p.getByRole('dialog', { name: 'Canvas' })
+    await panel.getByText('config.yaml', { exact: true }).waitFor({ timeout: 5000 })
+    const savesBefore = calls().filter(c => c.path === '/api/plugins/hermes-mobile/canvas/save-file').length
+    await panel.getByRole('button', { name: 'More' }).click()
+    const docMenu = p.getByRole('dialog').filter({ hasText: 'Version history' })
+    await docMenu.waitFor({ timeout: 3000 })
+    const saveBtn = docMenu.getByRole('button', { name: /Save to the original file/ })
+    check(await saveBtn.isDisabled(), 'canvas save-file: Save to the original file is disabled for /root/.hermes/config.yaml')
+    check((await saveBtn.innerText()).includes('Settings'), 'canvas save-file: disabled row tells the user to change settings in Settings')
+    check(calls().filter(c => c.path === '/api/plugins/hermes-mobile/canvas/save-file').length === savesBefore, 'canvas save-file: no save-file request sent for config.yaml')
+    await p.evaluate(() => window.hermesBack())
+    await docMenu.waitFor({ state: 'detached', timeout: 3000 })
+    await panel.getByRole('button', { name: 'Close canvas' }).click()
+    await panel.waitFor({ state: 'detached', timeout: 3000 })
+
+    // Open Files → Phone → note.txt → Open in canvas; simulate disk change → 409 triggers in-app dialog; Cancel keeps disk, Overwrite sends force: true.
+    await openFiles()
+    await p.getByRole('button', { name: 'Phone', exact: true }).click()
+    await p.getByRole('button', { name: /note\.txt/ }).click()
+    await p.getByRole('button', { name: 'Open in canvas', exact: true }).click()
+    await panel.getByText('note.txt', { exact: true }).waitFor({ timeout: 5000 })
+    await mock({ canvasFileChanged: '/sdcard/note.txt' })
+    const since = Date.now()
+    await panel.getByRole('button', { name: 'More' }).click()
+    await docMenu.waitFor({ timeout: 3000 })
+    await docMenu.getByRole('button', { name: /Save to the original file/ }).click()
+    const warnDlg = p.getByRole('alertdialog')
+    await warnDlg.getByText('Overwrite changed file?').waitFor({ timeout: 3000 })
+    await warnDlg.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await warnDlg.waitFor({ state: 'detached', timeout: 3000 })
+    const afterCancel = calls().filter(c => c.t >= since && c.path === '/api/plugins/hermes-mobile/canvas/save-file')
+    check(afterCancel.length === 1 && !afterCancel[0].body?.force, `canvas save-file: Cancel on changed-file dialog sends no forced save (${JSON.stringify(afterCancel.map(c => c.body))})`)
+
+    await panel.getByRole('button', { name: 'More' }).click()
+    await docMenu.waitFor({ timeout: 3000 })
+    await docMenu.getByRole('button', { name: /Save to the original file/ }).click()
+    await warnDlg.getByText('Overwrite changed file?').waitFor({ timeout: 3000 })
+    await warnDlg.getByRole('button', { name: 'Overwrite', exact: true }).click()
+    await warnDlg.waitFor({ state: 'detached', timeout: 3000 })
+    await p.getByText('Saved to /sdcard/note.txt').waitFor({ timeout: 3000 })
+    const afterOverwrite = calls().filter(c => c.t >= since && c.path === '/api/plugins/hermes-mobile/canvas/save-file')
+    check(afterOverwrite.length === 3 && afterOverwrite[2].body?.force === true, `canvas save-file: Overwrite sends force: true and saves (${JSON.stringify(afterOverwrite.map(c => c.body))})`)
+    await mock({ canvasFileChanged: [] })
+    await p.close()
   }
 }

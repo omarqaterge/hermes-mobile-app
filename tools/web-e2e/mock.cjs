@@ -9,6 +9,83 @@ const HTML_REPLY = 'Page:\n\n```html\n<!doctype html>\n<h1 id="t">Hello frame</h
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+
+const SHELL_INIT_MOCK = new Set(['.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.profile', '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout', '.shinit', '.cshrc', '.tcshrc', '.kshrc'])
+const OPEN_SECRET_SEGS_MOCK = new Set(['.hermes-mobile', '.ssh', '.gnupg', '.aws', '.android', '.termux'])
+const SAVE_BLOCKED_SEGS_MOCK = OPEN_SECRET_SEGS_MOCK
+const CONTAINER_SEGS_MOCK = new Set(['proot-distro', 'chroot-distro'])
+const KERNEL_ROOTS_MOCK = new Set(['proc', 'sys', 'dev'])
+const HERMES_SECRET_FILES_MOCK = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
+const foldSegmentMock = s => s.normalize('NFKD').replace(/[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu, '').replace(/\u017f/g, 's').replace(/[\u00df\u1e9e]/g, 'ss').toLowerCase()
+const isEnvNameMock = name => {
+  const f = foldSegmentMock(name)
+  return f === '.env' || f.startsWith('.env.')
+}
+const hasPairMock = (low, a, b) => low.some((x, i) => x === a && low[i + 1] === b)
+function isHomeBinMock(low) {
+  if (low.length >= 2 && low[0] === 'root' && low[1] === 'bin') return true
+  if (low.length >= 6 && low[0] === 'data' && low[1] === 'data' && low[2] === 'com.termux' && low[3] === 'files' && low[4] === 'home' && low[5] === 'bin') return true
+  if (low.length >= 7 && low[0] === 'data' && low[1] === 'user' && low[3] === 'com.termux' && low[4] === 'files' && low[5] === 'home' && low[6] === 'bin') return true
+  const homeSegs = path.posix.normalize(os.homedir()).split('/').filter(Boolean).map(foldSegmentMock)
+  if (homeSegs.length && low.length >= homeSegs.length + 1 && homeSegs.every((s, i) => low[i] === s) && low[homeSegs.length] === 'bin') return true
+  return false
+}
+function canvasPathError(rawPath, forSave) {
+  const s = String(rawPath || '').trim()
+  if (s.includes('\0') || (s.startsWith('~') && s !== '~' && !s.startsWith('~/'))) return { status: 403, detail: 'refused: invalid path' }
+  if (!s || (!s.startsWith('/') && s !== '~' && !s.startsWith('~/'))) return { status: 400, detail: 'give an absolute path (like /root/notes.md or /sdcard/Download/file.txt)' }
+  if (forSave && s.split('/').includes('..')) return { status: 403, detail: 'refused: invalid path' }
+  const expanded = s.startsWith('~/') ? path.posix.join('/root', s.slice(2)) : s === '~' ? '/root' : s
+  const p = path.posix.normalize(expanded)
+  const segs = p.split('/').filter(Boolean)
+  const low = segs.map(foldSegmentMock)
+  const name = low[low.length - 1] || ''
+  if (forSave) {
+    const allowed = ['/sdcard', '/storage/emulated/0', '/root', os.homedir()]
+    if (process.env.HM_CONTRACT_NOTE) allowed.push(path.dirname(process.env.HM_CONTRACT_NOTE))
+    const inRoot = allowed.some(r => p !== r && p.startsWith((r === '/' ? '' : r) + '/'))
+    if (!inRoot) return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+  }
+  if (low.length && KERNEL_ROOTS_MOCK.has(low[0])) return { status: 403, detail: 'refused: Hermux won’t open system or device files in the canvas' }
+  if (low.some(x => CONTAINER_SEGS_MOCK.has(x))) return { status: 403, detail: 'refused: Hermux won’t open container rootfs files in the canvas' }
+  if (hasPairMock(low, 'etc', 'ssh')) return { status: 403, detail: 'refused: Hermux won’t open secrets or key files in the canvas' }
+  if (isEnvNameMock(name)) {
+    return { status: 403, detail: forSave ? 'refused: Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.' : 'refused: Hermux won’t open secrets or key files in the canvas' }
+  }
+  if (low.some(x => OPEN_SECRET_SEGS_MOCK.has(x)) || name === '.netrc') {
+    return { status: 403, detail: forSave ? 'refused: this file is outside the folders Hermux can save to' : 'refused: Hermux won’t open secrets or key files in the canvas' }
+  }
+  if (low.includes('.hermes')) {
+    if (forSave) return { status: 403, detail: 'refused: Hermux won’t overwrite its own settings, secrets or plugin files from the canvas. Change them in Settings instead.' }
+    for (let i = 0; i < low.length; i++) {
+      if (low[i] !== '.hermes') continue
+      const inside = low.slice(i + 1)
+      if (!inside.length) continue
+      if (HERMES_SECRET_FILES_MOCK.has(name)) {
+        return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
+      }
+      const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
+      if (sub.length && sub[0] === 'mobile') {
+        return { status: 403, detail: 'refused: Hermux won’t open secrets or internal files in the canvas' }
+      }
+    }
+  }
+  if (forSave) {
+    if (low.some(x => SAVE_BLOCKED_SEGS_MOCK.has(x)) || hasPairMock(low, '.local', 'bin') || hasPairMock(low, '.config', 'git') || hasPairMock(low, '.config', 'fish') || isHomeBinMock(low)) {
+      return { status: 403, detail: 'refused: this file is outside the folders Hermux can save to' }
+    }
+    if (SHELL_INIT_MOCK.has(name) || name === '.gitconfig') {
+      return { status: 403, detail: SHELL_INIT_MOCK.has(name) ? 'refused: Hermux won’t overwrite shell start-up files from the canvas' : 'refused: this file is outside the folders Hermux can save to' }
+    }
+  }
+  return null
+}
+
+if (require.main !== module) {
+  module.exports = { canvasPathError, foldSegment: foldSegmentMock }
+  return
+}
+
 const { WebSocketServer } = require('ws')
 
 const LOG = process.env.HM_E2E_LOG || path.join(os.tmpdir(), 'hm-web-e2e-calls.jsonl')
@@ -32,6 +109,7 @@ allSessions.unshift({ id: 's-card', title: 'Card chat', preview: 'x', message_co
 allSessions.unshift({ id: 's-run', title: 'Running chat', preview: 'x', message_count: 3, started_at: Math.floor(Date.now() / 1000), source: 'mobile' })
 
 const canvasDocs = {} // session -> [doc]
+let canvasFileChanged = new Set() // paths simulated as changed on disk since open-file (returns 409 until force: true)
 const libraryItems = [] // the Library (plugin library.py), newest first
 // An old Library copy saved without a chat (no source): the gallery lists it as a saved copy.
 libraryItems.push({ id: 'lib-old', title: 'Old notes', type: 'markdown', lang: '', category: 'Unsorted', saved: Math.floor(Date.now() / 1000) - 86400, chars: 16, content: 'Kept from before', source: null })
@@ -152,7 +230,13 @@ function poolList() {
     .map(provider => ({ provider, raw: by[provider], entries: by[provider].map((x, i) => poolEntry(i + 1, x.id, x.label, x.auth_type, x.source, x.key)) }))
 }
 
-const FILE_TEXT = { 'table.csv': 'a,b\n1,2', 'page.html': '<h1>Hi</h1>', 'code.py': 'print("x")' }
+const FILE_TEXT = {
+  'table.csv': 'a,b\n1,2',
+  'page.html': '<h1>Hi</h1>',
+  'code.py': 'print("x")',
+  'config.yaml': 'approvals:\n  mode: manual\n',
+  '.env': 'OPENAI_API_KEY=sk-mock\n'
+}
 const server = http.createServer((req, res) => {
   let body = ''
   req.on('data', c => (body += c))
@@ -269,6 +353,9 @@ const server = http.createServer((req, res) => {
           cfgSaved = deepMerge(cfgSaved, { approvals: { mode: b.approvalsMode } })
         }
       }
+      if (b.canvasFileChanged !== undefined) {
+        canvasFileChanged = new Set(Array.isArray(b.canvasFileChanged) ? b.canvasFileChanged : b.canvasFileChanged ? [b.canvasFileChanged] : [])
+      }
       if (b.up) refuseUntil = 0 // Hermes is back now (ends a drop early)
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
@@ -284,7 +371,11 @@ const server = http.createServer((req, res) => {
       const join = n => (dir === '/' ? '' : dir) + '/' + n
       const entries = depth < 4 ? ['a', 'b'].map(n => ({ name: n, path: join(n), is_directory: true })) : []
       entries.push({ name: 'note.txt', path: join('note.txt'), is_directory: false, size: 5 })
-      for (const [n, text] of Object.entries(FILE_TEXT)) entries.push({ name: n, path: join(n), is_directory: false, size: text.length })
+      if (dir === '/root/.hermes') {
+        entries.push({ name: 'config.yaml', path: join('config.yaml'), is_directory: false, size: FILE_TEXT['config.yaml'].length })
+        entries.push({ name: '.env', path: join('.env'), is_directory: false, size: FILE_TEXT['.env'].length })
+      }
+      for (const n of ['table.csv', 'page.html', 'code.py']) entries.push({ name: n, path: join(n), is_directory: false, size: FILE_TEXT[n].length })
       for (const n of ['song.mp3', 'doc.pdf']) entries.push({ name: n, path: join(n), is_directory: false, size: 1000 })
       return send({ path: dir, parent: dir === '/' ? null : dir.replace(/\/[^/]+$/, '') || '/', entries })
     }
@@ -710,11 +801,21 @@ const server = http.createServer((req, res) => {
       const d = (canvasDocs[s] || []).find(x => x.id === id)
       const sub = p.split('/').pop()
       if (sub === 'open-file') {
+        const err = canvasPathError(b.path, false)
+        if (err) return send({ detail: err.detail }, err.status)
         // The phone's file (the mock has none): text made up from its name, linked to the path.
         const name = String(b.path || '').split('/').pop() || 'file'
         const ext = (name.split('.').pop() || '').toLowerCase()
-        const text = `Contents of ${name}\n`
-        const nd = { id: `d${Date.now()}`, title: name, type: { md: 'markdown', html: 'html', json: 'json', csv: 'csv', svg: 'svg' }[ext] || 'text', lang: '', rev: 1, updated: Date.now() / 1000, by: 'user', chars: text.length, path: b.path, created: Date.now() / 1000, content: text }
+        const text = FILE_TEXT[name] ?? `Contents of ${name}\n`
+        const existing = (canvasDocs[s] || []).find(x => x.path === b.path)
+        if (existing) {
+          existing.content = text
+          existing.chars = text.length
+          existing.rev++
+          existing.updated = Date.now() / 1000
+          return send(existing)
+        }
+        const nd = { id: `d${Date.now()}`, title: name, type: { md: 'markdown', html: 'html', json: 'json', csv: 'csv', svg: 'svg', yaml: 'code', yml: 'code' }[ext] || 'text', lang: ext === 'yaml' || ext === 'yml' ? 'yaml' : '', rev: 1, updated: Date.now() / 1000, by: 'user', chars: text.length, path: b.path, created: Date.now() / 1000, content: text }
         ;(canvasDocs[s] ||= []).push(nd)
         histOf(s, nd)
         return send(nd)
@@ -740,7 +841,14 @@ const server = http.createServer((req, res) => {
         canvasHist.get(`${s}/${d.id}`).push({ rev: d.rev, at: d.updated, by: 'user', note: `restored revision ${b.rev}`, content: d.content })
         return send(d)
       }
-      if (sub === 'save-file') return d.path ? send({ path: d.path, chars: d.content.length }) : send({ detail: "this document isn't linked to a file" }, 400)
+      if (sub === 'save-file') {
+        if (!d.path) return send({ detail: "this document isn't linked to a file" }, 400)
+        const err = canvasPathError(d.path, true)
+        if (err) return send({ detail: err.detail }, err.status)
+        if (!b.force && canvasFileChanged.has(d.path)) return send({ detail: 'conflict: the file on disk changed since you opened it' }, 409)
+        canvasFileChanged.delete(d.path)
+        return send({ path: d.path, chars: d.content.length })
+      }
     }
     return send({})
   })

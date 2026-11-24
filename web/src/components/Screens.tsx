@@ -1,6 +1,6 @@
 import { useBackHandler } from '../backstack'
 import { confirmDialog } from '../dialog'
-import { openFileInCanvas } from '../canvas'
+import { canvasOpenBlockReason, openFileInCanvas } from '../canvas'
 import { useSheetDrag } from './useSheetDrag'
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -681,8 +681,10 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
   const [path, setPath] = useState('/sdcard')
   const { data, error, loading, reload } = useLoader(() => api<Listing>('GET', `/api/files?${qs({ path })}`, undefined, { profile: false }), [path])
   const [preview, setPreview] = useState<{ entry: FileEntry; text?: string; image?: string; media?: string; note?: string; doc?: Extract<PreviewKind, { kind: 'doc' }> } | null>(null)
+  const [openingCanvas, setOpeningCanvas] = useState(false)
   const [newDir, setNewDir] = useState<string | null>(null)
   const upload = useRef<HTMLInputElement>(null)
+  const openBlocked = preview ? canvasOpenBlockReason(preview.entry.path) : null
   // Android Back goes up one folder; at one of the root chips (or /) it leaves the screen.
   const atRoot = path === '/' || ROOTS.some(([, p]) => p === path)
   useBackHandler(() => setPath(data?.parent || path.replace(/\/[^/]+\/?$/, '') || '/'), !atRoot && !preview && newDir == null)
@@ -839,11 +841,20 @@ export function FilesScreen({ onUse }: { onUse: (text: string) => void }) {
             {preview.text != null && (
               <button
                 className="btn"
-                onClick={() => {
-                  const path = preview.entry.path
-                  setPreview(null)
-                  setState({ screen: null })
-                  void openFileInCanvas(path)
+                disabled={Boolean(openBlocked) || openingCanvas}
+                title={openBlocked || undefined}
+                onClick={async () => {
+                  if (openingCanvas || openBlocked) return
+                  const targetPath = preview.entry.path
+                  setOpeningCanvas(true)
+                  try {
+                    if (await openFileInCanvas(targetPath)) {
+                      setPreview(null)
+                      setState({ screen: null })
+                    }
+                  } finally {
+                    setOpeningCanvas(false)
+                  }
                 }}
               >
                 Open in canvas

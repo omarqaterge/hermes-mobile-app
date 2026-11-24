@@ -155,6 +155,21 @@ export function useApprovalsMode({ fresh = false, profile: wanted }: { fresh?: b
 
 export const isLooseApprovals = (m: ApprovalsMode | null): m is 'smart' | 'off' => m === 'smart' || m === 'off'
 
+/** Inspects a config update payload (what `PUT /api/config` merges) for `approvals.mode`: whether it touches the mode
+ *  at all (including through a parent `approvals` object) and whether it sets the mode to `off` or `smart`. */
+export function configApprovalsUpdate(payload: Record<string, unknown>): { touches: boolean; loose: 'off' | 'smart' | null } {
+  const mode = parseApprovalsMode(payload)
+  const approvals = payload.approvals
+  const touches =
+    'approvals.mode' in payload ||
+    (approvals !== undefined &&
+      (approvals === null ||
+        typeof approvals !== 'object' ||
+        Array.isArray(approvals) ||
+        'mode' in (approvals as Record<string, unknown>)))
+  return { touches, loose: isLooseApprovals(mode) ? mode : null }
+}
+
 /** Short chip text on the composer's Auto button when the chat's own Auto is off. */
 export function autoButtonText(mode: Access, hermesMode: ApprovalsMode | null): string {
   if (mode === 'full') return 'Full access'
@@ -187,6 +202,23 @@ export function doneOffToast(hermesMode: ApprovalsMode | null): string {
   if (hermesMode === 'smart') return 'Auto off: Hermux still approves low-risk commands by itself'
   if (hermesMode === 'off') return 'Auto off: Hermux still approves every command without asking'
   return 'Auto off for this chat (follows the approvals setting)'
+}
+
+function offModeTail(hermesMode: ApprovalsMode | null): string {
+  if (hermesMode === 'manual') return ': Hermux asks before risky commands'
+  if (hermesMode === 'smart') return ': Hermux still approves low-risk commands by itself'
+  if (hermesMode === 'off') return ': Hermux still approves every command without asking'
+  return ' (follows the approvals setting)'
+}
+
+/** Error notice in chat when a failed `/yolo` switch settled back to Off. Unknown / lock-screen (`null`) stays neutral. */
+export function accessUnsureOff(hermesMode: ApprovalsMode | null): string {
+  return `Couldn’t change this chat’s access, so it is back to Off${offModeTail(hermesMode)}.`
+}
+
+/** Error notice when a resumed chat's Auto access could not be re-applied and fell back to Off. */
+export function autoRestoreOffNotice(hermesMode: ApprovalsMode | null): string {
+  return `Auto access couldn’t be set again, so this chat is in Off${offModeTail(hermesMode)}. Tap Auto to try again.`
 }
 
 /** Value shown on the Settings main page's Access & privacy row. Blank when offline/unknown so it never implies Hermes asks. */
