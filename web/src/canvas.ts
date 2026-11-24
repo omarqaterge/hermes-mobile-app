@@ -308,10 +308,12 @@ const SHELL_INIT_FILES = new Set([
   '.zshrc', '.zprofile', '.zshenv', '.zlogin', '.zlogout',
   '.shinit', '.cshrc', '.tcshrc', '.kshrc'
 ])
-const PROTECTED_HOME_FILES = new Set([...SHELL_INIT_FILES, '.gitconfig', '.netrc'])
-const OPEN_SECRET_HOME_DIRS = new Set(['.hermes-mobile', '.ssh', '.android', '.gnupg', '.aws'])
-const OPEN_SECRET_HOME_FILES = new Set(['.netrc'])
-const SAVE_BLOCKED_HOME_DIRS = new Set([...OPEN_SECRET_HOME_DIRS, 'bin', '.termux'])
+const PROTECTED_SAVE_FILES = new Set([...SHELL_INIT_FILES, '.gitconfig', '.netrc'])
+const OPEN_SECRET_SEGMENTS = new Set(['.hermes-mobile', '.ssh', '.gnupg', '.aws', '.android', '.termux'])
+const OPEN_SECRET_FILES = new Set(['.netrc'])
+const SAVE_BLOCKED_SEGMENTS = new Set([...OPEN_SECRET_SEGMENTS, 'bin'])
+const CONTAINER_ROOTFS_SEGMENTS = new Set(['proot-distro', 'chroot-distro'])
+const KERNEL_PSEUDO_ROOTS = new Set(['proc', 'sys', 'dev'])
 const HERMES_SECRET_FILES = new Set(['auth.json', '.anthropic_oauth.json', 'google_token.json', 'google_client_secret.json', 'google_oauth_pending.json'])
 const ENV_NAME = /^\.env(?:\.|$)/i
 
@@ -326,63 +328,67 @@ function normalizePosix(path: string): string {
   return '/' + parts.join('/')
 }
 
-/** Return the home-directory prefix segment count (1 for /root, 2 for /home/<u> or /Users/<u>) when `low` is under a
- *  user home, or 0 otherwise. */
-function homePrefixLen(low: string[]): number {
-  if (low[0] === 'root') return 1
-  if ((low[0] === 'home' || low[0] === 'users') && low.length >= 2) return 2
-  return 0
-}
-
-/** Whether `low` is strictly inside an allowed save root (user home, /sdcard, /storage/emulated/0). */
-function isInSaveRoot(low: string[]): boolean {
-  const h = homePrefixLen(low)
-  if (h > 0) return low.length > h
-  if (low[0] === 'sdcard') return low.length > 1
-  if (low[0] === 'storage' && low[1] === 'emulated' && low[2] === '0') return low.length > 3
+function hasPair(low: string[], a: string, b: string): boolean {
+  for (let i = 0; i < low.length - 1; i++) if (low[i] === a && low[i + 1] === b) return true
   return false
 }
 
-/** Reason why opening `path` in the canvas is always refused, or null when allowed (the plugin enforces the same
- *  rules plus realpath/profile/hardlink checks on disk). */
+function isHermesSegmentSecret(low: string[]): boolean {
+  const name = low[low.length - 1] || ''
+  for (let i = 0; i < low.length; i++) {
+    if (low[i] !== '.hermes') continue
+    const inside = low.slice(i + 1)
+    const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
+    if (sub.length && (sub[0] === 'mobile' || HERMES_SECRET_FILES.has(name))) return true
+  }
+  return false
+}
+
+/** Whether `segs` (case-sensitive!) is strictly inside a phone save root: /root, /sdcard, or /storage/emulated/0.
+ *  Matches the server's case-sensitive save roots on the phone (proot Debian HOME=/root plus Android shared storage). */
+function isInSaveRoot(segs: string[]): boolean {
+  if (segs[0] === 'root') return segs.length > 1
+  if (segs[0] === 'sdcard') return segs.length > 1
+  if (segs[0] === 'storage' && segs[1] === 'emulated' && segs[2] === '0') return segs.length > 3
+  return false
+}
+
+/** Reason why opening `path` in the canvas is always refused, or null when allowed (matches canvas.py's
+ *  segment-based open deny rules; the server also checks resolved `_hermes_homes()` and hard links on disk). */
 export function canvasOpenBlockReason(path: string): string | null {
   const raw = path.trim()
   if (!raw) return null
   if (raw.includes('\0')) return 'Invalid file path.'
+  if (raw.startsWith('~') && raw !== '~' && !raw.startsWith('~/')) return 'Invalid file path.'
   if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path.'
   const p = normalizePosix(raw)
   const low = p.split('/').filter(Boolean).map(s => s.toLowerCase())
   const name = low[low.length - 1] || ''
-  if (ENV_NAME.test(name)) return 'Hermux won’t open secrets or key files in the canvas.'
-  if (low.some(s => OPEN_SECRET_HOME_DIRS.has(s))) return 'Hermux won’t open secrets or key files in the canvas.'
-  const h = homePrefixLen(low)
-  if (h > 0) {
-    const rel = low.slice(h)
-    if (rel.length === 1 && OPEN_SECRET_HOME_FILES.has(rel[0])) return 'Hermux won’t open secrets or key files in the canvas.'
+  if (low.length && KERNEL_PSEUDO_ROOTS.has(low[0])) return 'Hermux won’t open system or device files in the canvas.'
+  if (low.some(s => CONTAINER_ROOTFS_SEGMENTS.has(s))) return 'Hermux won’t open container rootfs files in the canvas.'
+  if (hasPair(low, 'etc', 'ssh')) return 'Hermux won’t open secrets or key files in the canvas.'
+  if (ENV_NAME.test(name) || OPEN_SECRET_FILES.has(name) || low.some(s => OPEN_SECRET_SEGMENTS.has(s))) {
+    return 'Hermux won’t open secrets or key files in the canvas.'
   }
-  const hi = low.indexOf('.hermes')
-  if (hi >= 0) {
-    const inside = low.slice(hi + 1)
-    // Applies both directly under .hermes/ and under .hermes/profiles/<name>/
-    const sub = inside[0] === 'profiles' && inside.length >= 2 ? inside.slice(2) : inside
-    if (HERMES_SECRET_FILES.has(name) || sub[0] === 'mobile') {
-      return 'Hermux won’t open secrets or internal files in the canvas.'
-    }
-  }
+  if (isHermesSegmentSecret(low)) return 'Hermux won’t open secrets or internal files in the canvas.'
   return null
 }
 
-/** Reason why saving back to `path` from the canvas is refused, or null when allowed (the plugin enforces the same
- *  rules plus realpath/symlink/profile checks on disk). Checks the save allow-list first, then deny rules case-insensitively. */
+/** Reason why saving back to `path` from the canvas is refused, or null when allowed (matches canvas.py's
+ *  case-sensitive save allow-list and case-insensitive segment-based deny rules; the server also enforces
+ *  realpath, symlink, profile and plugin-dir checks on disk). */
 export function canvasSaveBlockReason(path: string): string | null {
   const raw = path.trim()
   if (!raw) return null
   if (raw.includes('\0')) return 'Invalid file path.'
+  if (raw.startsWith('~') && raw !== '~' && !raw.startsWith('~/')) return 'Invalid file path.'
   if (!raw.startsWith('/') && raw !== '~' && !raw.startsWith('~/')) return 'Give an absolute path to save.'
+  if (raw.split('/').includes('..')) return 'Invalid file path.'
   const p = normalizePosix(raw)
-  const low = p.split('/').filter(Boolean).map(s => s.toLowerCase())
+  const segs = p.split('/').filter(Boolean)
+  const low = segs.map(s => s.toLowerCase())
   const name = low[low.length - 1] || ''
-  if (!isInSaveRoot(low)) {
+  if (!isInSaveRoot(segs)) {
     return 'This file is outside the folders Hermux can save to from the canvas.'
   }
   if (low.includes('.hermes') || low.includes('.hermes-mobile')) {
@@ -391,19 +397,20 @@ export function canvasSaveBlockReason(path: string): string | null {
   if (ENV_NAME.test(name)) {
     return 'Hermux won’t overwrite .env secrets files from the canvas. Change API keys in Settings instead.'
   }
-  const h = homePrefixLen(low)
-  if (h > 0) {
-    const rel = low.slice(h)
-    if (rel.length >= 1 && SAVE_BLOCKED_HOME_DIRS.has(rel[0])) {
-      return 'This file is outside the folders Hermux can save to from the canvas.'
-    }
-    if (rel.length >= 2 && ((rel[0] === '.local' && rel[1] === 'bin') || (rel[0] === '.config' && (rel[1] === 'git' || rel[1] === 'fish')))) {
-      return 'This file is outside the folders Hermux can save to from the canvas.'
-    }
-    if (rel.length === 1 && PROTECTED_HOME_FILES.has(rel[0])) {
-      if (SHELL_INIT_FILES.has(rel[0])) return 'Hermux won’t overwrite shell start-up files from the canvas.'
-      return 'This file is outside the folders Hermux can save to from the canvas.'
-    }
+  if (
+    (low.length && KERNEL_PSEUDO_ROOTS.has(low[0])) ||
+    low.some(s => CONTAINER_ROOTFS_SEGMENTS.has(s)) ||
+    hasPair(low, 'etc', 'ssh') ||
+    low.some(s => SAVE_BLOCKED_SEGMENTS.has(s)) ||
+    hasPair(low, '.local', 'bin') ||
+    hasPair(low, '.config', 'git') ||
+    hasPair(low, '.config', 'fish')
+  ) {
+    return 'This file is outside the folders Hermux can save to from the canvas.'
+  }
+  if (PROTECTED_SAVE_FILES.has(name)) {
+    if (SHELL_INIT_FILES.has(name)) return 'Hermux won’t overwrite shell start-up files from the canvas.'
+    return 'This file is outside the folders Hermux can save to from the canvas.'
   }
   return null
 }

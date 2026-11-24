@@ -144,12 +144,13 @@ forged_mid = canvas.create(S, "ForgedMid", "pwned", path=os.path.join(mid_link, 
 err = raises(canvas.save_file, S, forged_mid["id"], force=True)
 check("save_file refuses intermediate directory symlink", "refused" in (err or "") and open(ext_target).read() == "keep me", str(err))
 
-# dir_fd fallback (e.g. FUSE /sdcard raising EOPNOTSUPP) still saves regular files and refuses intermediate symlinks.
+# dir_fd fallback (only when openat/dir_fd raises _DirFdUnsupported, NOT EINVAL) still saves regular files and refuses intermediate symlinks.
 import errno as _errno
+check("EINVAL is not in _DIR_FD_UNSUPPORTED", _errno.EINVAL not in canvas._DIR_FD_UNSUPPORTED)
 _orig_save_dir_fd = canvas._save_with_dir_fd
-def _raise_eopnotsupp(*a, **kw):
-    raise OSError(_errno.EOPNOTSUPP, "dir_fd unsupported")
-canvas._save_with_dir_fd = _raise_eopnotsupp
+def _raise_dir_fd_unsupported(*a, **kw):
+    raise canvas._DirFdUnsupported()
+canvas._save_with_dir_fd = _raise_dir_fd_unsupported
 try:
     fb_f = os.path.join(REAL_HOME, "fallback.txt")
     open(fb_f, "w").write("before")
@@ -162,6 +163,72 @@ try:
     check("dir_fd fallback still refuses intermediate symlink", "refused" in (err or "") and open(ext_target).read() == "keep me", str(err))
 finally:
     canvas._save_with_dir_fd = _orig_save_dir_fd
+
+# OSError (EACCES, EROFS, ENAMETOOLONG, ENOSPC, EINVAL) turns into plain CanvasError (never raw OSError/HTTP 500) and EINVAL does not fall back.
+for err_no, want_word in [(_errno.EACCES, "permission denied"), (_errno.EROFS, "read-only"), (_errno.ENAMETOOLONG, "too long"), (_errno.ENOSPC, "no space"), (_errno.EINVAL, "cannot save")]:
+    def _raise_os(*a, _no=err_no, **kw):
+        raise OSError(_no, "synthetic-io-error")
+    canvas._save_with_dir_fd = _raise_os
+    try:
+        err = raises(canvas.save_file, S, fb_doc["id"], force=True)
+        check(f"save_file maps errno {err_no} to CanvasError", want_word in (err or "").lower(), str(err))
+    finally:
+        canvas._save_with_dir_fd = _orig_save_dir_fd
+
+# Dead helpers were removed.
+for dead in ("_is_within", "_allowed_roots", "_check_save_path", "_phone_path"):
+    check(f"dead helper {dead} removed", not hasattr(canvas, dead))
+
+# Shared parity vectors in tools/canvas-path-vectors.json (Finding 3).
+from pathlib import Path
+vec_file = os.path.join(HERE, "canvas-path-vectors.json")
+vectors = json.load(open(vec_file))["cases"]
+check("shared canvas-path-vectors.json has >= 40 cases", len(vectors) >= 40, len(vectors))
+
+def _server_open_check(p: str) -> str | None:
+    try:
+        raw_abs = canvas._validate_raw_path(p)
+        canvas._check_open_path(Path(os.path.abspath(raw_abs)))
+        canvas._check_open_path(Path(os.path.realpath(raw_abs)))
+        return None
+    except canvas.CanvasError as e:
+        return str(e)
+
+def _server_save_check(p: str, needs_sdcard: bool = False) -> str | None:
+    try:
+        raw_abs = canvas._validate_raw_path(p)
+        if needs_sdcard and not os.path.exists("/sdcard"):
+            clean = Path(raw_abs)
+            if ".." in clean.parts:
+                raise canvas.CanvasError("refused: invalid path")
+            canvas._check_save_denylist(clean)
+            return None
+        real_root, rel_parts = canvas._match_save_root(raw_abs)
+        target = real_root.joinpath(*rel_parts)
+        canvas._check_save_denylist(target)
+        canvas._check_save_denylist(Path(os.path.realpath(str(target))))
+        return None
+    except canvas.CanvasError as e:
+        return str(e)
+
+vec_bad = []
+for vc in vectors:
+    vp = vc["path"].replace("{HOME}", REAL_HOME)
+    o_err = _server_open_check(vp)
+    s_err = _server_save_check(vp, bool(vc.get("needsSdcard")))
+    if vc["open"] == "refuse" and o_err is None:
+        vec_bad.append(f"open should refuse {vc['path']}")
+    if vc["open"] == "allow" and o_err is not None:
+        vec_bad.append(f"open should allow {vc['path']}: {o_err}")
+    if vc["save"] == "refuse" and s_err is None:
+        vec_bad.append(f"save should refuse {vc['path']}")
+    if vc["save"] == "allow" and s_err is not None:
+        vec_bad.append(f"save should allow {vc['path']}: {s_err}")
+check(f"canvas.py matches all {len(vectors)} shared vectors in canvas-path-vectors.json", not vec_bad, "; ".join(vec_bad[:5]))
+check("_is_in_secret_reach matches .hermes/.hermes-mobile segments at any depth",
+      canvas._is_in_secret_reach(Path("/data/data/com.termux/files/home/.hermes/config.yaml"))
+      and canvas._is_in_secret_reach(Path("/sdcard/.hermes-mobile/key"))
+      and not canvas._is_in_secret_reach(Path(REAL_HOME) / "ordinary.txt"))
 
 # Secrets & internal files refused on open_file (including symlinked profiles, Finding 2 & 3).
 hermes_dir = os.path.join(REAL_HOME, ".hermes")
@@ -199,6 +266,8 @@ netrc_path = os.path.join(REAL_HOME, ".netrc")
 open(netrc_path, "w").write("machine x password y\n")
 aws_creds = os.path.join(REAL_HOME, ".aws", "credentials")
 open(aws_creds, "w").write("[default]\n")
+termux_props = os.path.join(REAL_HOME, ".termux", "termux.properties")
+open(termux_props, "w").write("use-black-ui=true\n")
 auto_path = os.path.join(hermes_dir, "mobile", "auto.json")
 open(auto_path, "w").write("{}")
 proj_env = os.path.join(REAL_HOME, ".env.local")
@@ -211,8 +280,8 @@ for label, secret_p in [
     ("profile mobile/", prof_mobile), ("symlinked profile auth.json", linked_auth),
     ("symlinked profile mobile/", linked_mobile), (".hermes-mobile/key", key_path),
     (".ssh key", ssh_path), (".android/adbkey", android_key), (".gnupg key", gnupg_key),
-    (".netrc", netrc_path), (".aws/credentials", aws_creds), ("mobile/auto.json", auto_path),
-    (".env.local", proj_env), (".ENV.PROD (case-insensitive)", upper_env),
+    (".netrc", netrc_path), (".aws/credentials", aws_creds), (".termux/termux.properties", termux_props),
+    ("mobile/auto.json", auto_path), (".env.local", proj_env), (".ENV.PROD (case-insensitive)", upper_env),
 ]:
     check(f"open_file refuses {label}", "refused" in (raises(canvas.open_file, S, secret_p) or ""))
 
@@ -227,7 +296,6 @@ os.link(hl_src, hl_dst)
 check("open_file still allows hard-linked ordinary user file outside Hermes home", canvas.open_file(S, hl_dst)["content"] == "ordinary")
 
 # Case-insensitive path component checks (Finding 4).
-from pathlib import Path
 check("case-insensitive open deny (.AWS/credentials)", "refused" in (raises(canvas._check_open_path, Path(REAL_HOME) / ".AWS" / "credentials") or ""))
 check("case-insensitive save deny (.Hermes/Config.YAML)", "refused" in (raises(canvas._check_save_denylist, Path(REAL_HOME) / ".Hermes" / "Config.YAML") or ""))
 check("case-insensitive save deny (.Config/Fish/config.fish)", "refused" in (raises(canvas._check_save_denylist, Path(REAL_HOME) / ".Config" / "Fish" / "config.fish") or ""))
@@ -256,7 +324,6 @@ protected_save_files = [
     (".config/fish/config.fish", os.path.join(REAL_HOME, ".config", "fish", "config.fish")),
     ("~/bin script", os.path.join(REAL_HOME, "bin", "hm-local")),
     ("~/.local/bin script", os.path.join(REAL_HOME, ".local", "bin", "tool")),
-    ("~/.termux/termux.properties", os.path.join(REAL_HOME, ".termux", "termux.properties")),
 ]
 for label, prot_p in protected_save_files:
     if not os.path.exists(prot_p):
@@ -267,8 +334,8 @@ for label, prot_p in protected_save_files:
     err = raises(canvas.save_file, S, od["id"], force=True)
     check(f"save_file refuses {label} even with force=True", "refused" in (err or "") and open(prot_p).read() == orig, str(err))
 
-# Forged docs pointing to secret dirs (.android, .gnupg, .netrc, .aws) are also refused on save_file.
-for label, sec_p in [(".android/adbkey", android_key), (".gnupg/secring.gpg", gnupg_key), (".netrc", netrc_path), (".aws/credentials", aws_creds)]:
+# Forged docs pointing to secret dirs (.android, .gnupg, .netrc, .aws, .termux) are also refused on save_file.
+for label, sec_p in [(".android/adbkey", android_key), (".gnupg/secring.gpg", gnupg_key), (".netrc", netrc_path), (".aws/credentials", aws_creds), (".termux/termux.properties", termux_props)]:
     orig = open(sec_p).read()
     fd_sec = canvas.create(S, f"Forged-{label}", "evil", path=sec_p)
     err = raises(canvas.save_file, S, fd_sec["id"], force=True)
@@ -354,6 +421,9 @@ try:
     client = TestClient(app)
     S_HTTP = "chat-http"
     import inspect
+    check("plugin_api._canvas registers hm_canvas after exec_module under a lock",
+          hasattr(papi, "_CANVAS_LOCK") and "exec_module" in inspect.getsource(papi._canvas)
+          and inspect.getsource(papi._canvas).index("exec_module") < inspect.getsource(papi._canvas).index('sys.modules["hm_canvas"] = mod'))
     for fn_name in ("canvas_list", "canvas_get", "canvas_version", "canvas_create", "canvas_write", "canvas_restore", "canvas_rename", "canvas_open_file", "canvas_save_file", "canvas_delete"):
         check(f"plugin_api.{fn_name} is sync def (off event loop)", not inspect.iscoroutinefunction(getattr(papi, fn_name)))
     r_nul = client.post("/api/plugins/hermes-mobile/canvas/open-file", json={"session": S_HTTP, "path": os.path.join(REAL_HOME, "bad\x00.txt")})

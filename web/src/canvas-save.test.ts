@@ -28,9 +28,22 @@ vi.mock('./lockview', async () => {
   }
 })
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { ApiError } from './api'
 import { canvasOpenBlockReason, canvasSaveBlockReason, openFileInCanvas, saveToFile } from './canvas'
 import { getState, setState, type ActiveSession } from './store'
+
+interface VectorCase {
+  path: string
+  open: 'allow' | 'refuse'
+  save: 'allow' | 'refuse'
+  needsSdcard?: boolean
+  note?: string
+}
+const vectors: { cases: VectorCase[] } = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../../tools/canvas-path-vectors.json'), 'utf8')
+)
 
 const chat = (storedId = 's-cv'): ActiveSession => ({
   runtimeId: `rt-${storedId}`,
@@ -49,6 +62,21 @@ const chat = (storedId = 's-cv'): ActiveSession => ({
   attachments: [],
   turnStart: null,
   goal: null
+})
+
+describe('shared canvas-path-vectors.json parity', () => {
+  it('matches every open and save vector in tools/canvas-path-vectors.json', () => {
+    expect(vectors.cases.length).toBeGreaterThan(40)
+    for (const c of vectors.cases) {
+      const p = c.path.replace('{HOME}', '/root')
+      const openReason = canvasOpenBlockReason(p)
+      const saveReason = canvasSaveBlockReason(p)
+      if (c.open === 'refuse') expect(openReason, `open refuse: ${p} (${c.note})`).not.toBeNull()
+      else expect(openReason, `open allow: ${p} (${c.note})`).toBeNull()
+      if (c.save === 'refuse') expect(saveReason, `save refuse: ${p} (${c.note})`).not.toBeNull()
+      else expect(saveReason, `save allow: ${p} (${c.note})`).toBeNull()
+    }
+  })
 })
 
 describe('canvasOpenBlockReason', () => {
