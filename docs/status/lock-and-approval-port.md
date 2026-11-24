@@ -24,6 +24,8 @@ generated-text test compares it with a port of Hermes's own steps (checked once 
 Not ported (not on `main`): the `/bg`, `/cron add` and board-command refusal in a chat that has read phone data, and the
 sub-agent and kept-chat routing.
 
+Brought up to date with `main` (2026-11-24): merged `origin/main` (keeping both the lock-screen mock hooks and `main`'s timer/delay bounds); `tools/check.sh` passed (spec, changelog, attribution, web typecheck, 809 unit tests, all 7 browser e2e shards, patches, and `tools/java-check.sh` including `tools/test_approval_lock.sh`; `tools/api-check.sh` skipped without Android SDK, no phone).
+
 **Next:** the owner merges; then delete this file.
 
 **Needs a real phone:** the checks listed in [docs/manual-tests.md](../manual-tests.md) under "Confirm approvals with
