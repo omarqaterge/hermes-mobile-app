@@ -122,7 +122,10 @@ let routeFail = {}
 // under what PUT /api/config saved, merged like Hermes's _deep_merge (maps merge, anything else replaces, null over a map
 // is ignored). The model, reasoning, plugin list and rotation keys keep their own handling above and below.
 const configDefaults = (({ _comment, ...d }) => d)(require('./fixtures/hermes-config-defaults.json'))
-let cfgSaved = {}
+// Start the mock's active config with approvals.mode = 'manual' (matching seed.py and the mock's own approval prompts);
+// GET /api/config/defaults still returns Hermes's raw defaults. Tests switch it via PUT /api/config or /__mock { approvalsMode, profile? }.
+let cfgSaved = { approvals: { mode: 'manual' } }
+let cfgSavedByProfile = {}
 const isMap = v => v && typeof v === 'object' && !Array.isArray(v)
 const deepMerge = (base, over) => {
   const out = { ...base }
@@ -258,6 +261,14 @@ const server = http.createServer((req, res) => {
       if (b.gen !== undefined) runtimeGen = b.gen
       if (b.forgetDrafts) draftGen++
       if (b.draftGen !== undefined) draftGen = b.draftGen
+      if (b.approvalsMode !== undefined) {
+        if (b.profile && b.profile !== 'default') {
+          if (b.approvalsMode === null) delete cfgSavedByProfile[b.profile]
+          else cfgSavedByProfile[b.profile] = deepMerge(cfgSavedByProfile[b.profile] || {}, { approvals: { mode: b.approvalsMode } })
+        } else {
+          cfgSaved = deepMerge(cfgSaved, { approvals: { mode: b.approvalsMode } })
+        }
+      }
       if (b.up) refuseUntil = 0 // Hermes is back now (ends a drop early)
       if (b.drop) {
         // Hermes goes away: close every socket and refuse new ones for a while.
@@ -512,14 +523,19 @@ const server = http.createServer((req, res) => {
     if (p === '/api/dashboard/plugins') return send([{ name: 'hermes-mobile' }, { name: 'kanban' }])
     if (p === '/api/config' && req.method === 'GET') {
       // Like Hermes: load_config (defaults merged) without the top-level keys that start with "_".
-      const c = Object.fromEntries(Object.entries(deepMerge(configDefaults, cfgSaved)).filter(([k]) => !k.startsWith('_')))
+      const prof = url.searchParams.get('profile') || ''
+      const saved = prof && prof !== 'default' && cfgSavedByProfile[prof] ? deepMerge(cfgSaved, cfgSavedByProfile[prof]) : cfgSaved
+      const c = Object.fromEntries(Object.entries(deepMerge(configDefaults, saved)).filter(([k]) => !k.startsWith('_')))
       return send({ ...c, agent: { ...c.agent, reasoning_effort: 'high' }, plugins: { ...c.plugins, enabled: pluginEnabled ? ['other', 'hermes-mobile'] : ['other'] }, ...rotation })
     }
     if (p === '/api/config/defaults') return send(configDefaults)
     // Hermes's schema has a field per option; the app reads only the time zone list from it (Hermes Settings).
     if (p === '/api/config/schema')
       return send({
-        fields: { timezone: { type: 'select', description: 'IANA timezone (e.g. America/New_York). Blank uses the system timezone.', category: 'general', options: ['Africa/Cairo', 'America/New_York', 'Asia/Tokyo', 'Europe/Amsterdam', 'UTC'] } },
+        fields: {
+          timezone: { type: 'select', description: 'IANA timezone (e.g. America/New_York). Blank uses the system timezone.', category: 'general', options: ['Africa/Cairo', 'America/New_York', 'Asia/Tokyo', 'Europe/Amsterdam', 'UTC'] },
+          'approvals.mode': { type: 'select', description: 'Command approval mode: manual, smart, or off.', category: 'security', options: ['manual', 'smart', 'off'] }
+        },
         category_order: ['general', 'agent', 'terminal', 'display', 'delegation', 'memory', 'compression', 'security', 'browser', 'voice', 'tts', 'stt', 'logging', 'discord', 'auxiliary']
       })
     if (p === '/api/config' && req.method === 'PUT') {
@@ -529,7 +545,9 @@ const server = http.createServer((req, res) => {
       if (Array.isArray(b.config?.fallback_providers)) rotation.fallback_providers = b.config.fallback_providers
       const rest = Object.fromEntries(Object.entries(b.config || {}).filter(([k]) => !OWN_CONFIG.has(k)))
       if (rest.agent) rest.agent = Object.fromEntries(Object.entries(rest.agent).filter(([k]) => !k.startsWith('reasoning')))
-      cfgSaved = deepMerge(cfgSaved, rest)
+      const prof = url.searchParams.get('profile') || ''
+      if (prof && prof !== 'default') cfgSavedByProfile[prof] = deepMerge(cfgSavedByProfile[prof] || {}, rest)
+      else cfgSaved = deepMerge(cfgSaved, rest)
       if (b.config?.credential_pool_strategies) rotation.credential_pool_strategies = { ...rotation.credential_pool_strategies, ...b.config.credential_pool_strategies }
       return send({ ok: true })
     }

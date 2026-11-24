@@ -1,5 +1,5 @@
 // Answers from a notification, several questions at once, a huge approval warning, phone data approvals.
-const { calls, rpcs, sleep, check, mock, nativeShell, setMotion, WEB } = require('../lib.cjs')
+const { calls, rpcs, sleep, check, mock, nativeShell, setMotion, lowContrast, WEB } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
@@ -537,5 +537,346 @@ module.exports = async t => {
     check((await wide.getByRole('button', { name: /Needs you/ }).count()) === 0 && (await widePanel.getByRole('group', { name: 'Needs you' }).count()) === 0, 'needs you: a chat that is not in this list is not counted')
     await mock({ waiting: [] })
     await wide.close()
+  }
+
+  // ── Short-viewport approval sheet: at 740 x 360 and 360 x 520, at 1x and phone font scale 2.0, with 4 buttons and a long
+  //    description and command, the start of the command and Deny are both visible and tappable on first paint before any scroll. ──
+  {
+    const { browser } = t
+    for (const [label, width, height, phoneScale] of [
+      ['landscape 740x360 1x', 740, 360, 1],
+      ['landscape 740x360 font 2.0', 740, 360, 2],
+      ['short portrait 360x520 1x', 360, 520, 1],
+      ['short portrait 360x520 font 2.0', 360, 520, 2]
+    ]) {
+      const lp = await browser.newPage({ viewport: { width, height } })
+      await lp.addInitScript(nativeShell)
+      await lp.addInitScript(fs => {
+        window.__socks = []
+        window.__out = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+          }
+          send(d) {
+            try {
+              window.__out.push(JSON.parse(d))
+            } catch { /* */ }
+            return super.send(d)
+          }
+        }
+        Object.assign(window.HermesAndroid, { phoneTextScale: () => fs })
+      }, phoneScale)
+      await lp.goto(WEB + '/')
+      await lp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+      await lp.waitForFunction(() => window.__socks.some(x => x.readyState === 1), { timeout: 5000 })
+      const longCmd = 'chmod 666 ' + Array.from({ length: 40 }, (_, i) => `~/hm-test/F${i + 1}.txt`).join(' ')
+      const desc = 'world/other-writable permissions; ' + 'detailed safety note about this command. '.repeat(8)
+      await lp.evaluate(([cmd, description]) => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        s.dispatchEvent(new MessageEvent('message', {
+          data: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'srv-land-1',
+            method: 'approval',
+            params: { session_id: 'rt-new', command: cmd, description, choices: ['once', 'session', 'always', 'deny'], allow_session: true, allow_permanent: true }
+          })
+        }))
+      }, [longCmd, desc])
+      const dlg = lp.getByRole('dialog')
+      const titleEl = dlg.getByText('Approve command?')
+      await titleEl.waitFor({ timeout: 5000 })
+      const dBox = await dlg.boundingBox()
+      const titleBox = await titleEl.boundingBox()
+      const titleTouch = await titleEl.evaluate(el => getComputedStyle(el).touchAction)
+      const descBox = await dlg.getByText(/world\/other-writable permissions/).boundingBox()
+      const cmdEl = dlg.getByText(/chmod 666 ~\/hm-test\/F1\.txt/)
+      const cmdBox = await cmdEl.boundingBox()
+      const denyBtn = dlg.getByRole('button', { name: 'Deny', exact: true })
+      const denyBeforeScroll = await denyBtn.boundingBox()
+      check(
+        dBox && dBox.y >= 0 && titleBox && titleBox.y >= 0 && titleBox.height > 10 && titleTouch !== 'none',
+        `${label}: sheet and title sit inside the viewport and title allows touch scroll (${JSON.stringify({ dBox, titleBox, titleTouch })})`
+      )
+      check(
+        descBox && descBox.height >= 16 && descBox.y >= dBox.y && descBox.y + 12 <= height,
+        `${label}: the approval description is visible on first paint (${JSON.stringify(descBox)})`
+      )
+      check(
+        cmdBox && cmdBox.height >= 24 && cmdBox.y >= dBox.y && cmdBox.y + 20 <= height,
+        `${label}: the start of the long command is visible on first paint (${JSON.stringify(cmdBox)})`
+      )
+      check(
+        denyBeforeScroll && denyBeforeScroll.height >= 44 && denyBeforeScroll.y >= 0 && denyBeforeScroll.y + denyBeforeScroll.height <= height,
+        `${label}: Deny is visible and tappable on first paint before any scroll (${JSON.stringify(denyBeforeScroll)})`
+      )
+      const scrolled = await cmdEl.evaluate(el => {
+        const before = el.scrollTop
+        el.scrollTop = el.scrollHeight
+        return { scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, moved: el.scrollTop > before, hasEnd: (el.textContent || '').includes('F40.txt') }
+      })
+      check(scrolled.hasEnd && scrolled.scrollHeight > scrolled.clientHeight && scrolled.moved, `${label}: the long command block scrolls to the end (${JSON.stringify(scrolled)})`)
+      for (const name of ['Allow once', 'Allow this session', 'Always allow', 'Deny']) {
+        const btn = dlg.getByRole('button', { name, exact: true })
+        const b = await btn.boundingBox()
+        check(b && b.height >= 44 && b.y >= 0 && b.y + b.height <= height, `${label}: "${name}" button is visible and tappable without scrolling (${JSON.stringify(b)})`)
+      }
+      await denyBtn.click()
+      await dlg.waitFor({ state: 'detached', timeout: 3000 })
+      const ans = await lp.evaluate(() => window.__out.filter(m => m.id === 'srv-land-1' && 'result' in m))
+      check(ans.length === 1 && ans[0].result.choice === 'deny', `${label}: Deny closes the sheet and answers Hermes`)
+      // A question in the same short viewport keeps its whole text: only command approvals squeeze the description.
+      const longQ = 'Which of these folders should I tidy first? ' + 'Here is more detail about each folder you may want to read. '.repeat(6)
+      await lp.evaluate(question => {
+        const s = window.__socks.filter(x => x.readyState === 1).pop()
+        s.dispatchEvent(new MessageEvent('message', {
+          data: JSON.stringify({ jsonrpc: '2.0', id: 'srv-land-q', method: 'clarify', params: { session_id: 'rt-new', question } })
+        }))
+      }, longQ)
+      const qEl = lp.getByRole('dialog').getByText(/Which of these folders should I tidy first/)
+      await qEl.waitFor({ timeout: 5000 })
+      const qStyle = await qEl.evaluate(el => {
+        const d = el.closest('.sheet-desc') || el
+        return { maxHeight: getComputedStyle(d).maxHeight, height: d.getBoundingClientRect().height }
+      })
+      check(qStyle.maxHeight === 'none' && qStyle.height > 56, `${label}: a question keeps its full text, not a 56 px box (${JSON.stringify(qStyle)})`)
+      await lp.close()
+    }
+  }
+
+  // ── Hermes approvals.mode: smart/off wording, Advanced settings warning, lock screen, Live mode, 360 px fit, per-profile, offline. ──
+  {
+    const { browser } = t
+    const putsBefore = () => calls().filter(c => c.http === 'PUT' && c.path === '/api/config').length
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await p.addInitScript(nativeShell)
+    await p.addInitScript(() => {
+      window.__socks = []
+      window.__blockWs = false
+      const Orig = window.WebSocket
+      window.WebSocket = class extends Orig {
+        constructor(...a) {
+          super(...a)
+          window.__socks.push(this)
+          if (window.__blockWs) setTimeout(() => this.close(), 0)
+        }
+      }
+    })
+    let pageCfgGets = 0
+    p.on('request', r => {
+      if (r.method() === 'GET' && new URL(r.url()).pathname.replace(/^\/__api/, '') === '/api/config') pageCfgGets++
+    })
+    await mock({ approvalsMode: 'smart', bots: true })
+    const startPuts = putsBefore()
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    const smartBtn = p.getByRole('button', { name: /Hermux approves low-risk commands by itself.*\. Change how much Hermux may do without asking$/ })
+    await smartBtn.waitFor({ timeout: 5000 })
+    check((await smartBtn.innerText()).trim() === 'Auto · smart', `approvals.mode smart: Auto button shows Auto · smart (${JSON.stringify(await smartBtn.innerText())})`)
+    check(
+      pageCfgGets <= 2,
+      `approvals.mode: start-up shares loadDefaultModel's GET /api/config without adding an extra read (${pageCfgGets})`
+    )
+
+    // 360 px composer row fit for Auto · smart (and later Approvals off) with a long model name.
+    const rowFits360 = async label => {
+      await p.setViewportSize({ width: 360, height: 812 })
+      const fit = await p.evaluate(() => {
+        const row = document.querySelector('.model-row'), r = row.getBoundingClientRect(), btn = row.querySelector('.auto-btn')
+        const nameEl = row.querySelector('.model-chip-name')
+        const prev = nameEl.textContent
+        nameEl.textContent = 'provider/a-very-long-model-name-that-has-to-ellipsize-20261124'
+        const res = {
+          overflow: row.scrollWidth > row.clientWidth + 1,
+          inside: [...row.children].every(c => { const b = c.getBoundingClientRect(); return b.left >= r.left - 1 && b.right <= r.right + 1 }),
+          clipped: btn.scrollWidth > btn.clientWidth + 1
+        }
+        nameEl.textContent = prev
+        return res
+      })
+      check(!fit.overflow && fit.inside && !fit.clipped, `approvals.mode ${label}: chip fits composer row at 360 px (${JSON.stringify(fit)})`)
+      await p.setViewportSize({ width: 375, height: 812 })
+    }
+    await rowFits360('smart')
+
+    // Live mode (hideWhenOff): Auto reminder still shows while Hermes approvals.mode is smart.
+    await p.getByRole('button', { name: 'Live conversation' }).click()
+    await p.getByText(/Live · /).waitFor({ timeout: 3000 })
+    const liveAuto = p.locator('.live-bar').getByRole('button', { name: /Hermux approves low-risk commands by itself/ })
+    check((await liveAuto.count()) === 1, 'approvals.mode smart: Live mode bar shows Auto reminder when chat Auto is off')
+    await p.getByRole('button', { name: 'End', exact: true }).click()
+    await p.getByText(/Live · /).waitFor({ state: 'detached', timeout: 3000 })
+
+    // Lock screen: AutoButton hides mode wording, asks to unlock instead of opening picker, and leaves no pending Settings target.
+    await p.evaluate(() => window.hermesLockView(true))
+    const lockedAuto = p.getByRole('button', { name: 'Auto is off. Change how much Hermux may do without asking', exact: true })
+    await lockedAuto.waitFor({ timeout: 3000 })
+    check((await lockedAuto.innerText()).trim() === 'Auto', 'approvals.mode lock screen: Auto button hides smart/off mode wording')
+    const unlocksBefore = await p.evaluate(() => (window.__nativeCalls || []).filter(x => x === 'requestUnlock').length)
+    await lockedAuto.click()
+    const unlocksAfter = await p.evaluate(() => (window.__nativeCalls || []).filter(x => x === 'requestUnlock').length)
+    check((await p.getByRole('dialog').count()) === 0 && unlocksAfter > unlocksBefore, 'approvals.mode lock screen: tapping Auto asks to unlock and does not open the picker')
+    await p.evaluate(() => window.hermesLockView(false))
+    await smartBtn.waitFor({ timeout: 5000 })
+
+    // Picker + direct jump to Advanced settings + confirmation dialog before saving off / all bots, no dialog for manual.
+    await smartBtn.click()
+    const picker = p.getByRole('dialog')
+    await picker.getByText('Auto: run without asking').waitFor({ timeout: 3000 })
+    const pickerText = await picker.innerText()
+    check(
+      !pickerText.includes('Hermux asks before risky commands') && pickerText.includes('low-risk commands by itself'),
+      'approvals.mode smart: Auto picker says Hermux approves low-risk commands and does not imply every risky command asks'
+    )
+    const openSetting = picker.getByRole('button', { name: /Approvals mode · Smart/ })
+    check((await openSetting.count()) === 1, 'approvals.mode smart: Auto picker offers a link to the setting')
+    await openSetting.click()
+    await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
+    const modeRow = p.getByRole('button', { name: /approvals\.mode/ })
+    await modeRow.waitFor({ timeout: 5000 })
+    check((await modeRow.innerText()).includes('smart'), 'approvals.mode smart: the link opens Advanced settings directly on approvals.mode')
+
+    // ConfigTab.save confirmation: off asks first (this bot, then every bot); Cancel writes nothing; Allow writes; manual needs no dialog.
+    await modeRow.click()
+    const cfgSheet = p.getByRole('dialog')
+    await cfgSheet.getByRole('button', { name: 'off', exact: true }).click()
+    const putsBeforeWarn = putsBefore()
+    await cfgSheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByText('Turn off approvals?').waitFor({ timeout: 3000 })
+    check((await p.getByText(/in every chat of this bot/).count()) === 1, 'approvals.mode save off: warns before writing for this bot')
+    await p.getByRole('button', { name: 'Cancel', exact: true }).last().click()
+    await p.getByText('Turn off approvals?').waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === putsBeforeWarn, 'approvals.mode save off: Cancel writes no PUT /api/config')
+
+    await cfgSheet.getByRole('switch', { name: /Apply to all bots/ }).click()
+    await cfgSheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByText('Turn off approvals?').waitFor({ timeout: 3000 })
+    check((await p.getByText(/in every chat of every bot/).count()) === 1, 'approvals.mode save off (all bots): warning says every bot')
+    await p.getByRole('button', { name: 'Cancel', exact: true }).last().click()
+    await p.getByText('Turn off approvals?').waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === putsBeforeWarn, 'approvals.mode save off (all bots): Cancel writes no PUT /api/config')
+
+    await cfgSheet.getByRole('switch', { name: /Apply to all bots/ }).click()
+    await cfgSheet.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByRole('button', { name: 'Turn off approvals', exact: true }).click()
+    await cfgSheet.waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === putsBeforeWarn + 1, 'approvals.mode save off: confirming writes PUT /api/config')
+
+    // Going back to manual needs no warning dialog.
+    await modeRow.waitFor({ timeout: 5000 })
+    await modeRow.click()
+    const cfgSheet2 = p.getByRole('dialog')
+    await cfgSheet2.getByRole('button', { name: 'manual', exact: true }).click()
+    await cfgSheet2.getByRole('button', { name: 'Save', exact: true }).click()
+    await cfgSheet2.waitFor({ state: 'detached', timeout: 3000 })
+    check((await p.getByText(/^(Turn off approvals|Let a model approve commands|Give Hermux full access)\?$/).count()) === 0 && putsBefore() === putsBeforeWarn + 2, 'approvals.mode save manual: saves without a warning dialog')
+
+    // smart gets its own warning (not "full access"); Cancel writes nothing.
+    await modeRow.waitFor({ timeout: 5000 })
+    await modeRow.click()
+    const cfgSheet3 = p.getByRole('dialog')
+    await cfgSheet3.getByRole('button', { name: 'smart', exact: true }).click()
+    await cfgSheet3.getByRole('button', { name: 'Save', exact: true }).click()
+    await p.getByText('Let a model approve commands?').waitFor({ timeout: 3000 })
+    check(
+      (await p.getByRole('button', { name: 'Use smart approvals', exact: true }).count()) === 1 && (await p.getByText('Give Hermux full access?').count()) === 0,
+      'approvals.mode save smart: its own warning title and button, not Full access'
+    )
+    await p.getByRole('button', { name: 'Cancel', exact: true }).last().click()
+    await p.getByText('Let a model approve commands?').waitFor({ state: 'detached', timeout: 3000 })
+    check(putsBefore() === putsBeforeWarn + 2, 'approvals.mode save smart: Cancel writes no PUT /api/config')
+    await p.evaluate(() => window.hermesBack())
+
+    // Back from Advanced settings returns to the chat.
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode: Back from Advanced settings returns to the chat')
+
+    // Per-profile: default stays manual while work is smart; AccessPage and ConfigTab target the same bot.
+    await mock({ approvalsMode: 'manual' })
+    await mock({ approvalsMode: 'smart', profile: 'work' })
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: /Bot/ }).click()
+    await p.getByRole('button', { name: /^Work/ }).click()
+    await smartBtn.waitFor({ timeout: 5000 })
+    check((await smartBtn.innerText()).trim() === 'Auto · smart', 'approvals.mode per-profile: switching to Work shows Auto · smart')
+
+    // /yolo off notice in smart mode uses the mode-aware wording, and /approvals rechecks mode.
+    await p.getByPlaceholder('Message Hermux').fill('/yolo on')
+    await p.getByRole('button', { name: 'Send', exact: true }).click()
+    await p.getByText(/Full access on for this chat/).waitFor({ timeout: 5000 })
+    await p.getByPlaceholder('Message Hermux').fill('/yolo off')
+    await p.getByRole('button', { name: 'Send', exact: true }).click()
+    await p.getByText('Auto off: Hermux still approves low-risk commands by itself').waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode smart: /yolo off notice uses mode-aware wording')
+
+    await mock({ approvalsMode: 'off', profile: 'work' })
+    await p.getByPlaceholder('Message Hermux').fill('/approvals manual')
+    await p.getByRole('button', { name: 'Send', exact: true }).click()
+    const offBtn = p.getByRole('button', { name: /Hermux approves every command without asking.*\. Change how much Hermux may do without asking$/ })
+    await offBtn.waitFor({ timeout: 5000 })
+    check((await offBtn.innerText()).trim() === 'Approvals off', 'approvals.mode: /approvals triggers a fresh mode recheck')
+    await rowFits360('off')
+
+    // Light theme contrast on the calm Auto chip and picker note.
+    await p.evaluate(() => {
+      document.documentElement.dataset.theme = 'light'
+      document.documentElement.dataset.glass = 'off'
+    })
+    const lowOff = await lowContrast(p, '.composer-wrap')
+    await offBtn.click()
+    await p.getByRole('dialog').getByText('Auto: run without asking').waitFor({ timeout: 3000 })
+    const lowPicker = await lowContrast(p, '[role="dialog"]')
+    check(lowOff.length === 0 && lowPicker.length === 0, `approvals.mode off (Light): chip and picker note reach 4.5:1 (${JSON.stringify({ lowOff, lowPicker })})`)
+    await p.evaluate(() => window.hermesBack())
+
+    // Settings main page & Access & privacy: scope matches the active bot (Work) even after viewing Default on Models.
+    await mock({ approvalsMode: 'smart', profile: 'work' })
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    const accessRow = p.getByRole('button', { name: /^Access & privacy/ })
+    await accessRow.waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: /^Access & privacy.*Smart approvals/ }).waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode smart: Settings main page shows Smart approvals')
+    // Change Settings scope to default on Models, then come back to Access & privacy (still showing active bot Work).
+    await p.getByRole('button', { name: /^Models/ }).click()
+    await p.getByRole('heading', { level: 1, name: 'Models' }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: 'default', exact: true }).click()
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await accessRow.waitFor({ timeout: 5000 })
+    await accessRow.click()
+    await p.getByRole('heading', { level: 1, name: 'Access & privacy' }).waitFor({ timeout: 5000 })
+    const autoAll = p.getByRole('button', { name: /^Auto for all chats/ })
+    check((await autoAll.innerText()).includes('low-risk commands by itself'), `approvals.mode smart: Auto for all chats explains smart mode (${JSON.stringify(await autoAll.innerText())})`)
+    const hermesRow = p.getByRole('button', { name: /^Approvals mode/ })
+    check((await hermesRow.count()) === 1 && (await hermesRow.innerText()).includes('Smart'), 'approvals.mode smart: Access & privacy shows the Approvals mode row')
+    await hermesRow.click()
+    await p.getByRole('heading', { level: 1, name: 'Advanced settings' }).waitFor({ timeout: 5000 })
+    check((await p.getByRole('note', { name: 'Bot: Work' }).count()) === 1, 'approvals.mode: Access & privacy opens Advanced settings on the active bot (Work), not a stale scope')
+    await p.getByRole('button', { name: /approvals\.mode/ }).waitFor({ timeout: 5000 })
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByRole('heading', { level: 1, name: 'Access & privacy' }).waitFor({ timeout: 5000 })
+    check(true, 'approvals.mode smart: Back from Advanced settings returns to Access & privacy')
+
+    // Offline Settings: drop only this page's socket (never the shared page's); must NOT say "Auto off" as if Hermes asks.
+    await p.getByRole('button', { name: 'Back', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await p.evaluate(() => {
+      window.__blockWs = true
+      for (const s of window.__socks) s.close()
+    })
+    await p.getByRole('group', { name: 'Hermux is offline' }).waitFor({ timeout: 5000 })
+    const offlineAccess = await p.getByRole('button', { name: /^Access & privacy/ }).innerText()
+    check(!offlineAccess.includes('Auto off'), `approvals.mode offline: Settings main page does not claim Auto off (${JSON.stringify(offlineAccess)})`)
+
+    // Reading/showing never wrote config outside the two explicit Save confirmations above.
+    check(putsBefore() === startPuts + 2, `approvals.mode: only explicit confirmed saves write PUT /api/config (${putsBefore() - startPuts})`)
+
+    // Restore baseline mock state for later checks.
+    await mock({ approvalsMode: 'manual', bots: false })
+    await mock({ approvalsMode: null, profile: 'work' })
+    await p.close()
   }
 }

@@ -141,7 +141,7 @@ export interface Option {
 }
 
 /** Bottom-sheet list with a check on the current choice. */
-export function PickerSheet({ title, options, value, onPick, onClose }: { title: string; options: Option[]; value: string; onPick: (v: string) => void; onClose: () => void }) {
+export function PickerSheet({ title, options, value, onPick, onClose, footer }: { title: string; options: Option[]; value: string; onPick: (v: string) => void; onClose: () => void; footer?: ReactNode }) {
   const drag = useSheetDrag(onClose)
   useBackHandler(onClose)
   const groups: Array<[string, Option[]]> = []
@@ -183,6 +183,7 @@ export function PickerSheet({ title, options, value, onPick, onClose }: { title:
               </div>
             </div>
           ))}
+          {footer}
         </div>
       </div>
     </div>
@@ -302,13 +303,13 @@ export function MenuNote({ children }: { children: ReactNode }) {
 }
 
 /** A Row that shows the current choice and opens a PickerSheet. */
-export function SelectRow({ icon, tone, title, options, value, onChange, placeholder }: { icon?: ReactNode; tone?: Tone; title: string; options: Option[]; value: string; onChange: (v: string) => void; placeholder?: string }) {
+export function SelectRow({ icon, tone, title, options, value, onChange, placeholder, sub, footer }: { icon?: ReactNode; tone?: Tone; title: string; options: Option[]; value: string; onChange: (v: string) => void; placeholder?: string; sub?: string; footer?: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false)
   const cur = options.find(o => o.value === value)
   return (
     <>
-      <Row icon={icon} tone={tone} title={title} sub={cur?.label ?? placeholder ?? '—'} chevron onClick={() => setOpen(true)} />
-      {open && <PickerSheet title={title} options={options} value={value} onPick={onChange} onClose={() => setOpen(false)} />}
+      <Row icon={icon} tone={tone} title={title} sub={sub ?? cur?.label ?? placeholder ?? '—'} chevron onClick={() => setOpen(true)} />
+      {open && <PickerSheet title={title} options={options} value={value} onPick={onChange} onClose={() => setOpen(false)} footer={footer?.(() => setOpen(false))} />}
     </>
   )
 }

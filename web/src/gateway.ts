@@ -10,8 +10,9 @@ import { logEvent, noteConn, noteRpc } from './diaglog'
 import { flushDiagToPlugin } from './diagnostics'
 import { approvalNeedsConfirm, confirmAllow, forgetApprovalConfirm } from './approval-lock'
 import { lineageOf, noteLineage, noteListRow } from './lineage'
-import { detachedRefusal, detachedWork, hermesSlash, lockSafeCommand, loosensApprovals, yoloOffArg } from './slashwords'
+import { detachedRefusal, detachedWork, hermesCommand, hermesSlash, lockSafeCommand, loosensApprovals, yoloOffArg } from './slashwords'
 import { confirmLooseApprovals } from './access-confirm'
+import { currentApprovalsMode, doneOffToast, readProfileConfig, recheckApprovalsMode, setApprovalsStartupWait } from './approvals-mode'
 import { mintPhoneDataGrant, phoneDataTextOf, phoneDataView, setPhoneDataFullAccess } from './phone-data-request'
 import { forgetCheckpoints } from './checkpoints'
 import { quietStatus } from './quietstatus'
@@ -91,6 +92,7 @@ let chatOpened: Promise<void> = Promise.resolve()
 let openChatDone = (): void => {}
 /** Resolves once this connection's start-up chat is open (or there is none to open), or after 3 s. */
 export const afterChatOpens = (): Promise<void> => chatOpened
+setApprovalsStartupWait(afterChatOpens)
 
 client.onState(conn => {
   setState({ conn })
@@ -229,7 +231,7 @@ export function queueAndReconnect(chat: string, text: string): void {
 
 async function afterConnect(): Promise<void> {
   void loadSessions()
-  void afterChatOpens().then(loadDefaultModel)
+  void afterChatOpens().then(() => loadDefaultModel())
   // profiles.list walks every profile's skill tree (~2.5 s on a phone) and slowed the chat's own resume and
   // session.list when sent alongside them; only the drawer's profile switcher needs it, so it goes last.
   let profilesAsked = false
@@ -402,18 +404,20 @@ export function cachedSessions(profile: string): SessionListRow[] {
   }
 }
 
-/** What new chats start with (model + reasoning level), for the header before a chat exists. */
-export async function loadDefaultModel(): Promise<void> {
+/** What new chats start with (model + reasoning level), for the header before a chat exists. Also updates `approvals.mode` from the same config read. */
+export async function loadDefaultModel(fresh = false): Promise<void> {
+  const profile = getState().profile
   try {
     const [info, cfg] = await Promise.all([
       api<{ model?: string }>('GET', '/api/model/info'),
-      api<{ agent?: { reasoning_effort?: string; reasoning_overrides?: Record<string, string> } }>('GET', '/api/config').catch(() => null)
+      readProfileConfig(profile, { force: fresh })
     ])
     const model = info?.model || ''
-    const ag = cfg?.agent
+    const ag = (cfg as { agent?: { reasoning_effort?: string; reasoning_overrides?: Record<string, string> } } | null)?.agent
     // A per-model override (agent.reasoning_overrides) beats the general default.
     const effort = (model && ag?.reasoning_overrides?.[model]) || ag?.reasoning_effort || ''
-    setState({ defaultModel: model || getState().defaultModel, defaultEffort: effort })
+    // No config (offline, or the read failed): keep the last reasoning level instead of clearing it.
+    setState({ defaultModel: model || getState().defaultModel, defaultEffort: cfg ? effort : getState().defaultEffort })
   } catch {
     /* keep the last one */
   }
@@ -462,7 +466,7 @@ export async function switchProfile(profile: string): Promise<void> {
   sessionLimit = SESSIONS_PAGE
   setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), drawer: false, defaultModel: '', ...closeSubSheetIf() })
   void loadSessions()
-  void loadDefaultModel()
+  void loadDefaultModel(true)
 }
 
 // Chats you just left stay live in Hermes for a while: switching back is then Hermes's instant "already live"
@@ -1158,7 +1162,8 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
     const want = /^(on|1|true|yes)$/.test(w) ? true : /^(off|0|false|no)$/.test(w) ? false : null
     try {
       const now = await setYolo(a, want)
-      pushItem({ kind: 'notice', id: newId('n'), text: YOLO_NOTICE[now], level: now === 'full' ? 'warn' : 'info' })
+      const notice = now === 'off' ? doneOffToast(lockView() ? null : currentApprovalsMode(getState().profile)) : YOLO_NOTICE[now]
+      pushItem({ kind: 'notice', id: newId('n'), text: notice, level: now === 'full' ? 'warn' : 'info' })
     } catch (err) {
       pushItem({ kind: 'notice', id: newId('n'), text: `/yolo: ${errText(err)}`, level: 'error' })
     }
@@ -1228,6 +1233,7 @@ async function runSlash(a: ActiveSession, text: string, depth = 0): Promise<void
   }
   const out = r?.output || r?.notice || r?.message || r?.warning || `/${name}: done`
   pushItem({ kind: 'notice', id: newId('n'), text: out, level: r?.warning ? 'warn' : 'info' })
+  if (hermesCommand(name) === 'approvals') recheckApprovalsMode(getState().profile)
 }
 
 // ── queued follow-ups (queue.ts): sent one by one when the open chat's turn ends ──

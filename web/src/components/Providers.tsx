@@ -78,7 +78,7 @@ export function ProviderListView({ cat, profile, onChange, onPicked, part = 'all
   const changed = () => {
     reload()
     onChange?.()
-    void loadDefaultModel()
+    void loadDefaultModel(true)
   }
   // A provider was just connected (key saved, sign-in approved, endpoint saved): with no model yet, choose one now.
   const connectedNow = (slugs: string[]) => {

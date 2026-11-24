@@ -89,7 +89,7 @@ function Approval({ req }: { req: ServerRequest }) {
     <>
       <div className="sheet-title"><Icon n="warning" /> Approve {String(p.tool_name || 'command')}?</div>
       {/* A long warning or command scrolls; the answer buttons always stay on screen. */}
-      <div className="sheet-scroll">
+      <div className="sheet-scroll command-scroll">
         {p.description ? <div className="sheet-desc"><Linked text={tidyApprovalText(String(p.description))} /></div> : null}
         {p.command ? <pre className="sheet-code"><Linked text={String(p.command)} /></pre> : null}
         <AskedBy req={req} />
@@ -327,10 +327,12 @@ export function RequestSheet({ req }: { req: ServerRequest }) {
   useLayoutEffect(() => sheetShown(req.id), [req.id])
   return (
     <div className="sheet-backdrop">
-      <div className="sheet" role="dialog">
+      <div className="sheet request-sheet" role="dialog">
         <div className="sheet-grip" />
-        {from && !locked && <div className="sheet-from dim small">From {from}</div>}
-        {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
+        <div className="request-sheet-body">
+          {from && !locked && <div className="sheet-from dim small">From {from}</div>}
+          {req.method === 'approval' ? <Approval req={req} /> : req.method === 'clarify' ? <Clarify req={req} /> : <MaskedValue req={req} />}
+        </div>
       </div>
     </div>
   )
