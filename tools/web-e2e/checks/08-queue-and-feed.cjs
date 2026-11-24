@@ -3,11 +3,29 @@ const { MOCK, calls, rpcs, sleep, check, mock } = require('../lib.cjs')
 
 module.exports = async t => {
   const { page } = t
+  const waitFor = async (fn, ms = 5000) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      if (await fn()) return true
+      await sleep(50)
+    }
+    return Boolean(await fn())
+  }
+  // Open a clean stored chat of our own so this file does not depend on whatever chat an earlier file left open
+  // (e.g. s-slowstart from 06, whose canvas list is gated for 14) or on an empty draft whose first send triggers
+  // an initial canvas fetch during the battery check below.
+  const openMark = calls().length
+  await page.evaluate(() => window.hermesOpenSession('s-20'))
+  await page.locator('.msg.assistant', { hasText: 'answer s-20' }).waitFor({ timeout: 5000 })
+  await page.getByPlaceholder('Message Hermux').waitFor({ timeout: 5000 })
+  await waitFor(() => calls().slice(openMark).some(c => c.http === 'GET' && c.path === '/api/plugins/hermes-mobile/canvas' && c.query.includes('session=s-20')), 4000)
+
   // ── battery: while the open chat's turn waits on a command, the app doesn't poll the canvas (closed) and
   //    polls the activity feed at the idle pace, not every 3 s; one poll right after the turn ends ──
   const waitMark = calls().length
   await page.getByPlaceholder('Message Hermux').fill('wait a while')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  // Timing check: observe 6.5 s of an active turn to verify zero canvas polls and at most one idle-pace activity poll.
   await sleep(6500)
   const during = calls().slice(waitMark)
   const canvasPolls = during.filter(c => c.http === 'GET' && c.path === '/api/plugins/hermes-mobile/canvas').length
@@ -16,7 +34,7 @@ module.exports = async t => {
   check(activityPolls <= 1, `activity polled at the idle pace during the open chat's own turn (${activityPolls} in 6.5 s)`)
   await page.locator('.msg.assistant', { hasText: 'Waited.' }).waitFor({ timeout: 5000 })
   const endMark = calls().length
-  await sleep(3500)
+  await waitFor(() => calls().slice(endMark).some(c => c.path === '/api/plugins/hermes-mobile/activity'), 4500)
   check(calls().slice(endMark).some(c => c.path === '/api/plugins/hermes-mobile/activity'), 'activity polled once right after the turn (the review starts then)')
 
   // ── queue: a follow-up typed while Hermes works waits as a dashed bubble and is sent when the reply ends ──
@@ -72,6 +90,7 @@ module.exports = async t => {
     await queueText('d')
     await page.locator('.composer').getByRole('button', { name: 'Stop', exact: true }).click()
     await page.getByText('Queue paused').waitFor({ timeout: 4000 }).then(() => check(true, 'Stop pauses the queue (Queue paused)'), () => check(false, 'Stop pauses the queue (Queue paused)'))
+    // Negative check: wait briefly to confirm the paused queue sends nothing after Stop settles.
     await sleep(600)
     check(sends('d') === 0 && (await page.locator('.queued-msg', { hasText: 'd' }).count()) === 1, 'a paused queue sends nothing and keeps the bubble')
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
@@ -82,11 +101,12 @@ module.exports = async t => {
     await startSlow()
     await box.fill('steer me')
     await page.locator('.composer').getByRole('button', { name: 'Steer', exact: true }).click()
-    await sleep(300)
+    await waitFor(() => steers('steer me') === 1, 3000)
     check(steers('steer me') === 1, 'Steer calls session.steer')
     await queueText('later')
     await page.locator('.queued-msg', { hasText: 'later' }).getByRole('button', { name: 'Send queued message now' }).click()
-    await sleep(300)
+    await page.locator('.queued-msg').waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+    await waitFor(() => steers('later') === 1, 3000)
     check(steers('later') === 1 && (await page.locator('.queued-msg').count()) === 0, 'Send now steers the queued message and removes it')
     await page.locator('.msg.assistant', { hasText: 'Slow done.' }).nth(slow0 + 2).waitFor({ timeout: 6000 }).catch(() => {})
     await page.locator('.composer').getByRole('button', { name: 'Stop', exact: true }).waitFor({ state: 'detached', timeout: 4000 }).catch(() => {})
@@ -97,6 +117,7 @@ module.exports = async t => {
     await page.reload()
     await page.locator('.queued-msg', { hasText: 'e' }).waitFor({ timeout: 8000 }).then(() => check(true, 'the queue survives a reload'), () => check(false, 'the queue survives a reload'))
     check((await page.getByText('Queue paused').count()) === 1, 'after a reload the queue is paused')
+    // Negative check: wait briefly to confirm the reloaded paused queue does not auto-send.
     await sleep(500)
     check(sends('e') === 0, 'nothing is sent by surprise when the chat opens')
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
@@ -108,6 +129,7 @@ module.exports = async t => {
     await queueText('after it')
     await page.getByText('Send failed: refused by the mock').waitFor({ timeout: 8000 }).then(() => check(true, 'a refused queued message says Send failed'), () => check(false, 'a refused queued message says Send failed'))
     await page.getByText('Queue paused').waitFor({ timeout: 3000 }).then(() => check(true, 'a failed send pauses the queue'), () => check(false, 'a failed send pauses the queue'))
+    // Negative check: wait briefly to confirm the message behind a failed send is not sent.
     await sleep(600)
     check(sends('cannot send') === 1 && sends('after it') === 0 && (await page.locator('.queued-msg', { hasText: 'after it' }).count()) === 1, `the message behind a failed send stays queued (sent ${sends('after it')})`)
     check((await page.locator('.composer .send.stop').count()) === 0 && (await page.locator('.status-line').count()) === 0, 'after a failed send nothing shows as running')
@@ -131,6 +153,7 @@ module.exports = async t => {
   // ── canvas: a long canvas call opens the panel on a "writing" state, then shows the document ──
   await page.getByPlaceholder('Message Hermux').fill('write canvas')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
+  // Timing check: panel must stay closed before the 1.5 s writing-state delay.
   await sleep(400)
   check((await page.locator('.canvas-panel').count()) === 0, 'a short tool call does not open the canvas')
   await page.locator('.canvas-writing .canvas-skeleton').waitFor({ timeout: 4000 }).then(() => check(true, 'still writing after a moment: panel opens with the writing state'), () => check(false, 'still writing after a moment: panel opens with the writing state'))
@@ -139,12 +162,12 @@ module.exports = async t => {
   await page.locator('.canvas-tab', { hasText: 'Plan' }).waitFor({ timeout: 5000 }).then(() => check(true, 'then the saved document replaces it'), () => check(false, 'then the saved document replaces it'))
   check((await page.locator('.canvas-writing').count()) === 0 && (await page.locator('.canvas-btn.writing').count()) === 0, 'writing state gone')
   // ── canvas: "Saved ✓" goes back to "<when> · <who>" (it used to stay forever) ──
-  await sleep(300)
+  await page.locator('.save-state', { hasText: /just now · Hermux/ }).waitFor({ timeout: 3000 }).catch(() => {})
   check(/just now · Hermux/.test(await page.locator('.save-state').innerText()), `idle label says who wrote it (${await page.locator('.save-state').innerText()})`)
   await page.locator('.canvas-toolbar .seg button', { hasText: 'Edit' }).click()
   await page.locator('textarea.editor-text').fill('# Plan\n\nStep one x')
   await page.locator('.save-state', { hasText: /^Saved$/ }).waitFor({ timeout: 3000 }).then(() => check(true, 'canvas edit shows Saved ✓'), () => check(false, 'canvas edit shows Saved ✓'))
-  await sleep(2600)
+  await page.locator('.save-state', { hasText: /just now · You/ }).waitFor({ timeout: 5000 }).catch(() => {})
   {
     const s = await page.locator('.save-state').innerText()
     check(/just now · You/.test(s), `"Saved ✓" returns to "just now · You" (${s})`)
@@ -152,6 +175,7 @@ module.exports = async t => {
   await page.locator('.canvas-x').click()
 
   // ── #12 media streams through the shell's URL (no base64 through /api/files/read) ──
+  const mediaMark = calls().length
   await page.evaluate(() => (window.HermesAndroid = { mediaBase: () => window.__hmMockBase + '/m?k=K&p=' }))
   await page.getByPlaceholder('Message Hermux').fill('show media')
   await page.locator('.composer').getByRole('button', { name: 'Send' }).click()
@@ -162,7 +186,7 @@ module.exports = async t => {
   const src = await img.getAttribute('src')
   check(src === MOCK + '/m?k=K&p=' + encodeURIComponent('/root/pics/my pic.png'), `image uses the streamed URL (${src})`)
   check(await img.evaluate(i => i.naturalWidth > 0), 'streamed image loads')
-  check(!calls().some(c => c.path === '/api/files/read'), 'nothing read as base64')
+  check(!calls().slice(mediaMark).some(c => c.path === '/api/files/read'), 'nothing read as base64')
   await page.evaluate(() => delete window.HermesAndroid)
 
   // ── #13 unread dot + time ago: a reply finishes in another chat while the app is open ──
@@ -170,7 +194,6 @@ module.exports = async t => {
   await mock({ activity: [{ session: 's-9', text: 'Thinking…', short: 'Thinking', profile: 'default', review: false, ts: Date.now() / 1000 }] })
   // The feed is polled every 9 s while empty (#34), then every 3 s while something runs.
   await page.locator('.activity-banner').first().waitFor({ timeout: 12000 }).then(() => check(true, 'activity banner within one idle poll'), () => check(false, 'activity banner within one idle poll'))
-  await sleep(500)
   await mock({ activity: [], bump: 's-9', newChat: 's-fresh' }) // a reply lands in s-9 and a new chat appears
   await page.locator('.unread-dot.on-menu').waitFor({ timeout: 8000 }).then(() => check(true, 'menu button shows an unread dot'), () => check(false, 'menu button shows an unread dot'))
   await page.getByRole('button', { name: /^Sessions/ }).click()
