@@ -437,7 +437,7 @@ function KeySheet({ scope, keyName, row, onClose, onSaved }: { scope: string; ke
 // ── Config (schema-driven, every option Hermes has) ──────────
 
 interface Field {
-  type: 'string' | 'number' | 'boolean' | 'list' | 'select' | 'object' | 'dict'
+  type: 'string' | 'number' | 'boolean' | 'list' | 'select'
   description?: string
   category?: string
   options?: string[]
@@ -591,8 +591,7 @@ function deepSet(obj: Record<string, unknown>, path: string, value: unknown): Re
 }
 
 function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; field: Field; value: unknown; scope: string; onClose: () => void; onSave: (v: unknown, all: boolean) => Promise<boolean> }) {
-  const isObject = field.type === 'object' || field.type === 'dict' || (value != null && typeof value === 'object' && !Array.isArray(value))
-  const isJson = field.type === 'list' || isObject || (value != null && typeof value === 'object')
+  const isJson = field.type === 'list' || (value != null && typeof value === 'object')
   const [text, setText] = useState(value == null ? '' : isJson ? JSON.stringify(value, null, 2) : String(value))
   const [all, setAll] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -603,11 +602,10 @@ function ConfigSheet({ k, field, value, scope, onClose, onSave }: { k: string; f
       return n
     }
     if (isJson) {
-      if (!text.trim()) return isObject ? {} : []
+      if (!text.trim()) return []
       try {
         return JSON.parse(text)
       } catch {
-        if (isObject) throw new Error('Enter valid JSON')
         // Convenience: one item per line for simple string lists.
         return text
           .split('\n')

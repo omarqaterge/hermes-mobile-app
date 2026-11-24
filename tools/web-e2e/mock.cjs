@@ -573,7 +573,6 @@ const server = http.createServer((req, res) => {
       return send({
         fields: {
           timezone: { type: 'select', description: 'IANA timezone (e.g. America/New_York). Blank uses the system timezone.', category: 'general', options: ['Africa/Cairo', 'America/New_York', 'Asia/Tokyo', 'Europe/Amsterdam', 'UTC'] },
-          approvals: { type: 'object', description: 'Command approval settings.', category: 'security' },
           'approvals.mode': { type: 'select', description: 'Command approval mode: manual, smart, or off.', category: 'security', options: ['manual', 'smart', 'off'] }
         },
         category_order: ['general', 'agent', 'terminal', 'display', 'delegation', 'memory', 'compression', 'security', 'browser', 'voice', 'tts', 'stt', 'logging', 'discord', 'auxiliary']
