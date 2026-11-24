@@ -44,7 +44,9 @@ TOOL_STALE_AFTER = 1800  # ... unless it is inside a tool call (a long command f
 FAIL_GRACE = 6.0  # seconds after a final API error before "failed" is notified (Hermes may still fall back to another provider)
 
 _lock = threading.Lock()
-_last_text: dict = {}  # session_id -> latest final_text
+_last_text: dict = {}  # session_id -> legacy fallback text (tests may assign directly)
+_turn_replies: dict = {}  # (session_id, turn_key) -> (source, text); post_llm_call beats stream_end
+_ended_turns: dict = {}  # (session_id, turn_key) -> True; bounded to 256 so late workers/streams can't write or wipe
 _subagents: dict = {}  # sub-agent session id -> the session that started it ("" unknown), newest last; see _note_subagent
 _nested: dict = {}  # running sub-agent's session id -> (its top chat, profile, until); see _nested_begin
 _waiting: dict = {}  # (chat id, kind, who) -> an open request of that chat, for GET /activity's `waiting`; see _wait_begin
@@ -796,14 +798,30 @@ def _status_loop() -> None:
         if items:
             sid, cur = items[0]
             turn = cur.get("turn") or {}
-            _post({"kind": "status", "working": True, "body": cur["text"], "short": cur.get("short", "Working"),
-                   "session": sid, "profile": cur["profile"], "title": _title_for(sid), "review": bool(cur.get("review")),
-                   "proc": _PROC_ID, "turn_id": turn.get("id", ""),
-                   "since": turn.get("since", 0), "steps": turn.get("steps", 0), "todo": turn.get("todo"),
-                   "others": [{"session": s, "title": _title_for(s), "text": v["text"],
-                               "since": (v.get("turn") or {}).get("since", 0),
-                               "turn_id": (v.get("turn") or {}).get("id", "")} for s, v in items[1:4]],
-                   "more": len(items) - 1})
+            pd = _chat_has_read_phone_data(sid)
+            todo = turn.get("todo")
+            if pd and isinstance(todo, dict):
+                todo = {**todo, "current": ""}
+            others = []
+            for s, v in items[1:4]:
+                opd = _chat_has_read_phone_data(s)
+                entry = {"session": s, "title": _title_for(s), "text": "Working" if opd else v["text"],
+                         "since": (v.get("turn") or {}).get("since", 0),
+                         "turn_id": (v.get("turn") or {}).get("id", "")}
+                if opd:
+                    entry["phone_data"] = True
+                others.append(entry)
+            payload = {"kind": "status", "working": True,
+                       "body": "Working" if pd else cur["text"],
+                       "short": "Working" if pd else cur.get("short", "Working"),
+                       "session": sid, "profile": cur["profile"], "title": _title_for(sid),
+                       "review": bool(cur.get("review")),
+                       "proc": _PROC_ID, "turn_id": turn.get("id", ""),
+                       "since": turn.get("since", 0), "steps": turn.get("steps", 0), "todo": todo,
+                       "others": others, "more": len(items) - 1}
+            if pd:
+                payload["phone_data"] = True
+            _post(payload)
         else:
             _post({"kind": "status", "working": False, "body": "Ready", "profile": _profile(), "proc": _PROC_ID})
         last_sent = time.time()
@@ -986,14 +1004,81 @@ def _reply_text(val) -> str:
     return ""
 
 
-def _remember_reply(session_id, text) -> None:
+def _remember_reply(session_id, text, *, turn_id=None, source: str = "post_llm_call") -> None:
+    """Remember a turn's reply text keyed by (session_id, turn_id) and source.
+    `post_llm_call` always wins; `stream_end` only fills an empty slot and never overwrites or writes after end."""
     s = _reply_text(text)
     if not session_id or not s:
         return
+    tkey = str(turn_id) if turn_id is not None else ""
     with _lock:
-        _last_text[session_id] = s
-        if len(_last_text) > 200:
-            _last_text.pop(next(iter(_last_text)))
+        if tkey and (session_id, tkey) in _ended_turns:
+            return
+        cur = _turn_replies.get((session_id, tkey))
+        if source == "stream_end" and (cur is not None or (not tkey and any(s == session_id for s, _ in _turn_replies))):
+            return
+        _turn_replies[(session_id, tkey)] = (source, s)
+        while len(_turn_replies) > 200:
+            _turn_replies.pop(next(iter(_turn_replies)))
+        if source == "post_llm_call" or session_id not in _last_text:
+            _last_text[session_id] = s
+            while len(_last_text) > 200:
+                _last_text.pop(next(iter(_last_text)))
+
+
+def _clear_reply(session_id, turn_id=None, *, from_tool: bool = False) -> None:
+    """Clear stored reply text. When `from_tool` is True (pre_tool_call), never wipe an already-ended turn or a
+    different turn's stored reply (guards against late timed-out parallel tool workers)."""
+    if not session_id:
+        return
+    tkey = str(turn_id) if turn_id is not None else ""
+    with _lock:
+        if from_tool:
+            if tkey and (session_id, tkey) in _ended_turns:
+                return
+            if tkey:
+                _turn_replies.pop((session_id, tkey), None)
+                if not any(s == session_id for s, _ in _turn_replies):
+                    _last_text.pop(session_id, None)
+                return
+            if session_id not in _active:
+                return
+            if any(s == session_id and k for s, k in _turn_replies):
+                return
+            _turn_replies.pop((session_id, ""), None)
+            _last_text.pop(session_id, None)
+            return
+        if tkey:
+            _turn_replies.pop((session_id, tkey), None)
+            _turn_replies.pop((session_id, ""), None)
+        else:
+            for k in [k for k in _turn_replies if k[0] == session_id]:
+                _turn_replies.pop(k, None)
+        _last_text.pop(session_id, None)
+
+
+def _take_reply(session_id, turn_id=None) -> str:
+    """Pop and return the reply text for a finishing turn, marking its turn_id ended so late workers/streams are ignored."""
+    if not session_id:
+        return ""
+    tkey = str(turn_id) if turn_id is not None else ""
+    with _lock:
+        if tkey:
+            _ended_turns[(session_id, tkey)] = True
+            while len(_ended_turns) > 256:
+                _ended_turns.pop(next(iter(_ended_turns)))
+            entry = _turn_replies.pop((session_id, tkey), None)
+            if entry is None:
+                entry = _turn_replies.pop((session_id, ""), None)
+            fallback = _last_text.pop(session_id, "")
+            return entry[1] if entry is not None else fallback
+        picked = ""
+        for k in [k for k in _turn_replies if k[0] == session_id]:
+            e = _turn_replies.pop(k)
+            if e[0] == "post_llm_call" or not picked:
+                picked = e[1]
+        fallback = _last_text.pop(session_id, "")
+        return picked or fallback
 
 
 _EXIT_REASON_WORDS = (
@@ -1042,8 +1127,7 @@ def _on_pre_llm_call(session_id=None, turn_id=None, user_message=None, **_):
         _bg_status(session_id, turn_id)
         return None
     if session_id and session_id not in _subagents:
-        with _lock:
-            _last_text.pop(session_id, None)  # a new turn starts clean, so an empty/failed turn never reuses an old reply
+        _clear_reply(session_id, None)  # a new turn starts clean, so an empty/failed turn never reuses an old reply
         if _note_start(session_id):
             _event("turn", "start", chat=_alias(session_id))
     return None
@@ -1057,7 +1141,7 @@ def _on_post_llm_call(session_id=None, turn_id=None, assistant_response=None, **
     # Hermes fires post_llm_call synchronously right before on_session_end with the finalized reply for every
     # provider (including Codex Responses and non-streaming calls, where on_stream_end has empty text or never runs).
     if session_id and session_id not in _subagents:
-        _remember_reply(session_id, assistant_response)
+        _remember_reply(session_id, assistant_response, turn_id=turn_id, source="post_llm_call")
     return None
 
 
@@ -1076,11 +1160,15 @@ def _on_stream_end(final_text=None, session_id=None, turn_id=None, finished=None
         if finished and final_text:  # its last model call: it is over (it sends no session_end)
             _bg_clear(session_id)
         return
-    if session_id and session_id not in _subagents:
-        _remember_reply(session_id, final_text)
+    # Runs on a worker thread in Hermes: only fill in for the final model call (finished) when post_llm_call hasn't.
+    if finished and session_id and session_id not in _subagents:
+        _remember_reply(session_id, final_text, turn_id=turn_id, source="stream_end")
 
 
 def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, task_id=None, tool_call_id=None, **_):
+    # Clear pre-tool commentary before auto_mode / _taint_directive can return early (still skipping reviews and sub-agents).
+    if session_id and session_id not in _subagents and not _is_review(turn_id, session_id):
+        _clear_reply(session_id, turn_id, from_tool=True)
     try:
         verdict = _auto_mode().check(tool_name, args, session_id)  # Auto access: Hermes's dangerous list never runs
     except Exception as e:
@@ -1103,12 +1191,14 @@ def _on_pre_tool_call(tool_name=None, args=None, session_id=None, turn_id=None, 
     if _is_review(turn_id, session_id):
         _bg_status(session_id, turn_id, _tool_label(tool_name or "tool", args).removeprefix("Using "))
         return None
-    if session_id and session_id not in _subagents:
-        with _lock:
-            _last_text.pop(session_id, None)  # any text streamed before a tool call was intermediate commentary, not the final reply
     _set_status(session_id, _tool_label(tool_name or "tool", args), _tool_short(tool_name or "tool", args),
                 tool=tool_name != "clarify", step=True, turn_id=turn_id)  # a question waits on the user: no reason to keep the phone awake
     if tool_name == "clarify":
+        if _chat_has_read_phone_data(session_id, task_id):
+            _send("ask", "Hermux asks", "Hermes has a question, open Hermux to answer", session_id or "",
+                  urgent=True, choices=[], single=False, phone_data=True)
+            _wait_begin(session_id, "question", _clarify_timeout())
+            return None
         q, choices, single = "", [], True
         if isinstance(args, dict):
             q = args.get("question") or ""
@@ -1232,10 +1322,14 @@ def _on_post_tool_call(tool_name=None, args=None, result=None, status=None, sess
         a = args if isinstance(args, dict) else {}
         action = a.get("action", "update")
         if action in ("add", "replace", "remove"):
-            target = "about you" if a.get("target") == "user" else "memory"
-            verb = {"add": "Saved to", "replace": "Updated", "remove": "Removed from"}[action]
-            _send("learning", f"Memory · {verb} {target}", _short(a.get("content") or a.get("old_text") or "", 200),
-                  session_id or "", id=f"mem-{time.time():.0f}")
+            if _chat_has_read_phone_data(session_id, task_id):
+                _send("learning", "Memory", "Learned something new", session_id or "",
+                      id=f"mem-{time.time():.0f}", phone_data=True)
+            else:
+                target = "about you" if a.get("target") == "user" else "memory"
+                verb = {"add": "Saved to", "replace": "Updated", "remove": "Removed from"}[action]
+                _send("learning", f"Memory · {verb} {target}", _short(a.get("content") or a.get("old_text") or "", 200),
+                      session_id or "", id=f"mem-{time.time():.0f}")
 
 
 _SKILL_MUTATION = ("creat", "patch", "edit", "updat", "archiv", "delet", "restor", "install", "renam", "improv")
@@ -1245,7 +1339,10 @@ def _on_skill_lifecycle(action=None, skill_name=None, session_id=None, **_):
     act = str(action or "").lower()
     if not skill_name or not any(k in act for k in _SKILL_MUTATION):
         return
-    _send("learning", f"Skill {act.replace('_', ' ')}", skill_name, session_id or "", id=f"skill-{skill_name}")
+    if _chat_has_read_phone_data(session_id):
+        _send("learning", "Skill", "Learned something new", session_id or "", id=f"skill-{session_id or 'pd'}", phone_data=True)
+    else:
+        _send("learning", f"Skill {act.replace('_', ' ')}", skill_name, session_id or "", id=f"skill-{skill_name}")
 
 
 def _on_subagent_start(child_session_id=None, parent_session_id=None, child_goal=None, **_):
@@ -1346,8 +1443,7 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
         _bg_clear(session_id)
         return
     _clear_status(session_id)
-    with _lock:
-        _last_text.pop(session_id, None)
+    _clear_reply(session_id, turn_id)
     _end_phone_app(session_id)
     msg = str((error.get("message") if isinstance(error, dict) else error) or reason or "")
     inner = re.search(r"""['"]message['"]\s*:\s*['"]([^'"]+)""", msg)  # "Error code: 401 - {'error': {'message': '…'}}"
@@ -1365,7 +1461,10 @@ def _on_api_request_error(session_id=None, turn_id=None, status_code=None, retry
             return
         name = _profile()
         title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
-        _send("error", f"{title} · failed", body, session_id)
+        if _chat_has_read_phone_data(session_id):
+            _send("error", f"{title} · failed", "Turn failed", session_id, phone_data=True)
+        else:
+            _send("error", f"{title} · failed", body, session_id)
 
     t = threading.Timer(FAIL_GRACE, notify)
     t.daemon = True
@@ -1402,7 +1501,7 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
     _end_phone_app(session_id)
     with _lock:
         turn = (_active.get(session_id) or {}).get("turn") or {}
-        text = _last_text.pop(session_id, "")
+    text = _take_reply(session_id, turn_id)
     _clear_status(session_id)  # always, even without a turn id, or the chip sticks on "Thinking"
     if turn_id is None:
         return
@@ -1417,21 +1516,37 @@ def _on_session_end(session_id=None, turn_id=None, completed=None, failed=None, 
         pass
     if interrupted:
         return
+    phone_data = _chat_has_read_phone_data(session_id)
     name = _profile()
     title = _chat_title(session_id) or ("Hermux" if name == "default" else name)
     if platform == "cron":
-        body = _plain_exit_reason(turn_exit_reason, failed=True, cron=True) if failed else (text or _plain_exit_reason(turn_exit_reason, failed=False, cron=True))
-        _send("cron", "Scheduled job finished" if not failed else "Scheduled job failed",
-              body, session_id, id=session_id)
+        if phone_data:
+            _send("cron", "Scheduled job finished" if not failed else "Scheduled job failed",
+                  "Job failed" if failed else "Job finished", session_id, id=session_id,
+                  failed=bool(failed), phone_data=True)
+        else:
+            body = _plain_exit_reason(turn_exit_reason, failed=True, cron=True) if failed else (text or _plain_exit_reason(turn_exit_reason, failed=False, cron=True))
+            _send("cron", "Scheduled job finished" if not failed else "Scheduled job failed",
+                  body, session_id, id=session_id, failed=bool(failed))
     elif failed:
-        _send("error", f"{title} · failed", _plain_exit_reason(turn_exit_reason, failed=True), session_id)
+        if phone_data:
+            _send("error", f"{title} · failed", "Turn failed", session_id, phone_data=True)
+        else:
+            _send("error", f"{title} · failed", _plain_exit_reason(turn_exit_reason, failed=True), session_id)
     elif completed or text:
-        # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
-        _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])
-        _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="Done", color="#2E9E5B", done=True,
-              reply=_short(text or "", 300), steps=turn.get("steps", 0),
-              secs=round(time.time() - turn["since"]) if turn.get("since") else 0,
-              turn_id=turn.get("id", ""), proc=_PROC_ID)
+        if phone_data:
+            _send("reply", title, "Reply ready", session_id, platform=platform or "", speak_text="", phone_data=True)
+            _send("flash", title, "Done · Reply ready", session_id, short="Done", color="#2E9E5B", done=True,
+                  reply="Reply ready", steps=turn.get("steps", 0),
+                  secs=round(time.time() - turn["since"]) if turn.get("since") else 0,
+                  turn_id=turn.get("id", ""), proc=_PROC_ID, phone_data=True)
+        else:
+            # speak_text: the full reply for read-aloud mode in the app's service (notification bodies are trimmed)
+            _send("reply", title, text or "Done", session_id, platform=platform or "", speak_text=(text or "")[:20000])
+            _send("flash", title, "Done · " + _short(text or "", 120), session_id, short="Done", color="#2E9E5B", done=True,
+                  reply=_short(text or "", 300), steps=turn.get("steps", 0),
+                  secs=round(time.time() - turn["since"]) if turn.get("since") else 0,
+                  turn_id=turn.get("id", ""), proc=_PROC_ID)
 
 
 def _load(name: str, filename: str):
@@ -1701,6 +1816,42 @@ def _inherit_read(sids, profiles=None) -> bool:
     except Exception:
         return False
     return known
+
+
+def _chat_has_read_phone_data(session_id, task_id="") -> bool:
+    """Synchronous check of whether this chat (including compression lineage, branch inheritance via _inherit_read,
+    sub-agent links, and detached background tasks) has read phone data. Costs nothing while no chat has read;
+    fails closed on missing chat id when any chat has read, damaged/full record, or module error."""
+    try:
+        pt = _phone_taint()
+        if not pt.any_read():
+            return False
+        ids = list(pt.chat_ids(session_id, task_id))
+        started_by = _detached_from(session_id, task_id)
+        scope = list(dict.fromkeys([*ids, *(started_by or [])]))
+        if not scope:
+            return True
+        if pt.has_read(scope):
+            new = pt.adopt(scope)
+            if new:
+                _report_taint(new)
+            return True
+        for sid in list(scope):
+            more = [i for i in _phone_data().compression_ancestors(sid, budget=1.0) if i not in scope]
+            if more:
+                new = pt.adopt(list(scope) + more)
+                if new:
+                    _report_taint(new)
+                if pt.has_read(scope):
+                    return True
+        _inherit_read(scope)
+        return bool(pt.has_read(scope))
+    except Exception:
+        try:
+            fallback_ids = [x for x in (_ui_session_id(), str(session_id or task_id or "").strip()) if x]
+            return _read_before(fallback_ids) if fallback_ids else True
+        except Exception:
+            return True
 
 
 def _in_slash_worker() -> bool:
