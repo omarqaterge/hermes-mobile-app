@@ -901,8 +901,8 @@ public class MainActivity extends Activity {
                 commitHelper(which, pkg, apk);
                 helperCommittedAt = android.os.SystemClock.elapsedRealtime();
                 helperDownloading = false;
-            } catch (Exception e) {
-                final String msg = e.getMessage() == null ? "Install failed." : e.getMessage();
+            } catch (Throwable e) { // an Error too (out of memory, a missing class): the install must not stay "downloading"
+                final String msg = e instanceof Error || e.getMessage() == null ? "Install failed." : e.getMessage();
                 runOnUiThread(() -> {
                     if (which.equals(helperWhich)) {
                         abandonHelperSession();
