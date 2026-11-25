@@ -81,3 +81,6 @@ echo "java-check: badge and reply test $(tail -1 "$OUT/badge.txt")"
 # MainActivity configChanges and live fontScale / uiMode updates.
 ../tools/test_config_changes.sh > "$OUT/cfgchanges.txt" 2>&1 || { grep -v '^PASS' "$OUT/cfgchanges.txt"; echo "java-check: config changes test FAILED"; exit 1; }
 echo "java-check: config changes test $(tail -1 "$OUT/cfgchanges.txt")"
+# Native microphone release on pause, Live mode end, and leaving the chat screen.
+../tools/test_voice_mic.sh > "$OUT/voicemic.txt" 2>&1 || { grep -v '^PASS' "$OUT/voicemic.txt"; echo "java-check: voice mic test FAILED"; exit 1; }
+echo "java-check: voice mic test $(tail -1 "$OUT/voicemic.txt")"

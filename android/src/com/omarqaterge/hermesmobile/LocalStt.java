@@ -79,6 +79,8 @@ final class LocalStt {
     /** One dictation: its own stop flag, so a new one can start while the last one is still finishing its phrase. */
     private static final class Run {
         volatile boolean stop = false;
+        volatile boolean discard = false; // drop buffered audio without finishing the phrase (Live end, mute, leaving chat/app)
+        volatile AudioRecord rec; // stopped immediately on stop/stopNow so the mic indicator clears without waiting for decode
         boolean echo; // Live mode listens while Hermes speaks: the voice-call microphone with its echo canceller
     }
     private volatile Run current; // the dictation the page hears from; an older one still finishing is silent
@@ -747,10 +749,31 @@ final class LocalStt {
         };
     }
 
-    /** The user pressed stop (or left the app): the phrase being said is finished, then the session ends. */
+    /** The user pressed stop (dictation): stop the microphone now, finish decoding what was already said, then end. */
     void stop() {
+        stop(false);
+    }
+
+    /** Immediate release (Live mode end, mute, leaving the chat or app): stop the microphone now and drop buffered audio. */
+    void stopNow() {
+        stop(true);
+    }
+
+    private void stop(boolean discard) {
         Run c = current;
-        if (c != null) c.stop = true;
+        if (c != null) {
+            if (discard) c.discard = true;
+            c.stop = true;
+            synchronized (c) {
+                AudioRecord r = c.rec;
+                if (r != null) {
+                    try {
+                        r.stop();
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -797,16 +820,28 @@ final class LocalStt {
             final float[] end = new float[0];
             reader = new Thread(() -> {
                 short[] buf = new short[rr / 10]; // 100 ms
-                while (!run.stop && micOn.get()) {
-                    int n = r.read(buf, 0, buf.length);
-                    if (n < 0) break;
-                    float[] f = new float[n];
-                    for (int i = 0; i < n; i++) f[i] = buf[i] / 32768f;
-                    q.add(rr == SttEngine.RATE ? f : SttEngine.resample(f, rr));
+                try {
+                    while (!run.stop && micOn.get()) {
+                        int n = r.read(buf, 0, buf.length);
+                        if (n <= 0) break;
+                        float[] f = new float[n];
+                        for (int i = 0; i < n; i++) f[i] = buf[i] / 32768f;
+                        q.add(rr == SttEngine.RATE ? f : SttEngine.resample(f, rr));
+                    }
+                } finally {
+                    try { r.stop(); } catch (Exception ignored) { }
+                    q.add(end);
                 }
-                q.add(end);
             }, "stt-mic");
             rec.startRecording();
+            synchronized (run) {
+                run.rec = rec;
+            }
+            if (run.stop) {
+                closeMic(run, micOn, null, rec);
+                rec = null;
+                return;
+            }
             reader.start();
             sink.ready();
             if (engine == null || !d.getName().equals(engineId)) {
@@ -815,29 +850,37 @@ final class LocalStt {
                     engine = SttEngine.load(d, SttModels.needsVad(SttEngine.meta(d).getString("kind")) ? vadFile() : null);
                     engineId = d.getName();
                 } catch (Throwable e) {
-                    closeMic(micOn, reader, rec); // free the microphone before the phone's recogniser takes over
+                    closeMic(run, micOn, reader, rec); // free the microphone before the phone's recogniser takes over
                     rec = null;
-                    sink.failed("stt-model-load");
+                    if (!run.stop) sink.failed("stt-model-load");
                     return;
                 }
+            }
+            if (run.discard) {
+                closeMic(run, micOn, reader, rec);
+                rec = null;
+                return;
             }
             SttEngine.Session s = engine.new Session(new SttEngine.Out() {
                 @Override public void partial(String text) { sink.partial(text); }
                 @Override public void phrase(String text) { sink.phrase(text); }
             });
-            for (float[] f; (f = q.take()) != end; ) {
+            for (float[] f; !run.discard && (f = q.take()) != end; ) {
                 s.behind = q.size() > 5;
                 s.accept(f);
             }
-            closeMic(micOn, reader, rec);
+            closeMic(run, micOn, reader, rec);
             rec = null;
-            s.finish();
+            if (!run.discard) s.finish();
         } catch (Throwable e) {
-            closeMic(micOn, reader, rec);
+            closeMic(run, micOn, reader, rec);
             rec = null;
-            sink.failed("stt-start");
+            if (!run.stop) sink.failed("stt-start");
         } finally {
-            if (rec != null) rec.release();
+            synchronized (run) {
+                run.rec = null;
+                if (rec != null) rec.release();
+            }
             if (aec != null) aec.release();
             sink.end();
             synchronized (this) {
@@ -858,7 +901,7 @@ final class LocalStt {
         }
     }
 
-    private static void closeMic(java.util.concurrent.atomic.AtomicBoolean micOn, Thread reader, AudioRecord rec) {
+    private static void closeMic(Run run, java.util.concurrent.atomic.AtomicBoolean micOn, Thread reader, AudioRecord rec) {
         micOn.set(false);
         if (rec == null) return;
         try {
@@ -869,12 +912,15 @@ final class LocalStt {
             reader.join(500);
         } catch (InterruptedException ignored) {
         }
-        rec.release();
+        synchronized (run) {
+            run.rec = null;
+            rec.release();
+        }
     }
 
     /** Frees the model's memory (the app went to the background, or another model was chosen). */
     void release() {
-        stop();
+        stopNow();
         audio.execute(this::freeEngine);
     }
 
@@ -885,7 +931,7 @@ final class LocalStt {
     }
 
     void destroy() {
-        stop();
+        stopNow();
         audio.execute(this::freeEngine);
         audio.shutdown();
         work.shutdownNow();

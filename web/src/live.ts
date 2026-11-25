@@ -9,7 +9,7 @@ import { answerRequest, errText, sendPrompt } from './gateway'
 import { approvalKind, fireStep, hearRoute, hiddenKeepsSpeech, isOn, listeningAction, muteStep, overAction, overRestartDue, mayListenOver, replyAction, restartDue, type HearKind, type LiveFlags, type LivePhase } from './livestate'
 import { phoneDataTextOf } from './phone-data-request'
 import { leaveLockView } from './lockview'
-import { getState, toast } from './store'
+import { getState, subscribe, toast } from './store'
 import { canListenOver, liveBridge, onTtsDone, setLiveMuted, setLivePhase, speak, speakable, startListening, startListeningOver, stopListening, stopSpeaking, voiceErrorText, voiceInputAvailable } from './voice'
 
 const PAUSE_KEY = 'hm.live.pause'
@@ -173,7 +173,7 @@ function overheard(kind: HearKind, t: string) {
   const action = overAction(kind, (kind === 'partial' || kind === 'final') && isUserSpeech(t, spoken))
   if (action === 'give-up') {
     over = false // no barge-in for this reply (the tap still works); the error shows if it happens while listening
-    stopListening()
+    stopListening(true)
     return
   }
   if (action === 'restart') {
@@ -216,7 +216,7 @@ function fire() {
   goto('thinking')
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = null
-  stopListening()
+  stopListening(true)
   thinkTimer = setTimeout(() => phase === 'thinking' && listen(), THINK_MAX_MS)
   if (approval) return answerByVoice(text)
   sendPrompt(text).catch(e => {
@@ -289,7 +289,7 @@ function onApproval(req: ServerRequest) {
 function askAloud(text: string) {
   if (thinkTimer) clearTimeout(thinkTimer)
   thinkTimer = null
-  stopListening()
+  stopListening(true)
   if (pauseTimer) clearTimeout(pauseTimer)
   pauseTimer = null
   speakLive(text)
@@ -322,7 +322,7 @@ function answerByVoice(said: string) {
 }
 
 export function startLive(): void {
-  if (isOn(phase)) return
+  if (isOn(phase) || getState().screen != null) return
   muted = false
   setLiveMuted(false)
   liveBridge.active = true
@@ -350,7 +350,7 @@ function onSpoken() {
 /** Listen afresh. A recogniser left on during the reading (barge-in) is restarted, so the last bit of Hermes's own
  * voice it was still working on never reaches the message. */
 function relisten() {
-  if (over) stopListening()
+  if (over) stopListening(true)
   over = false
   listen() // muted: listening with the microphone closed, as after a reply
 }
@@ -366,7 +366,7 @@ export function setLiveMute(on: boolean): void {
     if (idleTimer) clearTimeout(idleTimer) // nothing is being heard, so nothing can be sent by accident
     pauseTimer = idleTimer = null
     buffer = partial = ''
-    if (step === 'mute-close-mic') stopListening()
+    if (step === 'mute-close-mic') stopListening(true)
     over = false
   } else if (step === 'unmute-listen') listen()
   else if (step === 'unmute-listen-over') listenOver()
@@ -385,7 +385,7 @@ export function stopLive(opts?: { keepSpeech?: boolean }): void {
   unTts?.()
   unTts = null
   goto('off')
-  stopListening()
+  stopListening(true)
   if (!opts?.keepSpeech) stopSpeaking()
   leaveLockView() // shown over the lock screen for talking: the lock screen comes back
 }
@@ -398,6 +398,14 @@ function onLiveHidden(): void {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') onLiveHidden()
 })
+
+// Leaving the chat for any full-screen page (Setup check, Settings, Skills, …) covers the Live bar and ends Live mode
+// at once so the microphone never stays open off the chat screen.
+if (typeof subscribe === 'function') {
+  subscribe(() => {
+    if (isOn(phase) && getState().screen != null) stopLive()
+  })
+}
 
 /** "2 seconds", "1.5 seconds" for hints. */
 export const fmtPause = (sec: number): string => `${sec} ${sec === 1 ? 'second' : 'seconds'}`

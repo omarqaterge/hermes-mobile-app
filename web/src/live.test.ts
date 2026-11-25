@@ -28,8 +28,24 @@ vi.mock('./voice', () => ({
   voiceErrorText: (t: string) => t,
   voiceInputAvailable: () => true
 }))
+const store = vi.hoisted(() => {
+  const state: { screen: string | null; requests: Array<{ id: string }> } = { screen: null, requests: [] }
+  const subs = new Set<() => void>()
+  return {
+    state,
+    subs,
+    setScreen(screen: string | null) {
+      state.screen = screen
+      subs.forEach(fn => fn())
+    }
+  }
+})
 vi.mock('./gateway', () => ({ answerRequest: vi.fn(), errText: String, sendPrompt: vi.fn(() => Promise.resolve()) }))
-vi.mock('./store', () => ({ getState: () => ({}), toast: vi.fn() }))
+vi.mock('./store', () => ({
+  getState: () => store.state,
+  subscribe: (fn: () => void) => (store.subs.add(fn), () => store.subs.delete(fn)),
+  toast: vi.fn()
+}))
 
 const live = await import('./live')
 const v = await import('./voice')
@@ -74,6 +90,57 @@ describe('Live mode when the app is hidden', () => {
     hide()
     expect(live.liveOn()).toBe(false)
     expect(v.stopSpeaking).toHaveBeenCalled()
+  })
+})
+
+describe('Live mode when navigating to another screen', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    store.setScreen(null)
+    vi.mocked(v.stopSpeaking).mockClear()
+    vi.mocked(v.stopListening).mockClear()
+    live.startLive()
+  })
+  afterEach(() => {
+    live.stopLive()
+    store.setScreen(null)
+    vi.useRealTimers()
+  })
+
+  test('opening Setup check ends Live mode and releases the microphone immediately', () => {
+    store.setScreen('setup')
+    expect(live.liveOn()).toBe(false)
+    expect(v.stopListening).toHaveBeenCalledWith(true)
+    expect(v.stopSpeaking).toHaveBeenCalled()
+  })
+
+  test('opening Settings while speaking ends Live mode and stops both mic and speech', () => {
+    voice.hear!('final', 'hello')
+    vi.advanceTimersByTime(live.getLivePause() * 1000 + 10)
+    voice.bridge.onReply('Hi there.')
+    vi.mocked(v.stopListening).mockClear()
+    vi.mocked(v.stopSpeaking).mockClear()
+    store.setScreen('settings')
+    expect(live.liveOn()).toBe(false)
+    expect(v.stopListening).toHaveBeenCalledWith(true)
+    expect(v.stopSpeaking).toHaveBeenCalled()
+  })
+
+  test('opening Setup check while muted still ends Live mode', () => {
+    live.setLiveMute(true)
+    vi.mocked(v.stopListening).mockClear()
+    store.setScreen('setup')
+    expect(live.liveOn()).toBe(false)
+    expect(v.stopListening).toHaveBeenCalledWith(true)
+  })
+
+  test('startLive does not open the microphone while another screen is open', () => {
+    live.stopLive()
+    voice.hear = null
+    store.setScreen('setup')
+    live.startLive()
+    expect(live.liveOn()).toBe(false)
+    expect(voice.hear).toBeNull()
   })
 })
 

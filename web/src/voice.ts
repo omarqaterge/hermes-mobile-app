@@ -2,7 +2,7 @@
 // SpeechRecognizer, see Voice.java) through the bridge; in a plain browser we fall back to the Web Speech API.
 import { onSttModels } from './stt'
 import { useSyncExternalStore } from 'react'
-import { getState, toast } from './store'
+import { getState, subscribe, toast } from './store'
 import { estimatePos, isStaleDone, jumpIsShared, nextPace, paceOf, parsePace, parseSeg, pausedPlace, resumeFrom, reseekDeadline, seekTarget, shellHoldsPlace } from './player'
 
 export interface TtsVoice {
@@ -152,10 +152,13 @@ window.__hmVoice = (kind, text) => {
     case 'quiet':
       onSpeech?.(kind, text)
       break
-    case 'end':
+    case 'end': {
+      const fn = onSpeech
+      if (!liveBridge.active) onSpeech = null
       set({ listening: false, partial: '' })
-      onSpeech?.('end', '')
+      fn?.('end', '')
       break
+    }
   }
 }
 
@@ -377,6 +380,7 @@ export function voiceInputAvailable(): boolean {
 }
 
 export function startListening(cb: Listener): void {
+  if (getState().screen != null) return // never open the microphone behind another screen
   onSpeech = cb
   set({ speakingId: null, player: null })
   native()?.startListening?.()
@@ -385,12 +389,31 @@ export function startListening(cb: Listener): void {
 /** Live mode's barge-in: listen while a reply is being read, without stopping it (only the phone app can). */
 export const canListenOver = (): boolean => !!native()?.startListeningOver
 export function startListeningOver(cb: Listener): void {
+  if (getState().screen != null) return
   onSpeech = cb
   native()?.startListeningOver?.()
 }
 
-export function stopListening(): void {
-  native()?.stopListening?.()
+/** Stop listening. `immediate`: release the microphone at once and drop pending speech (Live end, mute, leaving the chat). */
+export function stopListening(immediate = false): void {
+  const n = native()
+  if (immediate) {
+    onSpeech = null
+    set({ listening: false, partial: '' })
+    if (n?.cancelListening) {
+      n.cancelListening()
+      return
+    }
+  }
+  n?.stopListening?.()
+}
+
+// Leaving the chat for any full-screen page (Setup check, Settings, Skills, …) releases the microphone for dictation too.
+// Live mode has its own store subscription in live.ts that ends Live mode whole.
+if (typeof subscribe === 'function') {
+  subscribe(() => {
+    if (getState().screen != null && !liveBridge.active && (state.listening || onSpeech !== null)) stopListening(true)
+  })
 }
 
 // ── read-aloud mode ──────────────────────────────────────────
