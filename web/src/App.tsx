@@ -43,6 +43,7 @@ import { findHit, findMatches, firstRange, highlightWords } from './jump'
 import { useBackHandler } from './backstack'
 import { recentPrompts } from './recent'
 import { BACK_GRACE_MS, firstUnseen, lastBack, lastVisit, newWhileAway, noteAway, noteBack, onBack } from './visit'
+import { refreshPhoneTextScale, savedTextChoice, subscribePhoneTextScale } from './textscale'
 import { bare, useCommandCatalog, type CommandEntry } from './commands'
 import { Title, plainTitle } from './components/Title'
 import { useAutoRead, useDraftAutoRead } from './voice'
@@ -1049,6 +1050,14 @@ export function App() {
   useEffect(() => {
     document.documentElement.style.setProperty('--scale', String(scale))
   }, [scale])
+
+  useEffect(() => {
+    const apply = (next: number) => {
+      if (savedTextChoice() == null && getState().textScale !== next) setState({ textScale: next })
+    }
+    apply(refreshPhoneTextScale())
+    return subscribePhoneTextScale(apply)
+  }, [])
 
   return (
     <div className="app">

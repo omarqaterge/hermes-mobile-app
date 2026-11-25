@@ -850,4 +850,56 @@ module.exports = async t => {
       await p.close()
     }
   }
+
+  // ── Background-app live viewer: fits a tall hidden-screen frame (540 × 1200, 9:20) whole without cropping,
+  //    keeping its aspect ratio (letterboxed via object-fit: contain) in both portrait and landscape ──
+  {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="540" height="1200" viewBox="0 0 540 1200"><rect width="540" height="1200" fill="#101418"/><rect width="540" height="40" fill="#00ff00"/><rect y="1160" width="540" height="40" fill="#ff0000"/></svg>'
+    const tallFrame = 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64')
+    for (const [label, vp] of [['portrait', { width: 375, height: 812 }], ['landscape', { width: 812, height: 375 }]]) {
+      const bp = await browser.newPage({ viewport: vp })
+      bp.on('pageerror', e => { console.log('PAGEERROR (bg viewer fit)', e.message); fail() })
+      await bp.addInitScript(nativeShell)
+      await bp.addInitScript(frameUrl => {
+        localStorage.setItem('hm.motion', 'off')
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-6', profile: 'default' }))
+        window.HermesAndroid.bgFrameAsync = (key, id) => {
+          if (key !== 'K') return
+          setTimeout(() => window.__hmBgFrame && window.__hmBgFrame(id, frameUrl), 20)
+        }
+      }, tallFrame)
+      await bp.goto(WEB + '/')
+      await bp.locator('.msg').first().waitFor({ timeout: 10000 }).catch(() => {})
+      await bp.evaluate(() => window.__hmBg && window.__hmBg({ session: 's-6', pkg: 'com.example.calc', label: 'Calculator', action: 'Opened Calculator', since: Date.now() }))
+      const card = bp.getByRole('button', { name: 'Using Calculator. Open live view' })
+      await card.waitFor({ timeout: 5000 })
+      await card.click()
+      const dlg = bp.getByRole('dialog', { name: 'Using Calculator' })
+      await dlg.waitFor({ timeout: 5000 })
+      const pic = dlg.getByRole('img', { name: 'Live view of Calculator' })
+      await pic.waitFor({ timeout: 5000 })
+      await bp.waitForFunction(() => {
+        const img = document.querySelector('.bg-view img')
+        return img && img.complete && img.naturalWidth === 540 && img.naturalHeight === 1200
+      }, null, { timeout: 5000 })
+      const m = await bp.evaluate(() => {
+        const box = document.querySelector('.bg-view').getBoundingClientRect()
+        const img = document.querySelector('.bg-view img')
+        const ir = img.getBoundingClientRect()
+        const fit = getComputedStyle(img).objectFit
+        const btns = [...document.querySelectorAll('.bg-viewer .sheet-actions button')].map(b => b.getBoundingClientRect())
+        return {
+          box: { w: Math.round(box.width), h: Math.round(box.height), top: Math.round(box.top), bottom: Math.round(box.bottom), left: Math.round(box.left), right: Math.round(box.right) },
+          img: { w: Math.round(ir.width), h: Math.round(ir.height), top: Math.round(ir.top), bottom: Math.round(ir.bottom), left: Math.round(ir.left), right: Math.round(ir.right) },
+          fit,
+          btnsInView: btns.length === 2 && btns.every(r => r.height > 0 && r.bottom <= innerHeight + 1 && r.top >= 0)
+        }
+      })
+      const fitsBox = m.box.h > 40 && m.img.h > 40 && m.img.w > 20 &&
+        m.img.top >= m.box.top - 1 && m.img.bottom <= m.box.bottom + 1 &&
+        m.img.left >= m.box.left - 1 && m.img.right <= m.box.right + 1
+      check(fitsBox && m.fit === 'contain' && m.btnsInView, `bg viewer (${label}): fits tall 540×1200 frame whole inside the box without cropping (${JSON.stringify(m)})`)
+      await bp.close()
+    }
+  }
 }
