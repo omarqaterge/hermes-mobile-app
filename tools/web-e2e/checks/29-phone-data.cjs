@@ -945,4 +945,83 @@ module.exports = async t => {
       await pg.close()
     }
   }
+
+  // ── fenced HTML blocks and remote image holds in a chat that has read phone data (T09-02, T09-03) ──
+  {
+    for (const [sid, tainted] of [['s-pd', true], ['s-pd-ctl', false]]) {
+      const pg = await t.browser.newPage({ viewport: { width: 375, height: 812 } })
+      await pg.addInitScript(nativeShell)
+      await pg.addInitScript(sid => {
+        localStorage.setItem('hm.lastSession', JSON.stringify({ id: sid, profile: 'default' }))
+        window.__sid = 'rt-' + sid
+        window.__socks = []
+        const Orig = window.WebSocket
+        window.WebSocket = class extends Orig {
+          constructor(...a) {
+            super(...a)
+            window.__socks.push(this)
+            this.addEventListener('message', e => {
+              try {
+                const m = JSON.parse(e.data)
+                if (m.params && m.params.session_id) window.__sid = m.params.session_id
+              } catch {
+                /* not JSON */
+              }
+            })
+          }
+        }
+      }, sid)
+      const imgHits = []
+      await pg.route(/^https?:\/\/beacon\.test\//, r => {
+        imgHits.push(r.request().url())
+        return r.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' })
+      })
+      await pg.goto(WEB + '/')
+      await pg.locator('.msg.assistant').first().waitFor({ timeout: 15000 })
+      await pg.waitForFunction(() => (window.__socks || []).some(s => s.readyState === 1), null, { timeout: 5000 })
+      const pushReply = text =>
+        pg.evaluate(text => {
+          const s = window.__socks.filter(x => x.readyState === 1).pop()
+          const send = (type, payload) => s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type, session_id: window.__sid, payload } }) }))
+          send('message.start', {})
+          send('message.complete', { text })
+        }, text)
+
+      // T09-02: 1-line and 3+ line fenced HTML blocks
+      await pushReply('```html\n<h1>T09</h1>\n```\n\n```html\n<div>\n  <h1>T09 multi</h1>\n</div>\n```')
+      await pg.getByText('<h1>T09</h1>', { exact: true }).waitFor({ timeout: 5000 })
+      const noteCount = await pg.getByText(/This chat has read data from your phone, so HTML previews are off here/).count()
+      const previewCount = await pg.getByRole('button', { name: 'Preview', exact: true }).count()
+      const frameCount = await pg.locator('iframe').count()
+      if (tainted) {
+        check(noteCount === 2 && previewCount === 0 && frameCount === 0, `phone data html fence: both 1-line and multi-line fenced HTML blocks show the off note with no Preview button or iframe (notes=${noteCount}, preview=${previewCount}, frames=${frameCount})`)
+      } else {
+        check(noteCount === 0 && previewCount === 1 && frameCount === 0, `phone data html fence, control: untainted chat shows no off note and offers Preview on 3+ line HTML block (notes=${noteCount}, preview=${previewCount})`)
+      }
+
+      // T09-03: scrolling / dragging across a held remote image keeps it held with no fetch, and a failed tap returns to the hold (never a file chip)
+      if (tainted) {
+        await pushReply('![t](https://beacon.test/missing.png?d=T09)')
+        const holdBtn = pg.getByRole('button', { name: 'Load image from beacon.test' }).last()
+        await holdBtn.waitFor({ timeout: 5000 })
+        // Pointer drag (scroll gesture) across the placeholder must not trigger a load or lose the explanation.
+        await holdBtn.evaluate(el => {
+          el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 60, clientY: 200, bubbles: true }))
+          el.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 60, clientY: 240, bubbles: true }))
+          el.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 60, clientY: 240, bubbles: true }))
+          el.click()
+        })
+        await sleep(200) // Negative check: confirm dragging across the placeholder starts no fetch.
+        const afterDragText = await holdBtn.innerText().catch(() => '')
+        check(imgHits.length === 0 && /beacon\.test/.test(afterDragText) && /has data in the address/.test(afterDragText) && /Tap to load/.test(afterDragText), `phone data image hold: dragging/scrolling across the placeholder keeps it held with zero fetches (${imgHits.length} hits, ${JSON.stringify(afterDragText)})`)
+        // Real tap when the image fails (HTTP 404): returns to the hold placeholder instead of turning into "t (couldn't load)" file chip.
+        await holdBtn.click()
+        await holdBtn.getByText(/Couldn't load · Tap to load/).waitFor({ timeout: 5000 }).catch(() => {})
+        const chipCount = await pg.getByText(/\(couldn't load\)/).count()
+        const afterFailText = await holdBtn.innerText().catch(() => '')
+        check(chipCount === 0 && /beacon\.test/.test(afterFailText) && /has data in the address/.test(afterFailText) && /Couldn't load · Tap to load/.test(afterFailText), `phone data image hold: a failed load returns to the hold placeholder with host and query warning, never a file chip (chips=${chipCount}, ${JSON.stringify(afterFailText)})`)
+      }
+      await pg.close()
+    }
+  }
 }
