@@ -145,6 +145,8 @@ export async function loadDoc(id: string, force = false): Promise<Doc | null> {
   try {
     const d = await call<Doc>('GET', `${P}/doc?${q({ session, id })}`)
     if (session !== state.session) return null
+    const cur = state.loaded[id]
+    if (cur && d.rev < cur.rev) return cur
     set({ loaded: { ...state.loaded, [id]: d }, docs: state.docs.map(m => (m.id === id ? { ...m, ...d } : m)) })
     return d
   } catch (e) {
@@ -199,7 +201,17 @@ export async function flushSave(): Promise<void> {
   try {
     const r = await call<Doc>('PUT', `${P}/doc`, { session: state.session, id: d.id, content: d.text, base_rev: have.rev })
     if (dirtyText?.text === d.text) dirtyText = null
-    set({ loaded: { ...state.loaded, [d.id]: { ...have, ...r, content: d.text } }, docs: state.docs.map(m => (m.id === d.id ? { ...m, ...r } : m)), save: dirtyText ? 'dirty' : 'saved', remote: null })
+    // PUT /canvas/doc returns the updated doc without its version list: keep loaded versions in sync so Version history
+    // immediately includes the new revision as current instead of leaving the previous one at the top.
+    const nextVersions =
+      r.versions ??
+      (have.versions
+        ? have.versions.some(v => v.rev === r.rev)
+          ? have.versions
+          : [...have.versions, { rev: r.rev, at: r.updated, by: (r.by === 'agent' ? 'agent' : 'user') as 'agent' | 'user', note: '' }].slice(-40)
+        : undefined)
+    const nextDoc: Doc = { ...have, ...r, content: d.text, ...(nextVersions ? { versions: nextVersions } : {}) }
+    set({ loaded: { ...state.loaded, [d.id]: nextDoc }, docs: state.docs.map(m => (m.id === d.id ? { ...m, ...r } : m)), save: dirtyText ? 'dirty' : 'saved', remote: null })
     if (savedTimer) clearTimeout(savedTimer)
     savedTimer = setTimeout(() => {
       savedTimer = null
