@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
-import { chooseTextScale, clampTextScale, initialTextScale, phoneTextScale, savedTextChoice, TEXT_SIZES } from './textscale'
+import { chooseTextScale, clampTextScale, initialTextScale, phoneTextScale, refreshPhoneTextScale, savedTextChoice, subscribePhoneTextScale, TEXT_SIZES } from './textscale'
 
 const w = window as unknown as { HermesAndroid?: unknown }
 const phone = (v: unknown) => (w.HermesAndroid = { phoneTextScale: () => v })
@@ -63,5 +63,24 @@ describe('the phone and the choice', () => {
     expect(localStorage.getItem('hm.textScale')).toBe('1.1')
     expect(chooseTextScale(null)).toBe(1.15)
     expect(localStorage.getItem('hm.textScale')).toBeNull()
+  })
+  it('notifies subscribers when Android reports a changed font scale without restarting', () => {
+    phone(1.1)
+    expect(refreshPhoneTextScale()).toBe(1.1)
+    const seen: number[] = []
+    const off = subscribePhoneTextScale(v => seen.push(v))
+    try {
+      phone(1.1)
+      window.__hmPhoneTextScale?.()
+      expect(seen).toEqual([])
+      phone(2)
+      window.__hmPhoneTextScale?.()
+      expect(seen).toEqual([1.35])
+      phone(0.8)
+      window.__hmPhoneTextScale?.()
+      expect(seen).toEqual([1.35, 0.9])
+    } finally {
+      off()
+    }
   })
 })

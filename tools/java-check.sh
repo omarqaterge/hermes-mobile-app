@@ -78,3 +78,6 @@ echo "java-check: notify choice test $(tail -1 "$OUT/notifychoice.txt")"
 # App-icon badge count plan (BadgePlan.java) and RemoteInput card dismissal in HermesService.
 ../tools/test_badge_and_reply.sh > "$OUT/badge.txt" 2>&1 || { grep -v '^PASS' "$OUT/badge.txt"; echo "java-check: badge and reply test FAILED"; exit 1; }
 echo "java-check: badge and reply test $(tail -1 "$OUT/badge.txt")"
+# MainActivity configChanges and live fontScale / uiMode updates.
+../tools/test_config_changes.sh > "$OUT/cfgchanges.txt" 2>&1 || { grep -v '^PASS' "$OUT/cfgchanges.txt"; echo "java-check: config changes test FAILED"; exit 1; }
+echo "java-check: config changes test $(tail -1 "$OUT/cfgchanges.txt")"

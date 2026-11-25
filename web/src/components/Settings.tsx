@@ -40,7 +40,7 @@ import { ReportRow } from './Report'
 import { DiagRows } from './DiagRows'
 import { pluginRow, runPluginUpdate, usePluginState } from '../plugin-sync'
 import { onlySlugs } from '../providers'
-import { chooseTextScale, phoneTextScale, savedTextChoice, TEXT_SIZES } from '../textscale'
+import { chooseTextScale, refreshPhoneTextScale, savedTextChoice, TEXT_SIZES, usePhoneTextScale } from '../textscale'
 import { NotificationsPage, useNotifyState } from './NotificationsPage'
 import { notifyChoicesAvailable, notifySummary } from '../notifychoice'
 import { addCustom, customCandidate, useCustoms, withCustoms } from '../custommodels'
@@ -853,7 +853,10 @@ type TextSize = number | 'phone'
 function AppearancePage() {
   const scale = useStore(s => s.textScale)
   const [choice, setChoice] = useState<number | null>(savedTextChoice) // null: Phone default
-  const [phone] = useState(phoneTextScale)
+  const phone = usePhoneTextScale()
+  useEffect(() => {
+    refreshPhoneTextScale()
+  }, [])
   const glass = useGlass()
   const motion = useMotionLevel()
   const modelBar = useTray().mode
