@@ -476,43 +476,45 @@ module.exports = async t => {
     {
       const { mock } = require('../lib.cjs')
       const dp = await at({ 'hm.glass': '0', 'hm.motion': 'off' })
-      const delRow = async title => {
-        const panel = dp.getByRole('complementary', { name: 'Chats' })
-        const row = panel.locator('div').filter({ has: dp.getByText(title, { exact: true }) }).filter({ has: dp.getByRole('button', { name: 'Chat options' }) }).last()
-        await row.getByRole('button', { name: 'Chat options' }).click()
-        const menu = dp.getByRole('dialog', { name: 'Chat options' })
-        await menu.waitFor({ timeout: 3000 })
-        await menu.getByRole('button', { name: 'Delete', exact: true }).click()
-        await dp.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click()
+      try {
+        const delRow = async title => {
+          const panel = dp.getByRole('complementary', { name: 'Chats' })
+          const row = panel.locator('div').filter({ has: dp.getByText(title, { exact: true }) }).filter({ has: dp.getByRole('button', { name: 'Chat options' }) }).last()
+          await row.getByRole('button', { name: 'Chat options' }).click()
+          const menu = dp.getByRole('dialog', { name: 'Chat options' })
+          await menu.waitFor({ timeout: 3000 })
+          await menu.getByRole('button', { name: 'Delete', exact: true }).click()
+          await dp.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click()
+        }
+
+        // 1. A failed session.delete shows an error toast and keeps the chat in the list.
+        await mock({ deleteMode: { fail: true } })
+        await delRow('Chat 4')
+        await dp.locator('.toast', { hasText: /delete failed/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'chat delete: a failed session.delete shows an error instead of "Deleted"'),
+          () => check(false, 'chat delete: a failed session.delete shows an error instead of "Deleted"')
+        )
+        check((await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 4', { exact: true }).count()) === 1, 'chat delete: failed delete keeps the chat in the list')
+
+        // 2. Error 4023 from a detached live session closes that runtime via session.active_list, retries, removes from cache and stays gone on reload.
+        await mock({ deleteMode: { activeOnce: 's-4' } })
+        await delRow('Chat 4')
+        await dp.locator('.toast', { hasText: /^Deleted$/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'chat delete: detached active session (4023) is closed and delete succeeds'),
+          () => check(false, 'chat delete: detached active session (4023) is closed and delete succeeds')
+        )
+        await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 4', { exact: true }).waitFor({ state: 'detached', timeout: 5000 })
+        const cachedHas = await dp.evaluate(() => JSON.parse(localStorage.getItem('hm.sessions.v1.default') || '[]').some(s => s.id === 's-4'))
+        check(!cachedHas, 'chat delete: hm.sessions.v1.default cache drops the deleted chat at once')
+        await dp.reload()
+        await dp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+        await dp.getByRole('button', { name: /^Sessions/ }).click()
+        await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 3', { exact: true }).waitFor({ timeout: 5000 })
+        check((await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 4', { exact: true }).count()) === 0, 'chat delete: deleted chat stays gone after reload')
+      } finally {
+        await mock({ deleteMode: null })
+        await dp.close()
       }
-
-      // 1. A failed session.delete shows an error toast and keeps the chat in the list.
-      await mock({ deleteMode: { fail: true } })
-      await delRow('Chat 4')
-      await dp.locator('.toast', { hasText: /delete failed/ }).waitFor({ timeout: 5000 }).then(
-        () => check(true, 'chat delete: a failed session.delete shows an error instead of "Deleted"'),
-        () => check(false, 'chat delete: a failed session.delete shows an error instead of "Deleted"')
-      )
-      check((await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 4', { exact: true }).count()) === 1, 'chat delete: failed delete keeps the chat in the list')
-
-      // 2. Error 4023 from a detached live session closes that runtime via session.active_list, retries, removes from cache and stays gone on reload.
-      await mock({ deleteMode: { activeOnce: 's-4' } })
-      await delRow('Chat 4')
-      await dp.locator('.toast', { hasText: /^Deleted$/ }).waitFor({ timeout: 5000 }).then(
-        () => check(true, 'chat delete: detached active session (4023) is closed and delete succeeds'),
-        () => check(false, 'chat delete: detached active session (4023) is closed and delete succeeds')
-      )
-      await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 4', { exact: true }).waitFor({ state: 'detached', timeout: 5000 })
-      const cachedHas = await dp.evaluate(() => JSON.parse(localStorage.getItem('hm.sessions.v1.default') || '[]').some(s => s.id === 's-4'))
-      check(!cachedHas, 'chat delete: hm.sessions.v1.default cache drops the deleted chat at once')
-      await dp.reload()
-      await dp.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
-      await dp.getByRole('button', { name: /^Sessions/ }).click()
-      await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 3', { exact: true }).waitFor({ timeout: 5000 })
-      check((await dp.getByRole('complementary', { name: 'Chats' }).getByText('Chat 4', { exact: true }).count()) === 0, 'chat delete: deleted chat stays gone after reload')
-
-      await mock({ deleteMode: null })
-      await dp.close()
     }
   }
 }

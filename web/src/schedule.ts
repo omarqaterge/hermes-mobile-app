@@ -1,7 +1,7 @@
 // Client-side validation, plain-words summary and response verification for scheduled jobs (CronScreen, spec 3.14).
 // Mirrors Hermes's `cron/jobs.py` `parse_schedule()` grammar so invalid text like "whenever" is refused before saving
 // and a job can never silently land on a different time than the user asked for.
-import { whenWords } from './jobwords'
+import { type Job, whenWords } from './jobwords'
 
 export type ScheduleKind = 'interval' | 'cron' | 'once'
 
@@ -143,13 +143,14 @@ interface CronFields {
 function parseCronField(raw: string, min: number, max: number, names?: Record<string, number>, wrap7 = false): Set<number> | null {
   if (!raw || !/^[A-Za-z\d*,-/]+$/.test(raw)) return null
   const out = new Set<number>()
+  const add = (v: number) => out.add(wrap7 && v === 7 ? 0 : v)
   const parseAtom = (tok: string): number | null => {
     const low = tok.toLowerCase()
     if (names && low in names) return names[low]
     if (!/^\d+$/.test(tok)) return null
     const n = Number(tok)
     if (n < min || n > max) return null
-    return wrap7 && n === 7 ? 0 : n
+    return n
   }
   for (const part of raw.split(',')) {
     if (!part) return null
@@ -159,7 +160,7 @@ function parseCronField(raw: string, min: number, max: number, names?: Record<st
     if (stepParts.length === 2 && (!/^\d+$/.test(stepParts[1]) || step <= 0 || step > max - min + 1)) return null
     const range = stepParts[0]
     if (range === '*') {
-      for (let v = min; v <= (wrap7 ? 6 : max); v += step) out.add(v)
+      for (let v = min; v <= (wrap7 ? 6 : max); v += step) add(v)
       continue
     }
     const bounds = range.split('-')
@@ -168,17 +169,18 @@ function parseCronField(raw: string, min: number, max: number, names?: Record<st
       if (start === null) return null
       if (stepParts.length === 2) {
         const hi = wrap7 ? 6 : max
-        for (let v = start; v <= hi; v += step) out.add(v)
-      } else out.add(start)
+        // Reject 7/step on day-of-week: croniter rewrites it to 0/step instead of Sunday only.
+        if (start > hi) return null
+        for (let v = start; v <= hi; v += step) add(v)
+      } else add(start)
       continue
     }
     if (bounds.length === 2) {
       const a = parseAtom(bounds[0])
-      const bRaw = bounds[1]
-      // Allow 5-7 (Fri-Sun) on day-of-week before wrapping 7 -> 0.
-      const b = wrap7 && bRaw === '7' ? 7 : parseAtom(bRaw)
-      if (a === null || b === null || a > b) return null
-      for (let v = a; v <= b; v += step) out.add(wrap7 && v === 7 ? 0 : v)
+      const b = parseAtom(bounds[1])
+      // Reject inverted ranges (7-5) and 7-7 (croniter evaluates 7-7 as all 7 days).
+      if (a === null || b === null || a > b || (wrap7 && a === 7)) return null
+      for (let v = a; v <= b; v += step) add(v)
       continue
     }
     return null
@@ -270,7 +272,9 @@ function describeCron(expr: string, f: CronFields, nextRun: Date | null, now: Da
 }
 
 function parseIsoTimestamp(s: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?(Z|[+-]\d{2}:\d{2})?$/i.exec(s)
+  // Require a time component before any timezone offset/Z: Python's datetime.fromisoformat does not accept
+  // date-only offsets like 2027-01-01+02:00 as midnight UTC+2 (and Hermes strips/reinterprets them differently).
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/i.exec(s)
   if (!m) return null
   const [, yStr, moStr, dStr, hStr = '00', miStr = '00', sStr = '00', tz] = m
   const y = Number(yStr), mo = Number(moStr), day = Number(dStr)
@@ -355,9 +359,46 @@ function toMs(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** Returns an editable schedule string that `parseSchedule` accepts for an existing job. Hermes's `schedule.display`
+ *  for one-shots is human prose like "once in 30m", which Hermes rejects on save; prefer structured fields first. */
+export function jobEditSchedule(j: Job, now = new Date()): string {
+  const s = j.schedule as unknown
+  if (s && typeof s === 'object') {
+    const so = s as Record<string, unknown>
+    const kind = typeof so.kind === 'string' ? so.kind : ''
+    if (kind === 'once' && typeof so.run_at === 'string' && so.run_at.trim()) return so.run_at.trim()
+    if (kind === 'cron' && typeof so.expr === 'string' && so.expr.trim()) return so.expr.trim()
+    if (kind === 'interval' && typeof so.minutes === 'number' && Number.isFinite(so.minutes) && so.minutes > 0) {
+      if (so.minutes % 1440 === 0) return `every ${so.minutes / 1440}d`
+      if (so.minutes % 60 === 0) return `every ${so.minutes / 60}h`
+      return `every ${so.minutes}m`
+    }
+    if (typeof so.run_at === 'string' && so.run_at.trim()) return so.run_at.trim()
+    if (typeof so.expr === 'string' && so.expr.trim()) return so.expr.trim()
+    if (typeof so.display === 'string' && so.display.trim()) {
+      const disp = so.display.trim()
+      if (parseSchedule(disp, now).ok) return disp
+    }
+  } else if (typeof s === 'string' && s.trim()) {
+    const raw = s.trim()
+    if (parseSchedule(raw, now).ok) return raw
+  }
+  const next = j.next_run_at ?? j.next_run
+  if (typeof next === 'string' && next.trim() && parseSchedule(next.trim(), now).ok) return next.trim()
+  if (s && typeof s === 'object') {
+    const so = s as Record<string, unknown>
+    return String(so.display ?? so.expr ?? '')
+  }
+  return String(s ?? j.schedule_display ?? '')
+}
+
 /** Checks whether Hermes's returned job contradicts the schedule the user requested. Returns a plain-words reason on
  *  mismatch, or null when it matches (or the response carries no schedule metadata, e.g. a minimal mock). */
-export function scheduleMismatch(requested: ValidSchedule, job: unknown, opts: { isNew?: boolean; now?: Date } = {}): string | null {
+export function scheduleMismatch(
+  requested: ValidSchedule,
+  job: unknown,
+  opts: { isNew?: boolean; checkNextRun?: boolean; now?: Date } = {}
+): string | null {
   if (!job || typeof job !== 'object') return null
   const rec = job as Record<string, unknown>
   const now = opts.now ?? new Date()
@@ -374,6 +415,16 @@ export function scheduleMismatch(requested: ValidSchedule, job: unknown, opts: {
     if (requested.kind === 'cron' && typeof so.expr === 'string' && requested.expr && normExpr(so.expr) !== normExpr(requested.expr)) {
       return `Hermux scheduled “${so.expr}” instead of “${requested.expr}”.`
     }
+    if (requested.kind === 'once' && requested.nextRun && so.run_at != null && so.run_at !== '') {
+      const runMs = toMs(so.run_at)
+      if (runMs == null) {
+        return `Hermux returned an unreadable one-shot time (“${String(so.run_at)}”).`
+      }
+      const tol = requested.relative ? 10 * 60_000 : 27 * 3600_000
+      if (Math.abs(runMs - requested.nextRun.getTime()) > tol) {
+        return `Hermux scheduled ${whenWords(runMs, now)} instead of ${whenWords(requested.nextRun, now)}.`
+      }
+    }
   } else if (typeof sched === 'string' && sched.trim()) {
     const parsed = parseSchedule(sched, now)
     if (parsed.ok) {
@@ -386,12 +437,20 @@ export function scheduleMismatch(requested: ValidSchedule, job: unknown, opts: {
       if (requested.kind === 'cron' && parsed.expr && requested.expr && normExpr(parsed.expr) !== normExpr(requested.expr)) {
         return `Hermux scheduled “${sched}” instead of “${requested.raw}”.`
       }
+      if (requested.kind === 'once' && parsed.nextRun && requested.nextRun) {
+        const tol = requested.relative ? 10 * 60_000 : 27 * 3600_000
+        if (Math.abs(parsed.nextRun.getTime() - requested.nextRun.getTime()) > tol) {
+          return `Hermux scheduled “${sched}” instead of “${requested.raw}”.`
+        }
+      }
     }
   }
 
-  // On a newly created job (no prior last_run_at), also sanity-check next_run_at so a broken scheduler can't quietly
-  // fire a yearly cron 30 minutes from now. Allow 27 hours of tolerance for timezone differences on wall-clock schedules.
-  if (opts.isNew && !rec.last_run_at) {
+  // On a newly created job (no prior last_run_at) or a schedule-changing edit, also sanity-check next_run_at so a
+  // broken scheduler can't quietly fire a yearly cron 30 minutes from now. Allow 27 hours of tolerance for timezone
+  // differences on wall-clock schedules.
+  const checkNext = opts.checkNextRun ?? (Boolean(opts.isNew) && !rec.last_run_at)
+  if (checkNext) {
     const nextMs = toMs(rec.next_run_at ?? rec.next_run)
     if (nextMs != null && requested.nextRun) {
       const diff = Math.abs(nextMs - requested.nextRun.getTime())

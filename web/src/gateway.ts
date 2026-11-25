@@ -473,7 +473,7 @@ export async function switchProfile(profile: string): Promise<void> {
   openSeq++
   sessionsSeq++
   keepPreview(getState().active)
-  for (const w of warm.splice(0)) closeLater(w.runtimeId, 0, w.storedId)
+  for (const w of warm.splice(0)) closeLater(w.runtimeId, 0, w.storedId, w.profile)
   await closeActiveIfIdle()
   try {
     localStorage.setItem('hm.profile', profile)
@@ -481,7 +481,7 @@ export async function switchProfile(profile: string): Promise<void> {
     /* ignore */
   }
   sessionLimit = SESSIONS_PAGE
-  setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), drawer: false, defaultModel: '', ...closeSubSheetIf() })
+  setState({ profile, active: null, opening: null, sessions: cachedSessions(profile), sessionsLoading: false, drawer: false, defaultModel: '', ...closeSubSheetIf() })
   void loadSessions()
   void loadDefaultModel(true)
 }
@@ -492,19 +492,19 @@ export async function switchProfile(profile: string): Promise<void> {
 // a background review), so while it runs every later request waits. It used to be awaited BEFORE each
 // session.resume, which made opening a chat right after a reply take seconds.
 const WARM = 2
-const warm: Array<{ storedId: string; runtimeId: string }> = []
-const closingLater = new Map<string, { storedId: string; timer: ReturnType<typeof setTimeout> }>()
+const warm: Array<{ storedId: string; runtimeId: string; profile: string }> = []
+const closingLater = new Map<string, { storedId: string; profile: string; timer: ReturnType<typeof setTimeout> }>()
 
-function closeLater(runtimeId: string, ms = 3000, storedId = ''): void {
+function closeLater(runtimeId: string, ms = 3000, storedId = '', profile = getState().profile): void {
   const prev = closingLater.get(runtimeId)
   if (prev) clearTimeout(prev.timer)
   const timer = setTimeout(() => {
     closingLater.delete(runtimeId)
     // Reopened meanwhile (Hermes handed the same live session back) or still kept for running work: keep it.
     if (followed(runtimeId)) return
-    void rpc('session.close', { session_id: runtimeId }).catch(() => {})
+    void rpc('session.close', { session_id: runtimeId, profile }).catch(() => {})
   }, ms)
-  closingLater.set(runtimeId, { storedId, timer })
+  closingLater.set(runtimeId, { storedId, profile, timer })
 }
 
 /** Is this live session still followed: on screen, warm or kept? */
@@ -521,28 +521,32 @@ function retire(prev: ActiveSession | null): void {
   warmUp(prev)
 }
 
-function warmUp(prev: { storedId: string; runtimeId: string }): void {
+function warmUp(prev: { storedId: string; runtimeId: string; profile: string }): void {
   if (getState().active?.runtimeId === prev.runtimeId) return
-  const i = warm.findIndex(w => w.storedId === prev.storedId)
+  const i = warm.findIndex(w => w.storedId === prev.storedId && w.profile === prev.profile)
   if (i >= 0) warm.splice(i, 1)
-  warm.unshift({ storedId: prev.storedId, runtimeId: prev.runtimeId })
-  for (const w of warm.splice(WARM)) closeLater(w.runtimeId, 3000, w.storedId)
+  warm.unshift({ storedId: prev.storedId, runtimeId: prev.runtimeId, profile: prev.profile })
+  for (const w of warm.splice(WARM)) closeLater(w.runtimeId, 3000, w.storedId, w.profile)
 }
 
 /** This chat leaves the warm and kept ones (it opens, is deleted or replaced). */
-function unwarm(storedId: string): void {
-  for (let i = warm.length - 1; i >= 0; i--) if (sameChat(warm[i].storedId, storedId)) warm.splice(i, 1)
-  for (let i = kept.length - 1; i >= 0; i--) if (sameChat(kept[i].storedId, storedId)) kept.splice(i, 1)
+function unwarm(storedId: string, profile?: string): void {
+  for (let i = warm.length - 1; i >= 0; i--) {
+    if ((!profile || warm[i].profile === profile) && sameChat(warm[i].storedId, storedId)) warm.splice(i, 1)
+  }
+  for (let i = kept.length - 1; i >= 0; i--) {
+    if ((!profile || kept[i].profile === profile) && sameChat(kept[i].storedId, storedId)) kept.splice(i, 1)
+  }
 }
 
 // Chats left while they worked (their reply, or sub-agents after it). They are not closed then, since closing stops what
 // they started; once that has ended they join the warm ones and are closed in turn like any other.
 const KEPT_MAX = 50
-const kept: Array<{ storedId: string; runtimeId: string; running: boolean }> = []
+const kept: Array<{ storedId: string; runtimeId: string; profile: string; running: boolean }> = []
 
 function keepWhileWorking(a: ActiveSession): void {
   if (kept.some(k => k.runtimeId === a.runtimeId)) return
-  kept.push({ storedId: a.storedId, runtimeId: a.runtimeId, running: a.running })
+  kept.push({ storedId: a.storedId, runtimeId: a.runtimeId, profile: a.profile, running: a.running })
   if (kept.length > KEPT_MAX) kept.shift() // stays open as it was, no longer followed
 }
 
@@ -701,6 +705,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
   // a second time on top of the reloaded transcript (duplicate tool cards and text).
   const replay = prev?.storedId === storedId ? client.sessionReplayBarrier(prev.runtimeId) : undefined
   if (replay) await replay
+  const resumeProfile = getState().profile
   let r: SessionResumeResult
   try {
     r = await rpc<SessionResumeResult>('session.resume', { session_id: storedId, source: 'mobile' }, 60_000)
@@ -708,7 +713,7 @@ export async function resumeSession(storedId: string, opts: { keepItemsIfSame?: 
     if (seq === openSeq) setState({ opening: null, preview: null })
     throw err
   }
-  unwarm(storedId)
+  unwarm(storedId, typeof r.info?.profile === 'string' && r.info.profile ? r.info.profile : resumeProfile)
   agents.trackBuild(r.session_id) // a fresh resume builds its agent in the background too
   if (opts.auto && openSeq !== seq) {
     // The user went elsewhere while this was loading: the live session it opened goes warm (or kept), like any chat left.
@@ -751,10 +756,23 @@ function isActiveSessionError(e: unknown): boolean {
 
 async function closeDetachedLiveFor(storedId: string, profile: string, alreadyClosed: Set<string>): Promise<boolean> {
   try {
-    const r = await rpc<{ sessions?: Array<{ id?: string; session_key?: string }> }>('session.active_list', { profile })
-    const matches = (r?.sessions ?? []).filter(
-      s => s.id && !alreadyClosed.has(s.id) && (sameChat(s.session_key, storedId) || sameChat(s.id, storedId))
+    const otherProfileRuntimes = new Set<string>()
+    const active = getState().active
+    if (active && active.profile !== profile) otherProfileRuntimes.add(active.runtimeId)
+    for (const w of warm) if (w.profile !== profile) otherProfileRuntimes.add(w.runtimeId)
+    for (const k of kept) if (k.profile !== profile) otherProfileRuntimes.add(k.runtimeId)
+    for (const [rt, entry] of closingLater) if (entry.profile !== profile) otherProfileRuntimes.add(rt)
+
+    const r = await rpc<{ sessions?: Array<{ id?: string; session_key?: string; profile?: string; profile_name?: string }> }>(
+      'session.active_list',
+      { profile }
     )
+    const matches = (r?.sessions ?? []).filter(s => {
+      if (!s.id || alreadyClosed.has(s.id) || otherProfileRuntimes.has(s.id)) return false
+      const rowProfile = s.profile ?? s.profile_name
+      if (rowProfile && rowProfile !== profile) return false
+      return sameChat(s.session_key, storedId) || sameChat(s.id, storedId)
+    })
     if (!matches.length) return false
     for (const m of matches) {
       alreadyClosed.add(m.id!)
@@ -774,16 +792,16 @@ export async function deleteSession(storedId: string, targetProfile?: string): P
   if (!storedId) throw new Error('No chat id to delete')
   const profile = targetProfile || getState().profile
   const keep = (getState().active?.attachments ?? []).map(a => (a.path || a.ref || '').split('/').pop() || '').filter(Boolean)
-  // Hermes refuses to delete a chat that still has a live session (error 4023): close every live runtime first,
-  // including any warm chat already handed to closeLater().
+  // Hermes refuses to delete a chat that still has a live session (error 4023): close every live runtime for THIS
+  // profile first, including any warm chat already handed to closeLater().
   const open = getState().active
   const live = new Set<string>([
-    ...(open && sameChat(open.storedId, storedId) ? [open.runtimeId] : []),
-    ...warm.filter(w => sameChat(w.storedId, storedId)).map(w => w.runtimeId),
-    ...kept.filter(k => sameChat(k.storedId, storedId)).map(k => k.runtimeId) // kept open for its sub-agents
+    ...(open && open.profile === profile && sameChat(open.storedId, storedId) ? [open.runtimeId] : []),
+    ...warm.filter(w => w.profile === profile && sameChat(w.storedId, storedId)).map(w => w.runtimeId),
+    ...kept.filter(k => k.profile === profile && sameChat(k.storedId, storedId)).map(k => k.runtimeId) // kept open for its sub-agents
   ])
   for (const [rt, entry] of closingLater) {
-    if (sameChat(entry.storedId, storedId)) {
+    if (entry.profile === profile && sameChat(entry.storedId, storedId)) {
       clearTimeout(entry.timer)
       closingLater.delete(rt)
       live.add(rt)
@@ -809,26 +827,28 @@ export async function deleteSession(storedId: string, targetProfile?: string): P
   if (res && typeof res === 'object' && (res.deleted === false || res.deleted === null || res.ok === false)) {
     throw new Error('Could not delete chat')
   }
-  unwarm(storedId)
+  unwarm(storedId, profile)
   forgetChat(profile, storedId)
-  forgetNestedChat(storedId)
-  if (sameChat(getState().opening, storedId)) {
+  const sameProfile = getState().profile === profile
+  if (sameProfile) forgetNestedChat(storedId)
+  if (sameProfile && sameChat(getState().opening, storedId)) {
     openSeq++
     setState({ opening: null })
   }
-  if (sameChat(getState().active?.storedId, storedId)) {
+  if (getState().active?.profile === profile && sameChat(getState().active?.storedId, storedId)) {
     setState({ active: null, ...closeSubSheetIf() })
-    rememberSession(null)
-  } else {
+    if (sameProfile) rememberSession(null)
+  } else if (sameProfile) {
     if (getState().sheet === 'subagent' && sameChat(subSheetChat(), storedId)) setState({ sheet: null })
     if (sameChat(rememberedSession(), storedId)) rememberSession(null)
   }
-  sessionsSeq++
-  if (getState().profile === profile) {
+  if (sameProfile) {
+    sessionsSeq++
     const next = getState().sessions.filter(x => x.id !== storedId)
-    setState({ sessions: next })
+    setState({ sessions: next, sessionsLoading: false })
     writeSessionsCache(profile, next)
     loadSessionsSoon()
+    clearQueue(storedId)
   } else {
     removeFromSessionsCache(profile, storedId)
   }
@@ -836,7 +856,6 @@ export async function deleteSession(storedId: string, targetProfile?: string): P
   // attached in the composer of another open chat: it isn't in any message yet.
   void api('POST', '/api/plugins/hermes-mobile/cleanup', { keep }).catch(() => {})
   void forgetCheckpoints(storedId)
-  clearQueue(storedId)
 }
 
 export async function renameSession(title: string): Promise<void> {
@@ -852,14 +871,14 @@ export async function renameStored(storedId: string, title: string): Promise<voi
   const profile = getState().profile
   const r = await api<{ title?: string }>('PATCH', `/api/sessions/${encodeURIComponent(storedId)}`, { title, profile })
   const t = r?.title ?? title
-  sessionsSeq++
-  setState(st => {
-    const next = st.sessions.map(x => (x.id === storedId ? { ...x, title: t } : x))
-    if (st.profile === profile) writeSessionsCache(profile, next)
-    return { sessions: next }
-  })
-  if (getState().active?.storedId === storedId) updateActive(() => ({ title: t }))
-  loadSessionsSoon()
+  if (getState().profile === profile) {
+    sessionsSeq++
+    const next = getState().sessions.map(x => (x.id === storedId ? { ...x, title: t } : x))
+    setState({ sessions: next, sessionsLoading: false })
+    writeSessionsCache(profile, next)
+    if (getState().active?.profile === profile && getState().active?.storedId === storedId) updateActive(() => ({ title: t }))
+    loadSessionsSoon()
+  }
 }
 
 export interface MessageHit {
@@ -1653,9 +1672,9 @@ export async function setModel(provider: string, model: string, effort?: string)
     const run = (async () => {
       const a = await newSession({ cwd: cur ? chosenCwd.get(cur.runtimeId) : undefined, model, provider, effort })
       if (cur) {
-        unwarm(cur.storedId)
+        unwarm(cur.storedId, cur.profile)
         chosenCwd.delete(cur.runtimeId)
-        void rpc('session.close', { session_id: cur.runtimeId }).catch(() => {})
+        void rpc('session.close', { session_id: cur.runtimeId, profile: cur.profile }).catch(() => {})
       }
       return a
     })()
@@ -2160,16 +2179,20 @@ client.onEvent((ev: GatewayEvent) => {
 export async function setArchived(storedId: string, archived: boolean): Promise<void> {
   const profile = getState().profile
   await rpc('session.set_hidden', { session_id: storedId, hidden: archived, profile })
-  sessionsSeq++
-  if (archived) {
-    if (getState().profile === profile) {
+  if (getState().profile === profile) {
+    sessionsSeq++
+    if (archived) {
       const next = getState().sessions.filter(x => x.id !== storedId)
-      setState({ sessions: next })
+      setState({ sessions: next, sessionsLoading: false })
       writeSessionsCache(profile, next)
-    } else removeFromSessionsCache(profile, storedId)
-    if (getState().active?.storedId === storedId) startDraft()
+      if (getState().active?.profile === profile && getState().active?.storedId === storedId) startDraft()
+    } else {
+      setState({ sessionsLoading: false })
+    }
+    loadSessionsSoon()
+  } else if (archived) {
+    removeFromSessionsCache(profile, storedId)
   }
-  loadSessionsSoon()
 }
 
 /** Archived = listed with include_hidden but not in the normal list. */

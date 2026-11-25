@@ -7,6 +7,10 @@ export function jobPaused(j: Job): boolean {
   return Boolean(j.paused) || j.enabled === false || String(j.state || '').toLowerCase() === 'paused'
 }
 
+export function jobRunning(j: Job): boolean {
+  return Boolean(j.is_running || j.fire_claim || j.run_claim || String(j.state || '').toLowerCase() === 'running')
+}
+
 /** A time in words: "today 09:00", "tomorrow 09:00", or the date ("3 Dec, 09:00"). */
 export function whenWords(v: unknown, now = new Date()): string {
   if (v == null || v === '') return ''

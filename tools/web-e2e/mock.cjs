@@ -395,11 +395,35 @@ const server = http.createServer((req, res) => {
     if (cronMode && p === '/api/cron/jobs' && req.method === 'GET') return send(cronMode.jobs)
     if (cronMode && p === '/api/cron/jobs' && req.method === 'POST') {
       const b = JSON.parse(body || '{}')
+      const realId = `cj-${cronMode.jobs.length + 1}`
       const job = cronMode.postOverride
-        ? { id: `cj-${cronMode.jobs.length + 1}`, name: b.name || 'Job', prompt: b.prompt || '', ...cronMode.postOverride }
-        : { id: `cj-${cronMode.jobs.length + 1}`, name: b.name || 'Job', schedule: b.schedule, prompt: b.prompt || '', next_run_at: new Date(Date.now() + 3600_000).toISOString() }
+        ? { id: realId, name: b.name || 'Job', prompt: b.prompt || '', ...cronMode.postOverride }
+        : { id: realId, name: b.name || 'Job', schedule: b.schedule, prompt: b.prompt || '', next_run_at: new Date(Date.now() + 3600_000).toISOString() }
       cronMode.jobs.push(job)
+      if (cronMode.postNoId) {
+        const { id: _drop, ...withoutId } = job
+        return send(withoutId)
+      }
       return send(job)
+    }
+    if (cronMode && /^\/api\/cron\/jobs\/[^/]+$/.test(p) && req.method === 'PUT') {
+      const id = decodeURIComponent(p.split('/').pop())
+      if (cronMode.putStatus) return send({ detail: 'Method Not Allowed' }, cronMode.putStatus)
+      const b = JSON.parse(body || '{}')
+      const upd = b.updates || b
+      const idx = cronMode.jobs.findIndex(j => j.id === id)
+      if (idx < 0) return send({ detail: 'Not Found' }, 404)
+      const updated = { ...cronMode.jobs[idx], ...upd, ...(cronMode.putOverride || {}) }
+      cronMode.jobs[idx] = updated
+      return send(updated)
+    }
+    if (cronMode && /^\/api\/cron\/jobs\/[^/]+\/pause$/.test(p) && req.method === 'POST') {
+      const id = decodeURIComponent(p.split('/').slice(-2, -1)[0])
+      if (cronMode.pauseFail) return send({ ok: false })
+      const job = cronMode.jobs.find(j => j.id === id)
+      if (!job) return send({ detail: 'Not Found' }, 404)
+      if (!cronMode.pauseSticks) job.paused = true
+      return send({ ok: true, job })
     }
     if (cronMode && /^\/api\/cron\/jobs\/[^/]+$/.test(p) && req.method === 'DELETE') {
       const id = decodeURIComponent(p.split('/').pop())

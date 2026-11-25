@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSchedule, scheduleMismatch } from './schedule'
+import { jobEditSchedule, parseSchedule, scheduleMismatch } from './schedule'
 
 const NOW = new Date(2026, 10, 23, 19, 28, 0) // 23 Nov 2026 19:28 local
 
@@ -73,6 +73,13 @@ describe('parseSchedule', () => {
     }
     expect(parseSchedule('2020-01-01T03:00:00', NOW).ok).toBe(false)
     expect(parseSchedule('2027-02-30T03:00:00', NOW).ok).toBe(false)
+    // Date-only with timezone offset/Z is rejected: Python datetime.fromisoformat does not interpret it as UTC/offset midnight.
+    expect(parseSchedule('2027-01-01+02:00', NOW).ok).toBe(false)
+    expect(parseSchedule('2027-01-01Z', NOW).ok).toBe(false)
+    // Date-only without offset and full timestamp with offset/Z stay valid.
+    expect(parseSchedule('2027-01-01', NOW).ok).toBe(true)
+    expect(parseSchedule('2027-01-01T03:00:00Z', NOW).ok).toBe(true)
+    expect(parseSchedule('2027-01-01T03:00:00+02:00', NOW).ok).toBe(true)
   })
 
   it('parses cron expressions including 0 3 1 1 * and rejects invalid fields or impossible dates', () => {
@@ -98,6 +105,21 @@ describe('parseSchedule', () => {
       expect(natural.expr).toBe('0 9 * * 1')
     }
 
+    // Day-of-week 7 (Sunday) parity with Python croniter: valid ranges/steps wrap 7 -> 0,
+    // while 7-5, 7-7 and 7/2 are rejected instead of disagreeing with croniter.
+    const sun7 = parseSchedule('0 9 * * 7', NOW)
+    expect(sun7.ok).toBe(true)
+    if (sun7.ok) expect(sun7.nextRun?.getDay()).toBe(0)
+    const friSun = parseSchedule('0 9 * * 5-7', NOW)
+    expect(friSun.ok).toBe(true)
+    if (friSun.ok) expect(friSun.nextRun?.getDay()).toBe(5) // NOW is Mon -> next Fri
+    const stepFriSun = parseSchedule('0 9 * * 5-7/2', NOW)
+    expect(stepFriSun.ok).toBe(true)
+    if (stepFriSun.ok) expect(stepFriSun.summary).toContain('Every Sun, Fri at 09:00')
+    expect(parseSchedule('0 9 * * 7-5', NOW).ok).toBe(false)
+    expect(parseSchedule('0 9 * * 7-7', NOW).ok).toBe(false)
+    expect(parseSchedule('0 9 * * 7/2', NOW).ok).toBe(false)
+
     expect(parseSchedule('60 9 * * *', NOW).ok).toBe(false)
     expect(parseSchedule('0 25 * * *', NOW).ok).toBe(false)
     expect(parseSchedule('0 9 32 * *', NOW).ok).toBe(false)
@@ -105,6 +127,35 @@ describe('parseSchedule', () => {
     expect(parseSchedule('0 9 31 2 *', NOW).ok).toBe(false)
     expect(parseSchedule('0 9 31 4 *', NOW).ok).toBe(false)
     expect(parseSchedule('every single morning around nine please', NOW).ok).toBe(false)
+  })
+})
+
+describe('jobEditSchedule', () => {
+  it('prefers parseable structured fields over Hermes human-prose display strings', () => {
+    expect(
+      jobEditSchedule(
+        { schedule: { kind: 'once', display: 'once in 30m', run_at: '2027-01-01T09:00:00Z' } },
+        NOW
+      )
+    ).toBe('2027-01-01T09:00:00Z')
+    expect(
+      jobEditSchedule(
+        { schedule: { kind: 'once', display: 'once in 30m' }, next_run_at: '2027-01-01T09:00:00Z' },
+        NOW
+      )
+    ).toBe('2027-01-01T09:00:00Z')
+    expect(
+      jobEditSchedule(
+        { schedule: { kind: 'cron', display: 'Every day at 9am', expr: '0 9 * * *' } },
+        NOW
+      )
+    ).toBe('0 9 * * *')
+    expect(
+      jobEditSchedule(
+        { schedule: { kind: 'interval', display: 'every 2 hours', minutes: 120 } },
+        NOW
+      )
+    ).toBe('every 2h')
   })
 })
 
@@ -129,6 +180,42 @@ describe('scheduleMismatch', () => {
         { isNew: true, now: NOW }
       )
     ).toBeNull()
+  })
+
+  it('catches one-shot run_at mismatch and schedule-changing edit next_run_at mismatch even with prior last_run_at', () => {
+    const onceReq = parseSchedule('2027-01-01T09:00:00Z', NOW)
+    expect(onceReq.ok).toBe(true)
+    if (!onceReq.ok) return
+    expect(
+      scheduleMismatch(
+        onceReq,
+        { schedule: { kind: 'once', run_at: new Date(NOW.getTime() + 30 * 60_000).toISOString() } },
+        { checkNextRun: false, now: NOW }
+      )
+    ).toBeTruthy()
+    expect(
+      scheduleMismatch(
+        onceReq,
+        { schedule: { kind: 'once', run_at: '2027-01-01T09:00:00Z' } },
+        { checkNextRun: false, now: NOW }
+      )
+    ).toBeNull()
+
+    const editReq = parseSchedule('0 3 1 1 *', NOW)
+    expect(editReq.ok).toBe(true)
+    if (!editReq.ok) return
+    // Prior last_run_at must not suppress next_run_at verification when checkNextRun is true (schedule changed on edit).
+    expect(
+      scheduleMismatch(
+        editReq,
+        {
+          schedule: { kind: 'cron', expr: '0 3 1 1 *' },
+          last_run_at: new Date(NOW.getTime() - 3600_000).toISOString(),
+          next_run_at: new Date(NOW.getTime() + 30 * 60_000).toISOString()
+        },
+        { checkNextRun: true, now: NOW }
+      )
+    ).toBeTruthy()
   })
 
   it('ignores minimal responses without schedule fields (e.g. older mocks)', () => {

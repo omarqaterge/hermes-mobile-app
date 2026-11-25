@@ -18,9 +18,9 @@ import { LOAD_LIMIT_MS, timeLimit, TimeLimitError } from '../timelimit'
 import { Icon, iconOf, type IconName } from './icons'
 import { EmptyState } from './ui'
 import { BotTag } from './BotTag'
-import { jobPaused, lastFailed, lastRunWords, nextRunWords, type Job } from '../jobwords'
+import { jobPaused, jobRunning, lastFailed, lastRunWords, nextRunWords, type Job } from '../jobwords'
 import { refreshPanelValues } from '../panelvalues'
-import { parseSchedule, scheduleMismatch } from '../schedule'
+import { jobEditSchedule, parseSchedule, scheduleMismatch, type ValidSchedule } from '../schedule'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -438,6 +438,41 @@ function responseFailed(r: unknown): boolean {
   return o.ok === false || o.deleted === false || o.removed === false
 }
 
+function schedulesMatch(a: ValidSchedule, b: ValidSchedule): boolean {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'interval') return a.minutes === b.minutes
+  if (a.kind === 'cron') {
+    const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
+    return Boolean(a.expr && b.expr && norm(a.expr) === norm(b.expr))
+  }
+  if (a.kind === 'once') {
+    return Boolean(a.nextRun && b.nextRun && Math.abs(a.nextRun.getTime() - b.nextRun.getTime()) <= 60_000)
+  }
+  return false
+}
+
+/** Deletes a scheduled job and reloads the store to confirm it is actually gone. */
+async function verifiedDeleteCronJob(id: string): Promise<{ ok: boolean; jobs?: Job[]; reason?: string }> {
+  if (!id) return { ok: false, reason: 'Hermux returned no id for the job.' }
+  let res: unknown
+  try {
+    res = await api<unknown>('DELETE', `/api/cron/jobs/${encodeURIComponent(id)}`)
+  } catch (e) {
+    return { ok: false, reason: errText(e) }
+  }
+  if (responseFailed(res)) return { ok: false, reason: 'Hermux did not delete the scheduled job.' }
+  let fresh: Job[]
+  try {
+    fresh = await fetchCronJobs()
+  } catch {
+    return { ok: false, reason: 'Could not reload the job list to confirm removal.' }
+  }
+  if (fresh.some(x => jobId(x) === id)) {
+    return { ok: false, jobs: fresh, reason: 'The scheduled job is still active.' }
+  }
+  return { ok: true, jobs: fresh }
+}
+
 export function CronScreen() {
   const profile = useStore(s => s.profile)
   const { data, error, loading, reload, setData } = useLoader(fetchCronJobs, [profile])
@@ -464,25 +499,20 @@ export function CronScreen() {
       if (what === 'delete') {
         if (!(await confirmDialog({ title: `Delete “${String(j.name || id)}”?`, message: 'The scheduled job is removed.', danger: true }))) return
         setBusyId(id)
-        const res = await api<unknown>('DELETE', `/api/cron/jobs/${encodeURIComponent(id)}`)
-        if (responseFailed(res)) throw new Error('Hermux did not delete the scheduled job.')
-        // Confirm the job is actually gone from the store before telling the user it was deleted.
-        let fresh: Job[]
-        try {
-          fresh = await fetchCronJobs()
-        } catch {
-          reload()
-          refreshPanelValues(true)
-          toast('Delete was sent, but Hermux could not confirm the job was removed. Check the list.', 'error', 6000)
-          return
-        }
-        setData(fresh)
+        const del = await verifiedDeleteCronJob(id)
+        if (del.jobs) setData(del.jobs)
+        else reload()
         refreshPanelValues(true)
-        if (fresh.some(x => jobId(x) === id)) {
-          toast('Could not delete the scheduled job — it is still active.', 'error', 6000)
+        if (!del.ok) {
+          toast(
+            del.jobs ? 'Could not delete the scheduled job — it is still active.' : `Delete was not confirmed: ${del.reason} Check the list.`,
+            'error',
+            6000
+          )
           return
         }
-        toast('Deleted')
+        if (jobRunning(j)) toast('Deleted. A run that had already started will finish.', 'info', 6000)
+        else toast('Deleted')
         return
       }
       setBusyId(id)
@@ -515,6 +545,24 @@ export function CronScreen() {
     setForm({ name: '', schedule: '', prompt: '' })
   }
 
+  const rollbackMismatchedJob = async (saved: unknown, bad: string, label: string) => {
+    const newId = saved && typeof saved === 'object' ? jobId(saved as Job) : ''
+    const rb = await verifiedDeleteCronJob(newId)
+    if (rb.jobs) setData(rb.jobs)
+    else reload()
+    refreshPanelValues(true)
+    if (rb.ok) {
+      toast(`${label}: ${bad}`, 'error', 8000)
+    } else {
+      closeForm()
+      toast(
+        `Wrong schedule (${bad}), and automatic removal failed (${rb.reason}). Delete the job from Scheduled now.`,
+        'error',
+        10000
+      )
+    }
+  }
+
   const create = async () => {
     if (saving) return
     const parsed = parseSchedule(form.schedule)
@@ -528,14 +576,39 @@ export function CronScreen() {
       let saved: unknown = null
       let isNew = !editing
       if (editing) {
-        const id = encodeURIComponent(jobId(editing))
+        const rawId = jobId(editing)
+        const id = encodeURIComponent(rawId)
+        const prevParsed = parseSchedule(jobEditSchedule(editing))
+        const scheduleChanged = !prevParsed.ok || !schedulesMatch(prevParsed, parsed)
         try {
           saved = await api('PUT', `/api/cron/jobs/${id}`, { updates: body }) // the dashboard's shape: {updates: {…}}
-          const bad = scheduleMismatch(parsed, saved, { isNew: false })
+          const bad = scheduleMismatch(parsed, saved, { checkNextRun: scheduleChanged })
           if (bad) {
-            reload()
+            // Fail closed on edit mismatch: pause the job so it cannot fire at the wrong time, and verify it is paused.
+            let pausedOk = jobPaused(saved && typeof saved === 'object' ? (saved as Job) : editing)
+            if (!pausedOk && rawId) {
+              try {
+                const pauseRes = await api<unknown>('POST', `/api/cron/jobs/${id}/pause`)
+                if (!responseFailed(pauseRes)) {
+                  const fresh = await fetchCronJobs()
+                  setData(fresh)
+                  const found = fresh.find(x => jobId(x) === rawId)
+                  pausedOk = Boolean(found && jobPaused(found))
+                }
+              } catch {
+                pausedOk = false
+              }
+            }
+            if (!pausedOk) reload()
             refreshPanelValues(true)
-            toast(`Schedule did not match what you asked for: ${bad}`, 'error', 8000)
+            closeForm()
+            toast(
+              pausedOk
+                ? `Schedule did not match (${bad}). The job was paused so it won’t run at the wrong time.`
+                : `Schedule did not match (${bad}), and Hermux could not confirm the job is paused. Pause or delete it from Scheduled now.`,
+              'error',
+              10000
+            )
             return
           }
           toast('Saved')
@@ -546,21 +619,16 @@ export function CronScreen() {
           saved = await api('POST', '/api/cron/jobs', body)
           const bad = scheduleMismatch(parsed, saved, { isNew: true })
           if (bad) {
-            const newId = saved && typeof saved === 'object' ? jobId(saved as Job) : ''
-            if (newId) await api('DELETE', `/api/cron/jobs/${encodeURIComponent(newId)}`).catch(() => {})
-            reload()
-            refreshPanelValues(true)
-            toast(`Cancelled: ${bad}`, 'error', 8000)
+            await rollbackMismatchedJob(saved, bad, 'Cancelled')
             return
           }
-          try {
-            const delRes = await api<unknown>('DELETE', `/api/cron/jobs/${id}`)
-            if (responseFailed(delRes)) throw new Error('old job was not removed')
-          } catch (delErr) {
+          const oldDel = await verifiedDeleteCronJob(rawId)
+          if (oldDel.jobs) setData(oldDel.jobs)
+          else reload()
+          refreshPanelValues(true)
+          if (!oldDel.ok) {
             closeForm()
-            reload()
-            refreshPanelValues(true)
-            toast(`New job saved, but the old job could not be deleted (${errText(delErr)}). Delete the old one from the list.`, 'error', 8000)
+            toast(`New job saved, but the old job could not be deleted (${oldDel.reason}). Delete the old one from the list.`, 'error', 8000)
             return
           }
           toast('Saved as a new job')
@@ -570,11 +638,7 @@ export function CronScreen() {
         const bad = scheduleMismatch(parsed, saved, { isNew })
         if (bad) {
           // Fail closed: never leave an unattended job running on a time the person did not ask for.
-          const newId = saved && typeof saved === 'object' ? jobId(saved as Job) : ''
-          if (newId) await api('DELETE', `/api/cron/jobs/${encodeURIComponent(newId)}`).catch(() => {})
-          reload()
-          refreshPanelValues(true)
-          toast(`Job was not kept: ${bad}`, 'error', 8000)
+          await rollbackMismatchedJob(saved, bad, 'Job was not kept')
           return
         }
         toast('Scheduled')
@@ -591,7 +655,7 @@ export function CronScreen() {
 
   const edit = (j: Job) => {
     haptic()
-    setForm({ name: String(j.name || ''), schedule: jobSchedule(j), prompt: String(j.prompt || '') })
+    setForm({ name: String(j.name || ''), schedule: jobEditSchedule(j), prompt: String(j.prompt || '') })
     setEditing(j)
     setCreating(true)
   }
