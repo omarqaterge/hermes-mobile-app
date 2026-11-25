@@ -1,9 +1,11 @@
 // Appearance → Text size. Until the person picks a size in the app (`hm.textScale` unset), the app's text scale follows
-// Android's font size (Settings → Display → Font size), read once when the page loads through the keyed bridge
-// (`phoneTextScale`) and clamped to the sizes the app offers, 90 % to 135 %. A change of the phone's font size restarts
-// the activity, so the page reads it again then; nothing polls. Picking one of the five sizes stores it and overrides the
-// phone; "Phone default" removes `hm.textScale` again. A size stored by an earlier version is read as it always was.
+// Android's font size (Settings → Display → Font size), read at start and whenever MainActivity.onConfigurationChanged
+// calls `window.__hmPhoneTextScale()`, through the keyed bridge (`phoneTextScale`), clamped to the sizes the app offers
+// (90 % to 135 %). Handling `fontScale` in `configChanges` keeps open canvases, sheets and pages alive across system
+// font-size changes; nothing polls. Picking one of the five sizes stores it and overrides the phone; "Phone default"
+// removes `hm.textScale` again. A size stored by an earlier version is read as it always was.
 // No import of the store here: store.ts reads initialTextScale while it loads.
+import { useSyncExternalStore } from 'react'
 
 /** The sizes Appearance offers, smallest first. */
 export const TEXT_SIZES = [0.9, 1, 1.1, 1.2, 1.35] as const
@@ -56,5 +58,47 @@ export function chooseTextScale(v: number | null): number {
   } catch {
     /* storage refused: the choice lasts until the app restarts */
   }
-  return v ?? phoneTextScale()
+  return v ?? refreshPhoneTextScale()
+}
+
+let cachedPhone: number | null = null
+const phoneSubs = new Set<(scale: number) => void>()
+
+function getPhoneSnapshot(): number {
+  if (cachedPhone === null) cachedPhone = phoneTextScale()
+  return cachedPhone
+}
+
+/** Re-read Android's font size and notify listeners when the clamped scale changed. */
+export function refreshPhoneTextScale(): number {
+  const next = phoneTextScale()
+  if (cachedPhone !== next) {
+    cachedPhone = next
+    phoneSubs.forEach(fn => fn(next))
+  }
+  return next
+}
+
+export function subscribePhoneTextScale(fn: (scale: number) => void): () => void {
+  phoneSubs.add(fn)
+  return () => {
+    phoneSubs.delete(fn)
+  }
+}
+
+export function usePhoneTextScale(): number {
+  return useSyncExternalStore(
+    cb => subscribePhoneTextScale(() => cb()),
+    getPhoneSnapshot
+  )
+}
+
+// Android's MainActivity.onConfigurationChanged calls this when the phone's font size changes without recreating the activity.
+declare global {
+  interface Window {
+    __hmPhoneTextScale?: () => void
+  }
+}
+window.__hmPhoneTextScale = () => {
+  refreshPhoneTextScale()
 }

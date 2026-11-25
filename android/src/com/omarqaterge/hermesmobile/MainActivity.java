@@ -77,6 +77,8 @@ public class MainActivity extends Activity {
     String pendingShareText = null;
     boolean shareWaiting = false;
     boolean pageReady = false;
+    /** Latest system fontScale (updated in onCreate and onConfigurationChanged); read on the JavaBridge thread. */
+    volatile float currentFontScale = 1f;
     FrameLayout root;
     final Handler handler = new Handler(Looper.getMainLooper());
     static final long RENDER_GONE_WINDOW_MS = 60_000;
@@ -90,6 +92,7 @@ public class MainActivity extends Activity {
         bootT0 = 0; // each launch counts from its own create
         bootLog("create");
         super.onCreate(state);
+        currentFontScale = getResources().getConfiguration().fontScale;
         IntentGate.strip(this, getIntent()); // before any extra is read: only this app's own intents may carry session, draft…
         // Last theme background the page chose (OLED black or default), so launch doesn't flash.
         int bg = getSharedPreferences("hm", MODE_PRIVATE).getInt("bg", Color.parseColor("#0E1115"));
@@ -2043,11 +2046,18 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** The phone switched light/dark: let the page re-resolve the "System" theme. */
+    /** The phone switched light/dark or font size: keep the WebView's own zoom at 100 % and let the page
+     *  re-resolve the "System" theme and "Phone default" text size without restarting the activity. */
     @Override
     public void onConfigurationChanged(android.content.res.Configuration cfg) {
         super.onConfigurationChanged(cfg);
-        if (web != null) web.evaluateJavascript("window.__hmSystemTheme && window.__hmSystemTheme()", null);
+        if (cfg != null && cfg.fontScale > 0) currentFontScale = cfg.fontScale;
+        if (web != null) {
+            if (web.getSettings().getTextZoom() != 100) web.getSettings().setTextZoom(100);
+            web.evaluateJavascript(
+                    "window.__hmSystemTheme && window.__hmSystemTheme(); window.__hmPhoneTextScale && window.__hmPhoneTextScale()",
+                    null);
+        }
     }
 
     @Override
@@ -2813,7 +2823,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public float phoneTextScale(String key) {
             if (!ok(key)) return 0f;
-            return getResources().getConfiguration().fontScale;
+            float fs = currentFontScale;
+            return fs > 0 ? fs : getResources().getConfiguration().fontScale;
         }
 
         /** {"on":bool,"secure":bool}: Settings → Permissions → "Confirm approvals with fingerprint". */

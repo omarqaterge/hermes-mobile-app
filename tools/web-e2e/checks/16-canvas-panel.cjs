@@ -546,4 +546,42 @@ module.exports = async t => {
     await mock({ canvasFileChanged: [] })
     await p.close()
   }
+
+  // ── System font-size and dark-mode changes: handled in place without closing the open canvas ──
+  {
+    const cp = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    cp.on('pageerror', e => { console.log('PAGEERROR (canvas config change)', e.message); fail() })
+    await cp.addInitScript(nativeShell)
+    await cp.addInitScript(() => {
+      window.__fs = 1.0
+      window.__dark = true
+      localStorage.setItem('hm.theme', 'system')
+      localStorage.setItem('hm.motion', 'off')
+      localStorage.removeItem('hm.textScale')
+      localStorage.setItem('hm.lastSession', JSON.stringify({ id: 's-41', profile: 'default' }))
+      Object.assign(window.HermesAndroid, {
+        phoneTextScale: key => (key === 'K' ? window.__fs : 0),
+        isSystemDark: key => (key === 'K' ? window.__dark : true)
+      })
+    })
+    await cp.goto(WEB + '/')
+    await cp.getByText('answer s-41', { exact: true }).waitFor({ timeout: 10000 })
+    await cp.getByRole('banner').getByRole('button', { name: 'Canvas' }).click()
+    const panel = cp.getByRole('dialog', { name: 'Canvas' })
+    await panel.getByRole('button', { name: 'Wide plan', exact: true }).waitFor({ timeout: 5000 })
+    await cp.evaluate(() => {
+      window.__fs = 2.0
+      window.__dark = false
+      window.__hmPhoneTextScale && window.__hmPhoneTextScale()
+      window.__hmSystemTheme && window.__hmSystemTheme()
+    })
+    await cp.waitForFunction(() => Math.abs(Number(getComputedStyle(document.documentElement).getPropertyValue('--scale')) - 1.35) < 0.001, null, { timeout: 3000 }).catch(() => {})
+    const state = await cp.evaluate(() => ({
+      scale: Number(getComputedStyle(document.documentElement).getPropertyValue('--scale')),
+      theme: document.documentElement.dataset.theme
+    }))
+    const stillOpen = await panel.isVisible() && (await panel.getByRole('button', { name: 'Wide plan', exact: true }).count()) === 1
+    check(stillOpen && Math.abs(state.scale - 1.35) < 0.001 && state.theme === 'light', `canvas: system font-size and dark-mode changes update in place and keep the canvas open (${JSON.stringify({ stillOpen, ...state })})`)
+    await cp.close()
+  }
 }

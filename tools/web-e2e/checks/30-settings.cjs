@@ -453,4 +453,34 @@ module.exports = async t => {
     check(dim.length === 0, `light: no text there is faded by opacity below 4.5:1 (${JSON.stringify(dim)})`)
     await p.close()
   }
+
+  // ── Live phone font-size changes: Appearance stays open, footer updates live, Phone default rescales,
+  //    and a picked size stays fixed while the footer still tracks the phone ──
+  {
+    const p = await browser.newPage({ viewport: { width: 375, height: 812 } })
+    await p.addInitScript(nativeShell)
+    await p.addInitScript(() => {
+      window.__fs = 1.1
+      localStorage.setItem('hm.motion', 'off')
+      localStorage.removeItem('hm.textScale')
+      Object.assign(window.HermesAndroid, { phoneTextScale: key => (key === 'K' ? window.__fs : 0) })
+    })
+    await p.goto(WEB + '/')
+    await p.getByPlaceholder('Message Hermux').waitFor({ timeout: 15000 })
+    await p.getByRole('button', { name: /^Sessions/ }).click()
+    await p.getByRole('button', { name: 'Settings', exact: true }).click()
+    await p.getByRole('textbox', { name: 'Search settings' }).waitFor({ timeout: 5000 })
+    await settingsPage(p, 'Appearance')
+    const scaleOf = () => p.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--scale')))
+    await p.evaluate(() => { window.__fs = 2.0; window.__hmPhoneTextScale && window.__hmPhoneTextScale() })
+    await p.waitForFunction(() => document.querySelector('.screen')?.innerText.includes('(135% here)'), null, { timeout: 3000 }).catch(() => {})
+    const afterDefault = { scale: await scaleOf(), foot: (await p.locator('.screen').innerText()).includes('Phone default follows your phone’s font size (135% here).') }
+    check(Math.abs(afterDefault.scale - 1.35) < 0.001 && afterDefault.foot, `text size: live phone font-size change rescales Phone default and updates the footer in place (${JSON.stringify(afterDefault)})`)
+    await p.getByRole('button', { name: '110%', exact: true }).click()
+    await p.evaluate(() => { window.__fs = 1.2; window.__hmPhoneTextScale && window.__hmPhoneTextScale() })
+    await p.waitForFunction(() => document.querySelector('.screen')?.innerText.includes('(120% here)'), null, { timeout: 3000 }).catch(() => {})
+    const afterPicked = { scale: await scaleOf(), foot: (await p.locator('.screen').innerText()).includes('Phone default follows your phone’s font size (120% here).') }
+    check(Math.abs(afterPicked.scale - 1.1) < 0.001 && afterPicked.foot, `text size: with 110% picked, a live phone font-size change updates only the footer (${JSON.stringify(afterPicked)})`)
+    await p.close()
+  }
 }

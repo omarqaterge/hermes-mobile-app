@@ -13,7 +13,7 @@ Hermux can drive an Android app on a hidden display (a "background app"). The sh
 | Element | Looks like | Tap | Long-press / swipe | States |
 |---|---|---|---|---|
 | Card (between the read-aloud player and the composer) | A row: thumbnail (200 px wide frame, 📱 until the first picture arrives), "Using <app name>", the current action ("Working in the background…" when empty), a chevron › | Opens the viewer | | Aria-label "Using <app>. Open live view". Not rendered when there is no background app, or when it belongs to another chat (`bgForChat` compares the stored chat id; a chat that is still opening counts). |
-| Viewer sheet | A tall sheet titled "Using <app name>": the live picture (alt "Live view of <app>"; "Waiting for the first picture…" before the first frame), the action text, and two buttons | | Drag the top strip down to close | |
+| Viewer sheet | A tall sheet (`94dvh` / `94vh`) titled "Using <app name>": the live picture fitted whole inside `.bg-view` with its aspect ratio kept (letterboxed via `object-fit: contain` in both portrait and landscape, alt "Live view of <app>"; "Waiting for the first picture…" before the first frame), the action text, and two buttons | | Drag the top strip down to close | |
 | Take over | Primary button | Calls `bgAction('take_over')`: the app is brought to the real screen. Toast "<app> is on your screen now"; the viewer closes. | | |
 | Stop | Red button | Calls `bgAction('stop')`: stops the background app. Toast "Stopped <app>"; the viewer closes. | | An error from the shell shows as an error toast (its text without the "error:" prefix, or "Could not do that") and the viewer stays open |
 
