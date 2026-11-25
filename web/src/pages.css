@@ -235,6 +235,15 @@
 .job-last.failed {
   color: var(--err);
 }
+.job-schedule-check {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--glass-dim);
+  padding: 6px 2px 0;
+}
+.job-schedule-check.bad {
+  color: var(--err);
+}
 .screen .tag {
   font-size: 0.75rem;
   padding: 1px 6px;
