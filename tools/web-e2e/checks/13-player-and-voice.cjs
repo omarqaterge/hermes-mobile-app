@@ -307,6 +307,31 @@ module.exports = async t => {
     await player.getByRole('button', { name: 'Close player' }).click()
     await player.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
     check((await native('stopSpeaking')) >= 1 && (await vq.getByRole('region', { name: 'Reading aloud' }).count()) === 0, 'player: Close player stops the reading and closes the player')
+    // Opening Setup check from the header during Live mode ends Live mode and releases the microphone natively.
+    const cancelsBefore = await native('cancelListening')
+    await vq.getByRole('button', { name: 'Live conversation' }).click()
+    const liveStarted = await vq.getByText(/Live · Listening…/).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    await vq.getByRole('banner').getByRole('button', { name: /Hermux agent/ }).click()
+    const setupBtn = vq.getByRole('dialog').getByRole('button', { name: 'Setup check' })
+    await setupBtn.waitFor({ timeout: 3000 })
+    await setupBtn.click()
+    const onSetup = await vq.getByText('Setup check', { exact: true }).first().waitFor({ timeout: 3000 }).then(() => true, () => false)
+    const liveEnded = await vq.getByText(/Live · /).waitFor({ state: 'detached', timeout: 3000 }).then(() => true, () => false)
+    const cancelsAfterLive = await native('cancelListening')
+    check(liveStarted && onSetup && liveEnded && cancelsAfterLive > cancelsBefore, `voice: opening Setup check from the header ends Live mode and releases the mic (${liveStarted}, ${onSetup}, ${liveEnded}, cancels ${cancelsBefore} -> ${cancelsAfterLive})`)
+    await vq.evaluate(() => window.hermesBack())
+    await vq.getByRole('button', { name: 'Live conversation' }).waitFor({ timeout: 3000 })
+    // Plain dictation also releases the microphone when leaving the chat for another screen.
+    await vq.getByRole('button', { name: 'Dictate' }).click()
+    await vq.evaluate(() => window.__hmVoice('ready', ''))
+    await vq.getByRole('button', { name: 'Stop dictation' }).waitFor({ timeout: 3000 })
+    await vq.getByRole('banner').getByRole('button', { name: /Hermux agent/ }).click()
+    await vq.getByRole('dialog').getByRole('button', { name: 'Setup check' }).click()
+    await vq.getByText('Setup check', { exact: true }).first().waitFor({ timeout: 3000 })
+    const cancelsAfterDict = await native('cancelListening')
+    await vq.evaluate(() => window.hermesBack())
+    const dictCleared = (await vq.getByRole('button', { name: 'Stop dictation' }).count()) === 0
+    check(cancelsAfterDict > cancelsAfterLive && dictCleared, `voice: opening Setup check during dictation releases the mic (${cancelsAfterLive} -> ${cancelsAfterDict}, cleared=${dictCleared})`)
     await vq.close()
   }
 }

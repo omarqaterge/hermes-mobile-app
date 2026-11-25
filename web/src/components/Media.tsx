@@ -305,23 +305,84 @@ function AudioPlayer({ url, name, onError }: { url: string; name: string; onErro
  *  has read (a prompt injection can write it), and the shell refuses it too in a chat that has read phone data (RemoteGuard.java).
  *  Local files and attachments load as always. */
 export function Media({ src, alt }: { src: string; alt?: string }) {
-  const [allowed, setAllowed] = useState(false)
-  if (!allowed && isRemoteUrl(src) && mediaKind(src) !== 'file') return <RemoteHold src={src} onLoad={() => setAllowed(true)} />
-  return <MediaView src={src} alt={alt} />
+  const [allowedSrc, setAllowedSrc] = useState<string | null>(null)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const remote = isRemoteUrl(src) && mediaKind(src) !== 'file'
+  const allowed = allowedSrc === src
+  if (!allowed && remote) {
+    return (
+      <RemoteHold
+        src={src}
+        failed={failedSrc === src}
+        onLoad={() => {
+          setFailedSrc(null)
+          setAllowedSrc(src)
+        }}
+      />
+    )
+  }
+  return (
+    <MediaView
+      key={src}
+      src={src}
+      alt={alt}
+      remote={remote}
+      onRemoteError={
+        remote
+          ? () => {
+              setAllowedSrc(null)
+              setFailedSrc(src)
+            }
+          : undefined
+      }
+    />
+  )
 }
 
 /** The placeholder for a remote image, video or audio held back: the host, and a line when the address carries a query.
  *  An image's tap lets the shell pass that one address once, then loads it. Video and audio make several requests, so their
- *  tap opens it in the browser instead (after the address is shown in full, in a chat that has read phone data). */
-function RemoteHold({ src, onLoad }: { src: string; onLoad: () => void }) {
+ *  tap opens it in the browser instead (after the address is shown in full, in a chat that has read phone data).
+ *  A pointer that moved (scrolling the chat) never counts as a tap, and a failed image load returns to this hold so the
+ *  host and query warning are never lost. */
+function RemoteHold({ src, failed = false, onLoad }: { src: string; failed?: boolean; onLoad: () => void }) {
   const guarded = useGuard() // a chat that has read phone data also shows the address in full before the browser opens it
+  const press = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null)
+  const dragged = useRef(false)
   const a = addressOf(src)
   const kind = mediaKind(src)
   const inline = kind === 'image'
   return (
     <button
       className="remote-hold"
-      onClick={() => {
+      onPointerDown={e => {
+        dragged.current = false
+        press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false }
+      }}
+      onPointerMove={e => {
+        const p = press.current
+        if (!p || p.id !== e.pointerId) return
+        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) {
+          p.moved = true
+          dragged.current = true
+        }
+      }}
+      onPointerUp={e => {
+        const p = press.current
+        if (p && p.id === e.pointerId) {
+          dragged.current = p.moved
+          press.current = null
+        }
+      }}
+      onPointerCancel={() => {
+        dragged.current = true
+        press.current = null
+      }}
+      onClick={e => {
+        e.stopPropagation()
+        if (dragged.current) {
+          dragged.current = false
+          return
+        }
         haptic()
         if (inline) {
           allowRemoteOnce(src)
@@ -332,17 +393,20 @@ function RemoteHold({ src, onLoad }: { src: string; onLoad: () => void }) {
     >
       <span className="remote-hold-host">{a.host}</span>
       {a.query && <span className="remote-hold-data">has data in the address</span>}
-      <span className="remote-hold-tap">{inline ? 'Tap to load' : 'Tap to open'}</span>
+      <span className="remote-hold-tap">{inline ? (failed ? "Couldn't load · Tap to load" : 'Tap to load') : 'Tap to open'}</span>
     </button>
   )
 }
 
-function MediaView({ src, alt }: { src: string; alt?: string }) {
+function MediaView({ src, alt, remote = false, onRemoteError }: { src: string; alt?: string; remote?: boolean; onRemoteError?: () => void }) {
   const kind = mediaKind(src)
   const { url, error } = useSrc(kind === 'file' ? '' : src)
   const [zoom, setZoom] = useState(false)
   const [failed, setFailed] = useState('')
-  const fail = () => setFailed("couldn't load")
+  const fail = () => {
+    if (onRemoteError) onRemoteError()
+    else setFailed("couldn't load")
+  }
   if (kind === 'file') return <FileChip src={src} label={alt} />
   if (error || failed) return <FileChip src={src} label={`${alt || localPath(src).split('/').pop()} (${error || failed})`} />
   if (!url) return <div className="media-loading">Loading {kind}…</div>
@@ -350,7 +414,7 @@ function MediaView({ src, alt }: { src: string; alt?: string }) {
   if (kind === 'audio') return <AudioPlayer url={url} name={alt || localPath(src).split('/').pop() || 'Audio'} onError={fail} />
   return (
     <>
-      <img className="media" src={url} alt={alt || ''} loading="lazy" onClick={() => setZoom(true)} onError={fail} />
+      <img className="media" src={url} alt={alt || ''} loading={remote ? undefined : 'lazy'} onClick={() => setZoom(true)} onError={fail} />
       {zoom && <Lightbox src={src} url={url} alt={alt} onClose={() => setZoom(false)} />}
     </>
   )

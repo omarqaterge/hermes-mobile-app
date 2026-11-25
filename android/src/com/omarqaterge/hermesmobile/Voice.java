@@ -485,10 +485,12 @@ final class Voice {
 
     // ── dictation ───────────────────────────────────────────
     private boolean continuous = false; // keep listening (restart after each pause) until stopListening()
+    private boolean listeningActive = false; // cleared on stop/cancel so a late LocalStt fallback cannot re-open the mic
     private int failures = 0; // consecutive real errors, to avoid a tight failure loop
     private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable restart = this::beginRecognition;
     private final Runnable forceEnd = () -> finishListening();
+    private final Runnable fallbackRecognizer = () -> { if (listeningActive) startRecognizer(); };
 
     // Which recogniser to use: null = the phone's default (Settings → voice input). A missing or broken default made every
     // dictation fail at once ("stt-5" on older Android, "stt-10" on newer), even with a working recogniser installed, so
@@ -506,6 +508,8 @@ final class Voice {
             return;
         }
         stopSpeaking(); // don't listen to ourselves
+        listeningActive = true;
+        main.removeCallbacks(fallbackRecognizer);
         if (a.stt.start(localSink)) return; // an on-device model is chosen (Settings → Voice → Speech recognition)
         startRecognizer();
     }
@@ -521,6 +525,8 @@ final class Voice {
             js("end", "");
             return;
         }
+        listeningActive = true;
+        main.removeCallbacks(fallbackRecognizer);
         if (a.stt.start(localSink, true)) return;
         startRecognizer();
     }
@@ -539,7 +545,7 @@ final class Voice {
             // the model wouldn't load (or the microphone wouldn't open for it): carry on with the phone's recogniser
             fellBack = true;
             js("stt-fallback", code);
-            main.post(Voice.this::startRecognizer);
+            main.post(fallbackRecognizer);
         }
         @Override public void end() {
             if (!fellBack) js("end", "");
@@ -701,7 +707,9 @@ final class Voice {
     }
 
     private void finishListening() {
+        listeningActive = false;
         continuous = false;
+        main.removeCallbacks(fallbackRecognizer);
         main.removeCallbacks(restart);
         main.removeCallbacks(forceEnd);
         if (sr != null) {
@@ -716,17 +724,35 @@ final class Voice {
         return l == null || l.isEmpty() ? null : l.get(0);
     }
 
-    /** The user pressed stop (or left the app): finish the current phrase, then end. */
+    /** The user pressed stop (dictation): finish the current phrase, then end. */
     void stopListening() {
-        if (a != null && a.stt.listening()) {
-            a.stt.stop(); // finishes the phrase being said, then "end"
-            return;
-        }
+        listeningActive = false;
+        main.removeCallbacks(fallbackRecognizer);
+        boolean local = a != null && a.stt.listening();
+        if (a != null) a.stt.stop(); // finishes the phrase being said, then "end"
+        if (local && !continuous && sr == null) return;
         if (!continuous && sr == null) return;
         continuous = false;
         main.removeCallbacks(restart);
         if (sr != null) sr.stopListening(); // delivers the last words via onResults / onError, which then end the session
         main.postDelayed(forceEnd, 2000); // in case the engine never calls back
+    }
+
+    /** Immediate release (ending Live mode, muting, leaving the chat or app): close the microphone now, drop pending speech. */
+    void cancelListening() {
+        listeningActive = false;
+        main.removeCallbacks(fallbackRecognizer);
+        if (a != null) a.stt.stopNow();
+        if (!continuous && sr == null) return;
+        continuous = false;
+        main.removeCallbacks(restart);
+        main.removeCallbacks(forceEnd);
+        if (sr != null) {
+            try { sr.cancel(); } catch (Exception ignored) { }
+            sr.destroy();
+            sr = null;
+        }
+        js("end", "");
     }
 
     void onPermission(int[] results) {
@@ -742,6 +768,8 @@ final class Voice {
     }
 
     void destroy() {
+        listeningActive = false;
+        listenAfterPermission = false;
         continuous = false;
         main.removeCallbacksAndMessages(null);
         if (sr != null) sr.destroy();

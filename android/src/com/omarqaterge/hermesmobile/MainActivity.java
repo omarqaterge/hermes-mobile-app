@@ -2066,7 +2066,7 @@ public class MainActivity extends Activity {
         visible = false;
         HermesService.openChat = null; // nothing is on screen any more: a chat finishing now counts as unseen
         PhoneDataRoute.flushChats(); // write the record of chats that read phone data now (its saves are batched)
-        voice.stopListening(); // never leave the microphone open in the background
+        voice.cancelListening(); // never leave the microphone open in the background
         stt.release(); // nor an on-device speech model in memory
         // The open chat was seen until now: messages that arrive meanwhile get "New Messages" on return.
         web.evaluateJavascript("window.hermesPause && window.hermesPause()", null);
@@ -2952,6 +2952,13 @@ public class MainActivity extends Activity {
         public void stopListening(String key) {
             if (!ok(key)) return;
             runOnUiThread(voice::stopListening);
+        }
+
+        /** Immediate stop (ending Live mode, muting, leaving the chat for another screen): releases the microphone now. */
+        @JavascriptInterface
+        public void cancelListening(String key) {
+            if (!ok(key)) return;
+            runOnUiThread(voice::cancelListening);
         }
 
         /** On-device dictation models (LocalStt): JSON {chosen, sample, importing?, importError?, models: [...]}. */

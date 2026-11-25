@@ -34,6 +34,7 @@ interface AndroidBridge {
   startListening?(): void
   startListeningOver?(): void // Live mode: listen while Hermes speaks, without stopping it (barge-in)
   stopListening?(): void
+  cancelListening?(): void // immediate mic release (Live mode end, mute, leaving the chat for another screen)
   sharedItem?(index: number): string
   setLastChat?(id: string, title: string): void
   chatSeen?(id: string): void

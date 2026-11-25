@@ -174,14 +174,16 @@ function HtmlViewer({ html, onClose }: { html: string; onClose: () => void }) {
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const streaming = useContext(StreamingCtx)
+  const guarded = useGuard()
   const [preview, setPreview] = useState(false)
   const [viewer, setViewer] = useState(false)
   const [copied, setCopied] = useState(false)
   const [open, setOpen] = useState(false)
   const [wrap, setWrap] = useState(false)
   const lang = langOf(children)
-  if (lang === 'mermaid') return <Mermaid code={textOf(children)} />
-  if (lang === 'openui-lang' || lang === 'openui') {
+  const lower = lang.toLowerCase()
+  if (lower === 'mermaid') return <Mermaid code={textOf(children)} />
+  if (lower === 'openui-lang' || lower === 'openui') {
     const src = textOf(children)
     return (
       <OpenUIBlock
@@ -196,10 +198,13 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     )
   }
   const code = textOf(children)
-  const isDiff = lang === 'diff' || lang === 'patch' || (!lang && looksLikeDiff(code))
+  const isDiff = lower === 'diff' || lower === 'patch' || (!lang && looksLikeDiff(code))
   const lines = code.split('\n').length
   const long = lines > 26
-  const previewable = (lang === 'html' || lang === 'svg') && lines >= 3
+  const isHtml = lower === 'html'
+  const isSvg = lower === 'svg'
+  const htmlHeld = guarded && isHtml
+  const previewable = ((isHtml && !guarded) || isSvg) && lines >= 3
   const showing = previewable && preview
   return (
     <div className={`codeblock${long && !open ? ' collapsed' : ''}${wrap ? ' wrap' : ''}`}>
@@ -219,7 +224,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           <button
             onClick={() => {
               haptic()
-              const type = lang === 'html' ? 'html' : lang === 'svg' ? 'svg' : lang === 'markdown' || lang === 'md' ? 'markdown' : lang === 'json' ? 'json' : lang === 'csv' ? 'csv' : 'code'
+              const type = isHtml ? 'html' : isSvg ? 'svg' : lower === 'markdown' || lower === 'md' ? 'markdown' : lower === 'json' ? 'json' : lower === 'csv' ? 'csv' : 'code'
               const title = type === 'code' ? `${lang || 'code'} snippet` : type === 'html' ? 'Web page' : `${type} snippet`
               void createDoc(title, code, type, type === 'code' ? lang : '').then(d => d && toast('Opened in the canvas'))
             }}
@@ -238,8 +243,11 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+      {htmlHeld && (
+        <div className="html-note">This chat has read data from your phone, so HTML previews are off here. The source is shown instead; nothing was run.</div>
+      )}
       {showing ? (
-        lang === 'svg' ? (
+        isSvg ? (
           <img className="inline-frame inline-svg" alt="SVG preview" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(code)}`} />
         ) : (
           <>

@@ -8,7 +8,7 @@
 type Raw = Record<string, (...args: unknown[]) => unknown>
 
 const METHODS = [
-  'speak', 'setReadAloud', 'openTtsEngineApp', 'shareText', 'listVoices', 'stopSpeaking', 'ttsControl', 'startListening', 'startListeningOver', 'stopListening',
+  'speak', 'setReadAloud', 'openTtsEngineApp', 'shareText', 'listVoices', 'stopSpeaking', 'ttsControl', 'startListening', 'startListeningOver', 'stopListening', 'cancelListening',
   'listSttModels', 'downloadSttModel', 'cancelSttDownload', 'deleteSttModel', 'setSttModel', 'testSttModel', 'addSttModelUrl', 'pickSttModelFiles',
   'getToken', 'httpAsync', 'openFile', 'getBaseUrl', 'startHermes', 'watchHermes', 'notify', 'setBackground', 'isSystemDark',
   'cancelNotification', 'openExternal', 'copyText', 'copyRich', 'haptic', 'setEdgeGrab', 'isInForeground', 'appVersion',

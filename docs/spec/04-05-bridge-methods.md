@@ -19,7 +19,8 @@ The page reaches Android through the JavaScript interface `HermesAndroid` (class
 | `ttsControl` | `cmd` (`play`, `pause`, `toggle`, `rew`, `ff`, `stop`; anything else is ignored) | nothing | `Voice.control(cmd)`: the in-app player acts on the same reader as the `Reading aloud` card. |
 | `startListening` | none | nothing | `Voice.startListening` (dictation). Asks for `RECORD_AUDIO` first if needed. |
 | `startListeningOver` | none | nothing | `Voice.startListeningOver`: Live mode's barge-in, listening while a reply is being read without stopping it. Never asks for the microphone (only `end` when it isn't allowed). |
-| `stopListening` | none | nothing | `Voice.stopListening`. |
+| `stopListening` | none | nothing | `Voice.stopListening`: stops dictation after finishing the current phrase. |
+| `cancelListening` | none | nothing | `Voice.cancelListening`: releases the microphone immediately (cancels and destroys Android's `SpeechRecognizer` and calls `LocalStt.stopNow`) without waiting for a final phrase; used when Live mode ends, mutes, or leaves the chat screen, and when dictation stops on screen navigation. |
 | `listSttModels` | none | JSON string | `LocalStt.list`: `{chosen, sample, importing?, importError?, models: [{id, name, kind, size, live, punctuation, good, weak, licence, recommended, custom, source, state (none / downloading / checking / ready / failed), done, total, error, test, onDisk}]}`. |
 | `downloadSttModel` | `id` | nothing | `LocalStt.download`: downloads a catalogue model (and Silero VAD when it needs one), then checks it; also "Try again" (files already there and intact are kept). Async: `stt-models` events. |
 | `cancelSttDownload` | `id` | nothing | Stops a download at its next block; the `.part` file stays so a new download resumes. |
