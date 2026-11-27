@@ -352,6 +352,40 @@ module.exports = async t => {
         )
         check(cronPauses().some(c => c.path === '/api/cron/jobs/j-once/pause'), 'cron edit mismatch: calls /pause on the mismatched job')
 
+        // 2d. A PUT reply that shows no schedule ({ ok: true }) is checked against the job read back from the list, so a
+        // wrong stored schedule still pauses the job instead of toasting "Saved".
+        const plainJob = { id: 'j-plain', name: 'Plain job', schedule: { kind: 'interval', minutes: 60, display: 'every 60m' }, prompt: 'Ping', next_run_at: new Date(Date.now() + 3600_000).toISOString() }
+        await mock({ cronMode: { jobs: [plainJob], putMinimal: true, putOverride: badInterval } })
+        await back(p)
+        await panelRow(p, /^Scheduled/)
+        await p.getByText('Plain job', { exact: true }).waitFor({ timeout: 5000 })
+        await p.getByRole('button', { name: 'Edit', exact: true }).click()
+        const minDlg = p.getByRole('dialog')
+        await minDlg.getByLabel('Schedule').fill('0 3 1 1 *')
+        await minDlg.getByRole('button', { name: 'Save', exact: true }).click()
+        // (2c's toast may still be up: match this case's own reason)
+        await p.locator('.toast', { hasText: /interval schedule instead of cron[\s\S]*was paused so it won’t run at the wrong time/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron edit mismatch: a PUT reply without a schedule is checked against the job read back'),
+          () => check(false, 'cron edit mismatch: a PUT reply without a schedule is checked against the job read back')
+        )
+        check(cronPauses().some(c => c.path === '/api/cron/jobs/j-plain/pause'), 'cron edit mismatch: the read-back mismatch pauses the job')
+
+        // 2e. A mismatched edit of a job that is already paused is confirmed from a fresh list (not the PUT reply): the
+        // toast says it stays paused (the old code trusted the reply and said it "was paused").
+        const pausedJob = { ...plainJob, id: 'j-paused', name: 'Paused job', paused: true }
+        await mock({ cronMode: { jobs: [pausedJob], putOverride: { ...badInterval, paused: true } } })
+        await back(p)
+        await panelRow(p, /^Scheduled/)
+        await p.getByText('Paused job', { exact: true }).waitFor({ timeout: 5000 })
+        await p.getByRole('button', { name: 'Edit', exact: true }).click()
+        const pausedDlg = p.getByRole('dialog')
+        await pausedDlg.getByLabel('Schedule').fill('0 3 1 1 *')
+        await pausedDlg.getByRole('button', { name: 'Save', exact: true }).click()
+        await p.locator('.toast', { hasText: /stays paused so it won’t run at the wrong time/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron edit mismatch: an already-paused job is confirmed paused and the toast says it stays paused'),
+          () => check(false, 'cron edit mismatch: an already-paused job is confirmed paused and the toast says it stays paused')
+        )
+
         // 3. Delete that silently fails to remove the job from the store must NOT toast "Deleted" and must keep the job card.
         const stuckJob = { id: 'j-stuck', name: 'Stuck job', schedule: 'every 30m', prompt: 'Ping', next_run_at: new Date(Date.now() + 1800_000).toISOString() }
         await mock({ cronMode: { jobs: [stuckJob], deleteSticks: true } })

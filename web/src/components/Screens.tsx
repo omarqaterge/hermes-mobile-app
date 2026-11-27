@@ -473,6 +473,40 @@ async function verifiedDeleteCronJob(id: string): Promise<{ ok: boolean; jobs?: 
   return { ok: true, jobs: fresh }
 }
 
+/** True when a save reply shows something `scheduleMismatch` can check: a schedule or a next run. */
+const carriesSchedule = (x: unknown): boolean =>
+  !!x && typeof x === 'object' && ['schedule', 'next_run_at', 'next_run'].some(k => (x as Record<string, unknown>)[k] != null)
+
+/** The job as Hermes stored it: the save reply when it shows the schedule, else the job read back from a fresh list
+ *  (a bare `{ ok: true }` reply can't be checked). `rec` is null when the job can't be read back. */
+async function savedJobRecord(saved: unknown, id: string): Promise<{ rec: unknown; jobs?: Job[] }> {
+  if (carriesSchedule(saved) || !id) return { rec: saved }
+  try {
+    const jobs = await fetchCronJobs()
+    return { rec: jobs.find(x => jobId(x) === id) ?? null, jobs }
+  } catch {
+    return { rec: null }
+  }
+}
+
+/** Pauses a job whose schedule came out wrong and confirms from a fresh list that it is paused, never trusting the save
+ *  reply. `already` is true when the list shows it was paused before. */
+async function verifiedPauseCronJob(id: string): Promise<{ ok: boolean; already?: boolean; jobs?: Job[] }> {
+  if (!id) return { ok: false }
+  try {
+    let jobs = await fetchCronJobs()
+    let found = jobs.find(x => jobId(x) === id)
+    if (found && jobPaused(found)) return { ok: true, already: true, jobs }
+    const res = await api<unknown>('POST', `/api/cron/jobs/${encodeURIComponent(id)}/pause`)
+    if (responseFailed(res)) return { ok: false, jobs }
+    jobs = await fetchCronJobs()
+    found = jobs.find(x => jobId(x) === id)
+    return { ok: Boolean(found && jobPaused(found)), jobs }
+  } catch {
+    return { ok: false }
+  }
+}
+
 export function CronScreen() {
   const profile = useStore(s => s.profile)
   const { data, error, loading, reload, setData } = useLoader(fetchCronJobs, [profile])
@@ -563,6 +597,14 @@ export function CronScreen() {
     }
   }
 
+  // A new job's schedule as Hermes stored it, checked against what was asked; a job that can't be read back counts as wrong.
+  const newJobMismatch = async (parsed: ValidSchedule, saved: unknown): Promise<string | null> => {
+    const back = await savedJobRecord(saved, saved && typeof saved === 'object' ? jobId(saved as Job) : '')
+    if (back.jobs) setData(back.jobs)
+    if (back.rec == null) return 'Hermux could not read the new job back to check its schedule.'
+    return scheduleMismatch(parsed, back.rec, { isNew: true })
+  }
+
   const create = async () => {
     if (saving) return
     const parsed = parseSchedule(form.schedule)
@@ -574,7 +616,6 @@ export function CronScreen() {
     setSaving(true)
     try {
       let saved: unknown = null
-      let isNew = !editing
       if (editing) {
         const rawId = jobId(editing)
         const id = encodeURIComponent(rawId)
@@ -582,29 +623,26 @@ export function CronScreen() {
         const scheduleChanged = !prevParsed.ok || !schedulesMatch(prevParsed, parsed)
         try {
           saved = await api('PUT', `/api/cron/jobs/${id}`, { updates: body }) // the dashboard's shape: {updates: {…}}
-          const bad = scheduleMismatch(parsed, saved, { checkNextRun: scheduleChanged })
+          const back = await savedJobRecord(saved, rawId)
+          if (back.jobs) setData(back.jobs)
+          if (back.rec == null) {
+            closeForm()
+            reload()
+            refreshPanelValues(true)
+            toast('Saved, but Hermux could not read the job back to check its schedule. Check it in Scheduled.', 'error', 10000)
+            return
+          }
+          const bad = scheduleMismatch(parsed, back.rec, { checkNextRun: scheduleChanged })
           if (bad) {
             // Fail closed on edit mismatch: pause the job so it cannot fire at the wrong time, and verify it is paused.
-            let pausedOk = jobPaused(saved && typeof saved === 'object' ? (saved as Job) : editing)
-            if (!pausedOk && rawId) {
-              try {
-                const pauseRes = await api<unknown>('POST', `/api/cron/jobs/${id}/pause`)
-                if (!responseFailed(pauseRes)) {
-                  const fresh = await fetchCronJobs()
-                  setData(fresh)
-                  const found = fresh.find(x => jobId(x) === rawId)
-                  pausedOk = Boolean(found && jobPaused(found))
-                }
-              } catch {
-                pausedOk = false
-              }
-            }
-            if (!pausedOk) reload()
+            const pause = await verifiedPauseCronJob(rawId)
+            if (pause.jobs) setData(pause.jobs)
+            else reload()
             refreshPanelValues(true)
             closeForm()
             toast(
-              pausedOk
-                ? `Schedule did not match (${bad}). The job was paused so it won’t run at the wrong time.`
+              pause.ok
+                ? `Schedule did not match (${bad}). The job ${pause.already ? 'stays' : 'was'} paused so it won’t run at the wrong time.`
                 : `Schedule did not match (${bad}), and Hermux could not confirm the job is paused. Pause or delete it from Scheduled now.`,
               'error',
               10000
@@ -615,9 +653,8 @@ export function CronScreen() {
         } catch (e) {
           // A dashboard without job editing: replace the job (new id, its run history stays with the old one).
           if (!(e instanceof ApiError) || (e.status !== 404 && e.status !== 405)) throw e
-          isNew = true
           saved = await api('POST', '/api/cron/jobs', body)
-          const bad = scheduleMismatch(parsed, saved, { isNew: true })
+          const bad = await newJobMismatch(parsed, saved)
           if (bad) {
             await rollbackMismatchedJob(saved, bad, 'Cancelled')
             return
@@ -635,7 +672,7 @@ export function CronScreen() {
         }
       } else {
         saved = await api('POST', '/api/cron/jobs', body)
-        const bad = scheduleMismatch(parsed, saved, { isNew })
+        const bad = await newJobMismatch(parsed, saved)
         if (bad) {
           // Fail closed: never leave an unattended job running on a time the person did not ask for.
           await rollbackMismatchedJob(saved, bad, 'Job was not kept')
