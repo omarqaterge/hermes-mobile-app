@@ -177,7 +177,7 @@ let codexPolls = 0
 // (its status reads ~/.hermes/.anthropic_oauth.json and env vars only), /api/credentials/pool lists the entry.
 let extraBots = false
 let emptyLists = false // true: Skills, Scheduled, Projects, Memory, the gallery and the MCP servers answer with nothing (empty states)
-let cronMode = null // { jobs, postOverride, deleteSticks, deleteFail } for Scheduled validation/delete checks
+let cronMode = null // { jobs, postOverride, postNoId, putOverride, putMinimal, putStatus, pauseFail, pauseSticks, deleteSticks, deleteFail } for Scheduled validation/delete checks
 let deleteMode = null // { fail, activeOnce, hidden } for chat delete reliability checks
 let claudePool = []
 let claudeLoginMissing = false // true = an older plugin without /claude-login (404)
@@ -415,6 +415,7 @@ const server = http.createServer((req, res) => {
       if (idx < 0) return send({ detail: 'Not Found' }, 404)
       const updated = { ...cronMode.jobs[idx], ...upd, ...(cronMode.putOverride || {}) }
       cronMode.jobs[idx] = updated
+      if (cronMode.putMinimal) return send({ ok: true }) // a reply that shows no schedule: the app must read the job back
       return send(updated)
     }
     if (cronMode && /^\/api\/cron\/jobs\/[^/]+\/pause$/.test(p) && req.method === 'POST') {
