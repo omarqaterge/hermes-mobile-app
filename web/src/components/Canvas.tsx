@@ -5,7 +5,8 @@ import { sendPrompt, errText } from '../gateway'
 import { toast } from '../store'
 import { confirmDialog, promptDialog } from '../dialog'
 import { useBackHandler } from '../backstack'
-import { api } from '../api'
+import { api, ApiError } from '../api'
+import { askUnlock, lockView } from '../lockview'
 import {
   canvasSaveBlockReason,
   closeCanvas,
@@ -43,26 +44,61 @@ import { lessMotion } from '../motion'
 import { Icon, type IconName } from './icons'
 
 export const TYPE_ICON: Record<DocType, IconName> = { markdown: 'note', html: 'globe', code: 'code', text: 'file', json: 'json', csv: 'table', svg: 'image', mermaid: 'branch' }
-const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
-const CODE_EXT: Record<string, string> = { python: 'py', javascript: 'js', typescript: 'ts', bash: 'sh', rust: 'rs', go: 'go', java: 'java', kotlin: 'kt', c: 'c', cpp: 'cpp', css: 'css', sql: 'sql', yaml: 'yml' }
-const ALT_EXT: Record<string, string[]> = {
-  markdown: ['md', 'markdown'],
-  html: ['html', 'htm'],
-  text: ['txt', 'log'],
-  csv: ['csv', 'tsv'],
-  mermaid: ['mmd', 'mermaid'],
-  yaml: ['yml', 'yaml'],
-  javascript: ['js', 'jsx'],
-  typescript: ['ts', 'tsx'],
-  c: ['c', 'h'],
-  cpp: ['cpp', 'cc', 'cxx', 'hpp', 'h'],
-  python: ['py'],
-  bash: ['sh', 'bash'],
-  rust: ['rs'],
-  kotlin: ['kt', 'kts'],
-  ruby: ['rb'],
-  latex: ['tex']
-}
+// Maps (never plain objects) so prototype property names like `constructor`, `__proto__` or `toString` can never match.
+const EXT = new Map<string, string>([
+  ['markdown', 'md'],
+  ['html', 'html'],
+  ['code', 'txt'],
+  ['text', 'txt'],
+  ['json', 'json'],
+  ['csv', 'csv'],
+  ['svg', 'svg'],
+  ['mermaid', 'mmd']
+])
+const CODE_EXT = new Map<string, string>([
+  ['python', 'py'],
+  ['javascript', 'js'],
+  ['typescript', 'ts'],
+  ['tsx', 'tsx'],
+  ['jsx', 'jsx'],
+  ['bash', 'sh'],
+  ['rust', 'rs'],
+  ['go', 'go'],
+  ['java', 'java'],
+  ['kotlin', 'kt'],
+  ['c', 'c'],
+  ['cpp', 'cpp'],
+  ['css', 'css'],
+  ['sql', 'sql'],
+  ['yaml', 'yml'],
+  ['toml', 'toml'],
+  ['ruby', 'rb'],
+  ['xml', 'xml'],
+  ['php', 'php'],
+  ['swift', 'swift'],
+  ['lua', 'lua'],
+  ['r', 'r'],
+  ['latex', 'tex']
+])
+const TYPE_ALT_EXT = new Map<string, readonly string[]>([
+  ['markdown', ['md', 'markdown']],
+  ['html', ['html', 'htm']],
+  ['text', ['txt', 'log']],
+  ['csv', ['csv', 'tsv']],
+  ['mermaid', ['mmd', 'mermaid']]
+])
+const CODE_ALT_EXT = new Map<string, readonly string[]>([
+  ['yaml', ['yml', 'yaml']],
+  ['javascript', ['js', 'jsx']],
+  ['typescript', ['ts', 'tsx']],
+  ['c', ['c', 'h']],
+  ['cpp', ['cpp', 'cc', 'cxx', 'hpp', 'h']],
+  ['kotlin', ['kt', 'kts']]
+])
+const RESERVED_STEM = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
+const MAX_EXPORT_BYTES = 200
+const MAX_EXPORT_TRIES = 20
+const UTF8 = new TextEncoder()
 
 const ago = (t: number) => {
   const s = Math.max(0, Math.round(Date.now() / 1000 - t))
@@ -276,13 +312,32 @@ export function Sheetish({ title, onClose, children }: { title: string; onClose:
 }
 
 function ext(doc: Pick<DocMeta, 'type' | 'lang'>): string {
-  return doc.type === 'code' ? CODE_EXT[doc.lang] || 'txt' : EXT[doc.type]
+  if (doc.type === 'code') {
+    const lang = String(doc.lang || '').trim().toLowerCase()
+    return CODE_EXT.get(lang) ?? 'txt'
+  }
+  return EXT.get(doc.type) ?? 'txt'
+}
+
+/** Trim `s` to at most `maxBytes` UTF-8 bytes without splitting a surrogate pair. */
+function trimUtf8(s: string, maxBytes: number): string {
+  if (maxBytes <= 0) return ''
+  let out = ''
+  let used = 0
+  for (const ch of s) {
+    const n = UTF8.encode(ch).length
+    if (used + n > maxBytes) break
+    out += ch
+    used += n
+  }
+  return out
 }
 
 /** File name used when saving a copy to Downloads (both the menu sub-line and the uploaded path).
- *  Keeps spaces, strips filename-unsafe characters, and avoids doubling an extension the title already carries. */
-export function exportFileName(doc: Pick<DocMeta, 'title' | 'type' | 'lang'>): string {
-  const clean = doc.title
+ *  Keeps spaces, strips filename-unsafe characters, allows only explicit safe extensions, guards Windows/FAT
+ *  reserved stems, and caps the full file name at 200 UTF-8 bytes. */
+export function exportFileName(doc: Pick<DocMeta, 'title' | 'type' | 'lang'>, suffix = ''): string {
+  const clean = String(doc.title || '')
     .replace(/[^\p{L}\p{N}_.\- ]+/gu, '')
     .replace(/\.{2,}/g, '.')
     .replace(/\s+/g, ' ')
@@ -290,28 +345,50 @@ export function exportFileName(doc: Pick<DocMeta, 'title' | 'type' | 'lang'>): s
   const base = clean || 'canvas'
   const e = ext(doc)
   const known = new Set<string>([e])
-  for (const x of ALT_EXT[doc.type] ?? []) known.add(x)
+  for (const x of TYPE_ALT_EXT.get(doc.type) ?? []) known.add(x)
   if (doc.type === 'code' && doc.lang) {
-    const lang = doc.lang.toLowerCase()
-    for (const x of ALT_EXT[lang] ?? []) known.add(x)
-    if (/^[a-z0-9]{1,8}$/.test(lang)) known.add(lang)
+    const lang = String(doc.lang).trim().toLowerCase()
+    for (const x of CODE_ALT_EXT.get(lang) ?? []) known.add(x)
   }
   const dot = base.lastIndexOf('.')
-  if (dot > 0 && known.has(base.slice(dot + 1).toLowerCase())) return base
-  return `${base}.${e}`
+  const hasKnown = dot > 0 && known.has(base.slice(dot + 1).toLowerCase())
+  let stem = hasKnown ? base.slice(0, dot).replace(/[.\s]+$/g, '') : base
+  const finalExt = hasKnown ? base.slice(dot + 1) : e
+  if (!stem) stem = 'canvas'
+  if (RESERVED_STEM.test(stem.split('.')[0].trim())) stem = `canvas-${stem}`
+  const tail = `${suffix}.${finalExt}`
+  const budget = Math.max(1, MAX_EXPORT_BYTES - UTF8.encode(tail).length)
+  stem = trimUtf8(stem, budget).replace(/[.\s]+$/g, '')
+  if (!stem || RESERVED_STEM.test(stem.split('.')[0].trim())) stem = 'canvas'
+  return `${stem}${tail}`
 }
 
-/** Write a copy into the phone's Downloads folder. */
-async function exportCopy(doc: Doc, text: string): Promise<void> {
-  const name = exportFileName(doc)
-  const bytes = new TextEncoder().encode(text)
+/** Write a copy into the phone's Downloads folder without overwriting existing files (picks a free name on conflict). */
+export async function exportCopy(doc: Pick<DocMeta, 'title' | 'type' | 'lang'>, text: string): Promise<void> {
+  if (lockView()) {
+    askUnlock('Unlock the phone to save files')
+    return
+  }
+  const bytes = UTF8.encode(text)
   let bin = ''
   bytes.forEach(b => (bin += String.fromCharCode(b)))
-  try {
-    await api('POST', '/api/files/upload', { path: `/sdcard/Download/${name}`, data_url: `data:text/plain;base64,${btoa(bin)}`, overwrite: true }, { profile: false })
-    toast(`Saved to Downloads/${name}`)
-  } catch (e) {
-    toast(errText(e), 'error')
+  const dataUrl = `data:text/plain;base64,${btoa(bin)}`
+  for (let n = 1; n <= MAX_EXPORT_TRIES; n++) {
+    if (lockView()) {
+      askUnlock('Unlock the phone to save files')
+      return
+    }
+    const name = exportFileName(doc, n === 1 ? '' : ` (${n})`)
+    try {
+      await api('POST', '/api/files/upload', { path: `/sdcard/Download/${name}`, data_url: dataUrl, overwrite: false }, { profile: false })
+      toast(`Saved to Downloads/${name}`)
+      return
+    } catch (e) {
+      const exists = e instanceof ApiError && (e.status === 409 || /already exists/i.test(e.message))
+      if (exists && n < MAX_EXPORT_TRIES) continue
+      toast(errText(e), 'error')
+      return
+    }
   }
 }
 
@@ -526,6 +603,7 @@ export function CanvasPanel() {
   const panel = useRef<HTMLDivElement>(null)
 
   const meta: DocMeta | undefined = docs.find(d => d.id === activeId)
+  const hasActiveTab = Boolean(meta)
   const doc = activeId ? loaded[activeId] : undefined
   const mode = (activeId && modes[activeId]) || 'view'
 
@@ -538,11 +616,12 @@ export function CanvasPanel() {
     if (open && activeId && !loaded[activeId]) void loadDoc(activeId)
   }, [open, activeId, loaded])
 
-  // Keep the active tab in view when the panel opens, switches tabs, or adds a new tab off-screen.
+  // Keep the active tab in view when the panel opens, switches tabs, or first renders the active tab.
+  // Depends on `hasActiveTab` (not `docs`), so 6 s refreshes and autosaves never yank a user-scrolled strip back.
   useEffect(() => {
     const alreadyOpen = wasOpen.current
     wasOpen.current = open
-    if (!open || size === 'max' || !activeId) return
+    if (!open || size === 'max' || !activeId || !hasActiveTab) return
     const tabs = tabsRef.current
     const tab = activeTabRef.current
     if (!tabs || !tab) return
@@ -550,15 +629,16 @@ export function CanvasPanel() {
     const br = tab.getBoundingClientRect()
     if (!tr.width || !br.width) return
     let target: number | null = null
-    if (br.left < tr.left) target = tabs.scrollLeft + (br.left - tr.left)
+    if (br.width > tr.width || br.left < tr.left) target = tabs.scrollLeft + (br.left - tr.left)
     else if (br.right > tr.right) target = tabs.scrollLeft + (br.right - tr.right)
     if (target !== null) {
       const clamped = Math.max(0, Math.min(tabs.scrollWidth - tabs.clientWidth, target))
+      if (Math.abs(clamped - tabs.scrollLeft) < 0.5) return
       const behavior = !alreadyOpen || lessMotion() ? 'auto' : 'smooth'
       if (typeof tabs.scrollTo === 'function') tabs.scrollTo({ left: clamped, behavior })
       else tabs.scrollLeft = clamped
     }
-  }, [open, activeId, docs, size])
+  }, [open, activeId, hasActiveTab, size])
 
   // text selected in the preview → quick "ask Hermes" actions
   useEffect(() => {

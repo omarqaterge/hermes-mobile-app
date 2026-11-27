@@ -644,7 +644,8 @@ module.exports = async t => {
     const codeCanvasBtn = await panel.getByRole('button', { name: 'Canvas', exact: true }).count()
     check(codeWrap === 1 && codeCopy === 1 && codeCanvasBtn === 0, `canvas code view: shows Wrap and Copy without a Canvas button (${JSON.stringify({ codeWrap, codeCopy, codeCanvasBtn })})`)
 
-    // T08-04: Save a copy to Downloads avoids doubled extensions ("doc.md", not "doc.md.md") and preserves spaces ("T08 Notes 2.md").
+    // T08-04: Save a copy to Downloads avoids doubled extensions ("doc.md", not "doc.md.md"), preserves spaces ("T08 Notes 2.md"),
+    // uses overwrite: false, and picks a free name ("doc (2).md") when Downloads already has that file.
     await panel.getByRole('button', { name: 'doc.md', exact: true }).click()
     const docMenu1 = await openMore()
     const dlRow1 = docMenu1.getByRole('button', { name: /Save a copy to Downloads/ })
@@ -653,7 +654,15 @@ module.exports = async t => {
     await dlRow1.click()
     const toast1 = await fp.getByText('Saved to Downloads/doc.md', { exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
     const up1 = calls().filter(c => c.t >= sinceDl && c.http === 'POST' && c.path === '/api/files/upload')
-    check(toast1 && dlSub1.includes('doc.md') && !dlSub1.includes('doc.md.md') && up1.at(-1)?.body?.path === '/sdcard/Download/doc.md', `canvas downloads: doc.md does not double its .md extension (${JSON.stringify({ toast1, dlSub1, path: up1.at(-1)?.body?.path })})`)
+    check(toast1 && dlSub1.includes('doc.md') && !dlSub1.includes('doc.md.md') && up1.at(-1)?.body?.path === '/sdcard/Download/doc.md' && up1.at(-1)?.body?.overwrite === false, `canvas downloads: doc.md does not double its .md extension and sends overwrite: false (${JSON.stringify({ toast1, dlSub1, body: up1.at(-1)?.body })})`)
+
+    // 409 conflict on existing file retries with a free name (overwrite: false).
+    await fp.route('**/api/files/upload', r => r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'File already exists' }) }), { times: 1 })
+    const sinceConflict = Date.now()
+    await (await openMore()).getByRole('button', { name: /Save a copy to Downloads/ }).click()
+    const toastConflict = await fp.getByText('Saved to Downloads/doc (2).md', { exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
+    const upConflict = calls().filter(c => c.t >= sinceConflict && c.http === 'POST' && c.path === '/api/files/upload')
+    check(toastConflict && upConflict.at(-1)?.body?.path === '/sdcard/Download/doc (2).md' && upConflict.at(-1)?.body?.overwrite === false, `canvas downloads: 409 conflict picks a free name instead of overwriting (${JSON.stringify({ toastConflict, body: upConflict.at(-1)?.body })})`)
 
     await panel.getByRole('button', { name: 'T08 Notes 2', exact: true }).click()
     const docMenu2 = await openMore()
@@ -662,7 +671,7 @@ module.exports = async t => {
     await dlRow2.click()
     const toast2 = await fp.getByText('Saved to Downloads/T08 Notes 2.md', { exact: true }).waitFor({ timeout: 3000 }).then(() => true, () => false)
     const up2 = calls().filter(c => c.t >= sinceDl && c.http === 'POST' && c.path === '/api/files/upload')
-    check(toast2 && dlSub2.includes('T08 Notes 2.md') && up2.at(-1)?.body?.path === '/sdcard/Download/T08 Notes 2.md', `canvas downloads: spaces are preserved without underscores (${JSON.stringify({ toast2, dlSub2, path: up2.at(-1)?.body?.path })})`)
+    check(toast2 && dlSub2.includes('T08 Notes 2.md') && up2.at(-1)?.body?.path === '/sdcard/Download/T08 Notes 2.md' && up2.at(-1)?.body?.overwrite === false, `canvas downloads: spaces are preserved without underscores (${JSON.stringify({ toast2, dlSub2, path: up2.at(-1)?.body?.path })})`)
 
     // T08-02 + T08-01 (fresh doc): Creating a new tab while the strip is scrolled to the start scrolls the new tab into view, and its Version history immediately shows Version 1 · current.
     await panel.getByRole('button', { name: 'New document', exact: true }).click()
@@ -696,6 +705,42 @@ module.exports = async t => {
     const freshHist = fp.getByRole('dialog').filter({ hasText: 'Version history' })
     const freshV1 = await freshHist.getByRole('button', { name: /Version 1 · current/ }).waitFor({ timeout: 3000 }).then(() => true, () => false)
     check(freshV1, 'canvas version history: a newly created document lists Version 1 · current on first open')
+    await fp.evaluate(() => window.hermesBack())
+    await freshHist.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
+
+    // User-scrolled tab strip is NOT yanked back when an autosave updates `docs` for the active tab.
+    await fp.evaluate(() => { const s = document.querySelector('.canvas-tabs'); if (s) s.scrollLeft = 0 })
+    await panel.getByRole('textbox').first().fill('edited without yanking tabs')
+    const savedAgain = await panel.getByText('Saved', { exact: true }).waitFor({ timeout: 4000 }).then(() => true, () => false)
+    const leftAfterSave = await fp.evaluate(() => document.querySelector('.canvas-tabs')?.scrollLeft ?? -1)
+    check(savedAgain && leftAfterSave === 0, `canvas tab strip: autosave does not yank a user-scrolled strip back (${JSON.stringify({ savedAgain, leftAfterSave })})`)
+
+    // Reduced motion still scrolls a newly created off-screen tab into view.
+    await fp.evaluate(() => { document.documentElement.dataset.motion = 'reduced' })
+    await panel.getByRole('button', { name: 'New document', exact: true }).click()
+    await fp.getByRole('dialog').getByRole('button', { name: /Notes \/ document/ }).click()
+    const redDlg = fp.getByRole('alertdialog')
+    await redDlg.getByRole('textbox').fill('Far tab 10')
+    await fp.evaluate(() => { const s = document.querySelector('.canvas-tabs'); if (s) s.scrollLeft = 0 })
+    await redDlg.getByRole('button', { name: 'Create', exact: true }).click()
+    await panel.getByRole('button', { name: 'Far tab 10', exact: true }).waitFor({ timeout: 3000 })
+    await fp.waitForFunction(() => {
+      const strip = document.querySelector('.canvas-tabs')
+      const active = document.querySelector('.canvas-tab.on')
+      if (!strip || !active) return false
+      const sr = strip.getBoundingClientRect()
+      const ar = active.getBoundingClientRect()
+      return strip.scrollLeft > 0 && ar.left >= sr.left - 1 && ar.right <= sr.right + 1
+    }, null, { timeout: 3000 }).catch(() => {})
+    const redVis = await fp.evaluate(() => {
+      const strip = document.querySelector('.canvas-tabs')
+      const active = document.querySelector('.canvas-tab.on')
+      if (!strip || !active) return null
+      const sr = strip.getBoundingClientRect()
+      const ar = active.getBoundingClientRect()
+      return { scrollLeft: strip.scrollLeft, leftOk: ar.left >= sr.left - 1, rightOk: ar.right <= sr.right + 1, title: active.textContent?.trim() }
+    })
+    check(!!redVis && redVis.scrollLeft > 0 && redVis.leftOk && redVis.rightOk && redVis.title === 'Far tab 10', `canvas tab strip: reduced motion still scrolls a newly created off-screen tab into view (${JSON.stringify(redVis)})`)
     await fp.close()
   }
 }
