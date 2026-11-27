@@ -26,6 +26,8 @@ import { lessMotion } from '../motion'
 
 /** True while the reply being rendered is still arriving (a context, so code blocks aren't rebuilt per stream batch). */
 const StreamingCtx = createContext(false)
+/** False when Markdown is used solely to render a whole code/JSON document in DocView (no "Canvas" clone button). */
+const CanvasBtnCtx = createContext(true)
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -174,6 +176,7 @@ function HtmlViewer({ html, onClose }: { html: string; onClose: () => void }) {
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const streaming = useContext(StreamingCtx)
+  const allowCanvas = useContext(CanvasBtnCtx)
   const [preview, setPreview] = useState(false)
   const [viewer, setViewer] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -215,7 +218,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
             {showing ? 'Code' : 'Preview'}
           </button>
         )}
-        {!isDiff && lines >= 3 && (
+        {allowCanvas && !isDiff && lines >= 3 && (
           <button
             onClick={() => {
               haptic()
@@ -694,7 +697,19 @@ const urlTransform = (url: string) => (isLocal(url) || CHAT_HREF.test(url) ? url
 
 // interactive: card buttons may send (chat replies only; canvas, files and /btw just show cards).
 // guard: the chat has read phone data (phone-data-taint.ts): remote media waits for a tap and addresses are shown before opening.
-export const Markdown = memo(function Markdown({ text, streaming = false, interactive = false, guard = false }: { text: string; streaming?: boolean; interactive?: boolean; guard?: boolean }) {
+export const Markdown = memo(function Markdown({
+  text,
+  streaming = false,
+  interactive = false,
+  guard = false,
+  canvasButton = true
+}: {
+  text: string
+  streaming?: boolean
+  interactive?: boolean
+  guard?: boolean
+  canvasButton?: boolean
+}) {
   const ui = useMemo(() => ({ streaming, interactive }), [streaming, interactive])
   const tainted = useTainted() // wherever this text is shown (chat, notice, canvas, tool card), a chat that has read phone data guards it
   const guarded = guard || tainted
@@ -718,6 +733,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
   return (
     <OpenUICtx.Provider value={ui}>
     <StreamingCtx.Provider value={streaming}>
+    <CanvasBtnCtx.Provider value={canvasButton}>
     <GuardCtx.Provider value={guarded}>
     <div
       className="md"
@@ -746,6 +762,7 @@ export const Markdown = memo(function Markdown({ text, streaming = false, intera
       ))}
     </div>
     </GuardCtx.Provider>
+    </CanvasBtnCtx.Provider>
     </StreamingCtx.Provider>
     </OpenUICtx.Provider>
   )

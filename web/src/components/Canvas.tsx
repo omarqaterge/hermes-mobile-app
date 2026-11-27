@@ -5,7 +5,8 @@ import { sendPrompt, errText } from '../gateway'
 import { toast } from '../store'
 import { confirmDialog, promptDialog } from '../dialog'
 import { useBackHandler } from '../backstack'
-import { api } from '../api'
+import { api, ApiError } from '../api'
+import { askUnlock, lockView } from '../lockview'
 import {
   canvasSaveBlockReason,
   closeCanvas,
@@ -39,11 +40,65 @@ import { Spinner } from './Spinner'
 import { DOCK, claimEdge, dividerStart, dragCancel, dragEnd, dragTo, dragging, nudgeSplit, resetSplit, useDock, useSplitPercent } from '../splitview'
 import { openChatCanvas } from '../swipe'
 import { openLibrary } from '../library'
+import { lessMotion } from '../motion'
 import { Icon, type IconName } from './icons'
 
 export const TYPE_ICON: Record<DocType, IconName> = { markdown: 'note', html: 'globe', code: 'code', text: 'file', json: 'json', csv: 'table', svg: 'image', mermaid: 'branch' }
-const EXT: Record<DocType, string> = { markdown: 'md', html: 'html', code: 'txt', text: 'txt', json: 'json', csv: 'csv', svg: 'svg', mermaid: 'mmd' }
-const CODE_EXT: Record<string, string> = { python: 'py', javascript: 'js', typescript: 'ts', bash: 'sh', rust: 'rs', go: 'go', java: 'java', kotlin: 'kt', c: 'c', cpp: 'cpp', css: 'css', sql: 'sql', yaml: 'yml' }
+// Maps (never plain objects) so prototype property names like `constructor`, `__proto__` or `toString` can never match.
+const EXT = new Map<string, string>([
+  ['markdown', 'md'],
+  ['html', 'html'],
+  ['code', 'txt'],
+  ['text', 'txt'],
+  ['json', 'json'],
+  ['csv', 'csv'],
+  ['svg', 'svg'],
+  ['mermaid', 'mmd']
+])
+const CODE_EXT = new Map<string, string>([
+  ['python', 'py'],
+  ['javascript', 'js'],
+  ['typescript', 'ts'],
+  ['tsx', 'tsx'],
+  ['jsx', 'jsx'],
+  ['bash', 'sh'],
+  ['rust', 'rs'],
+  ['go', 'go'],
+  ['java', 'java'],
+  ['kotlin', 'kt'],
+  ['c', 'c'],
+  ['cpp', 'cpp'],
+  ['css', 'css'],
+  ['sql', 'sql'],
+  ['yaml', 'yml'],
+  ['toml', 'toml'],
+  ['ruby', 'rb'],
+  ['xml', 'xml'],
+  ['php', 'php'],
+  ['swift', 'swift'],
+  ['lua', 'lua'],
+  ['r', 'r'],
+  ['latex', 'tex']
+])
+const TYPE_ALT_EXT = new Map<string, readonly string[]>([
+  ['markdown', ['md', 'markdown']],
+  ['html', ['html', 'htm']],
+  ['text', ['txt', 'log']],
+  ['csv', ['csv', 'tsv']],
+  ['mermaid', ['mmd', 'mermaid']]
+])
+const CODE_ALT_EXT = new Map<string, readonly string[]>([
+  ['yaml', ['yml', 'yaml']],
+  ['javascript', ['js', 'jsx']],
+  ['typescript', ['ts', 'tsx']],
+  ['c', ['c', 'h']],
+  ['cpp', ['cpp', 'cc', 'cxx', 'hpp', 'h']],
+  ['kotlin', ['kt', 'kts']]
+])
+const RESERVED_STEM = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
+const MAX_EXPORT_BYTES = 200
+const MAX_EXPORT_TRIES = 20
+const UTF8 = new TextEncoder()
 
 const ago = (t: number) => {
   const s = Math.max(0, Math.round(Date.now() / 1000 - t))
@@ -163,7 +218,11 @@ function HistorySheet({ doc, onClose }: { doc: Doc; onClose: () => void }) {
   useBackHandler(onClose)
   const [open, setOpen] = useState<number | null>(null)
   const [diff, setDiff] = useState('')
-  const versions = [...(doc.versions ?? [])].reverse()
+  // Always refresh the authoritative version list when opening history (POST/PUT/open-file responses omit versions).
+  useEffect(() => {
+    void loadDoc(doc.id, true)
+  }, [doc.id])
+  const versions = doc.versions ? [...doc.versions].reverse() : null
   const show = async (rev: number) => {
     if (open === rev) return setOpen(null)
     setOpen(rev)
@@ -181,44 +240,48 @@ function HistorySheet({ doc, onClose }: { doc: Doc; onClose: () => void }) {
         <div className="sheet-grip" />
         <div className="sheet-title">Version history</div>
         <div className="picker-list">
-          {versions.map(v => (
-            <div key={v.rev} className="ver">
-              <button className="ver-head" onClick={() => void show(v.rev)}>
-                <span className={`by by-${v.by}`}>{v.by === 'agent' ? 'Hermux' : 'You'}</span>
-                <span className="set-text">
-                  <span className="set-title">
-                    Version {v.rev}
-                    {v.rev === doc.rev ? ' · current' : ''}
+          {versions == null ? (
+            <div className="dim pad">Loading…</div>
+          ) : (
+            versions.map(v => (
+              <div key={v.rev} className="ver">
+                <button className="ver-head" onClick={() => void show(v.rev)}>
+                  <span className={`by by-${v.by}`}>{v.by === 'agent' ? 'Hermux' : 'You'}</span>
+                  <span className="set-text">
+                    <span className="set-title">
+                      Version {v.rev}
+                      {v.rev === doc.rev ? ' · current' : ''}
+                    </span>
+                    <span className="set-sub">
+                      {ago(v.at)}
+                      {v.note ? ` · ${v.note}` : ''}
+                    </span>
                   </span>
-                  <span className="set-sub">
-                    {ago(v.at)}
-                    {v.note ? ` · ${v.note}` : ''}
-                  </span>
-                </span>
-                <span className="set-chev"><Icon n={open === v.rev ? 'down' : 'right'} /></span>
-              </button>
-              {open === v.rev && (
-                <div className="ver-body">
-                  <div className="dim small">Changes from this version to the current one</div>
-                  <DiffView text={diff} />
-                  {v.rev !== doc.rev && (
-                    <button
-                      className="btn primary block"
-                      onClick={() =>
-                        void confirmDialog({ title: `Restore version ${v.rev}?`, message: 'The current text is kept in the history, so you can come back.', confirmLabel: 'Restore' }).then(ok => {
-                          if (!ok) return
-                          void restoreVersion(doc.id, v.rev)
-                          onClose()
-                        })
-                      }
-                    >
-                      Restore this version
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                  <span className="set-chev"><Icon n={open === v.rev ? 'down' : 'right'} /></span>
+                </button>
+                {open === v.rev && (
+                  <div className="ver-body">
+                    <div className="dim small">Changes from this version to the current one</div>
+                    <DiffView text={diff} />
+                    {v.rev !== doc.rev && (
+                      <button
+                        className="btn primary block"
+                        onClick={() =>
+                          void confirmDialog({ title: `Restore version ${v.rev}?`, message: 'The current text is kept in the history, so you can come back.', confirmLabel: 'Restore' }).then(ok => {
+                            if (!ok) return
+                            void restoreVersion(doc.id, v.rev)
+                            onClose()
+                          })
+                        }
+                      >
+                        Restore this version
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
@@ -248,21 +311,84 @@ export function Sheetish({ title, onClose, children }: { title: string; onClose:
   )
 }
 
-function ext(doc: Doc): string {
-  return doc.type === 'code' ? CODE_EXT[doc.lang] || 'txt' : EXT[doc.type]
+function ext(doc: Pick<DocMeta, 'type' | 'lang'>): string {
+  if (doc.type === 'code') {
+    const lang = String(doc.lang || '').trim().toLowerCase()
+    return CODE_EXT.get(lang) ?? 'txt'
+  }
+  return EXT.get(doc.type) ?? 'txt'
 }
 
-/** Write a copy into the phone's Downloads folder. */
-async function exportCopy(doc: Doc, text: string): Promise<void> {
-  const name = `${doc.title.replace(/[^\w.\- ]+/g, '').trim().replace(/\s+/g, '_') || 'canvas'}.${ext(doc)}`
-  const bytes = new TextEncoder().encode(text)
+/** Trim `s` to at most `maxBytes` UTF-8 bytes without splitting a surrogate pair. */
+function trimUtf8(s: string, maxBytes: number): string {
+  if (maxBytes <= 0) return ''
+  let out = ''
+  let used = 0
+  for (const ch of s) {
+    const n = UTF8.encode(ch).length
+    if (used + n > maxBytes) break
+    out += ch
+    used += n
+  }
+  return out
+}
+
+/** File name used when saving a copy to Downloads (both the menu sub-line and the uploaded path).
+ *  Keeps spaces, strips filename-unsafe characters, allows only explicit safe extensions, guards Windows/FAT
+ *  reserved stems, and caps the full file name at 200 UTF-8 bytes. */
+export function exportFileName(doc: Pick<DocMeta, 'title' | 'type' | 'lang'>, suffix = ''): string {
+  const clean = String(doc.title || '')
+    .replace(/[^\p{L}\p{N}_.\- ]+/gu, '')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\s+/g, ' ')
+    .replace(/^[.\s]+|[.\s]+$/g, '')
+  const base = clean || 'canvas'
+  const e = ext(doc)
+  const known = new Set<string>([e])
+  for (const x of TYPE_ALT_EXT.get(doc.type) ?? []) known.add(x)
+  if (doc.type === 'code' && doc.lang) {
+    const lang = String(doc.lang).trim().toLowerCase()
+    for (const x of CODE_ALT_EXT.get(lang) ?? []) known.add(x)
+  }
+  const dot = base.lastIndexOf('.')
+  const hasKnown = dot > 0 && known.has(base.slice(dot + 1).toLowerCase())
+  let stem = hasKnown ? base.slice(0, dot).replace(/[.\s]+$/g, '') : base
+  const finalExt = hasKnown ? base.slice(dot + 1) : e
+  if (!stem) stem = 'canvas'
+  if (RESERVED_STEM.test(stem.split('.')[0].trim())) stem = `canvas-${stem}`
+  const tail = `${suffix}.${finalExt}`
+  const budget = Math.max(1, MAX_EXPORT_BYTES - UTF8.encode(tail).length)
+  stem = trimUtf8(stem, budget).replace(/[.\s]+$/g, '')
+  if (!stem || RESERVED_STEM.test(stem.split('.')[0].trim())) stem = 'canvas'
+  return `${stem}${tail}`
+}
+
+/** Write a copy into the phone's Downloads folder without overwriting existing files (picks a free name on conflict). */
+export async function exportCopy(doc: Pick<DocMeta, 'title' | 'type' | 'lang'>, text: string): Promise<void> {
+  if (lockView()) {
+    askUnlock('Unlock the phone to save files')
+    return
+  }
+  const bytes = UTF8.encode(text)
   let bin = ''
   bytes.forEach(b => (bin += String.fromCharCode(b)))
-  try {
-    await api('POST', '/api/files/upload', { path: `/sdcard/Download/${name}`, data_url: `data:text/plain;base64,${btoa(bin)}`, overwrite: true }, { profile: false })
-    toast(`Saved to Downloads/${name}`)
-  } catch (e) {
-    toast(errText(e), 'error')
+  const dataUrl = `data:text/plain;base64,${btoa(bin)}`
+  for (let n = 1; n <= MAX_EXPORT_TRIES; n++) {
+    if (lockView()) {
+      askUnlock('Unlock the phone to save files')
+      return
+    }
+    const name = exportFileName(doc, n === 1 ? '' : ` (${n})`)
+    try {
+      await api('POST', '/api/files/upload', { path: `/sdcard/Download/${name}`, data_url: dataUrl, overwrite: false }, { profile: false })
+      toast(`Saved to Downloads/${name}`)
+      return
+    } catch (e) {
+      const exists = e instanceof ApiError && (e.status === 409 || /already exists/i.test(e.message))
+      if (exists && n < MAX_EXPORT_TRIES) continue
+      toast(errText(e), 'error')
+      return
+    }
   }
 }
 
@@ -286,7 +412,7 @@ function DocMenu({ doc, text, onClose, onHistory }: { doc: Doc; text: string; on
       <Section title="Share and save">
         <Row icon="copy" tone="teal" title="Copy" onClick={run(() => void copyText(text).then(() => toast('Copied')))} />
         <Row icon="external" tone="green" title="Share…" onClick={run(() => shareText(doc.title, text))} />
-        <Row icon="download" tone="purple" title={`Save a copy to Downloads`} sub={`${doc.title}.${ext(doc)}`} onClick={run(() => void exportCopy(doc, text))} />
+        <Row icon="download" tone="purple" title="Save a copy to Downloads" sub={exportFileName(doc)} onClick={run(() => void exportCopy(doc, text))} />
         {doc.path && (
           <Row
             icon="save"
@@ -470,10 +596,14 @@ export function CanvasPanel() {
   const [ask, setAsk] = useState('')
   const [net, setNet] = useState<Record<string, boolean>>({})
   const body = useRef<HTMLDivElement>(null)
+  const tabsRef = useRef<HTMLDivElement>(null)
+  const activeTabRef = useRef<HTMLButtonElement>(null)
+  const wasOpen = useRef(false)
   const drag = useRef<{ x: number; y: number; dx: number; lastX: number; lastT: number; v: number; on: boolean } | null>(null)
   const panel = useRef<HTMLDivElement>(null)
 
   const meta: DocMeta | undefined = docs.find(d => d.id === activeId)
+  const hasActiveTab = Boolean(meta)
   const doc = activeId ? loaded[activeId] : undefined
   const mode = (activeId && modes[activeId]) || 'view'
 
@@ -485,6 +615,30 @@ export function CanvasPanel() {
   useEffect(() => {
     if (open && activeId && !loaded[activeId]) void loadDoc(activeId)
   }, [open, activeId, loaded])
+
+  // Keep the active tab in view when the panel opens, switches tabs, or first renders the active tab.
+  // Depends on `hasActiveTab` (not `docs`), so 6 s refreshes and autosaves never yank a user-scrolled strip back.
+  useEffect(() => {
+    const alreadyOpen = wasOpen.current
+    wasOpen.current = open
+    if (!open || size === 'max' || !activeId || !hasActiveTab) return
+    const tabs = tabsRef.current
+    const tab = activeTabRef.current
+    if (!tabs || !tab) return
+    const tr = tabs.getBoundingClientRect()
+    const br = tab.getBoundingClientRect()
+    if (!tr.width || !br.width) return
+    let target: number | null = null
+    if (br.width > tr.width || br.left < tr.left) target = tabs.scrollLeft + (br.left - tr.left)
+    else if (br.right > tr.right) target = tabs.scrollLeft + (br.right - tr.right)
+    if (target !== null) {
+      const clamped = Math.max(0, Math.min(tabs.scrollWidth - tabs.clientWidth, target))
+      if (Math.abs(clamped - tabs.scrollLeft) < 0.5) return
+      const behavior = !alreadyOpen || lessMotion() ? 'auto' : 'smooth'
+      if (typeof tabs.scrollTo === 'function') tabs.scrollTo({ left: clamped, behavior })
+      else tabs.scrollLeft = clamped
+    }
+  }, [open, activeId, hasActiveTab, size])
 
   // text selected in the preview → quick "ask Hermes" actions
   useEffect(() => {
@@ -578,9 +732,9 @@ export function CanvasPanel() {
       <div ref={panel} className={`canvas-panel size-${size}`} role="dialog" aria-label="Canvas">
         {size === 'side' && <SplitHandle />}
         <div className="canvas-head" {...swipeProps}>
-          <div className="canvas-tabs">
+          <div className="canvas-tabs" ref={tabsRef}>
             {docs.map(d => (
-              <button key={d.id} className={`canvas-tab${d.id === activeId ? ' on' : ''}`} onClick={() => selectDoc(d.id)}>
+              <button key={d.id} ref={d.id === activeId ? activeTabRef : undefined} className={`canvas-tab${d.id === activeId ? ' on' : ''}`} onClick={() => selectDoc(d.id)}>
                 <span aria-hidden="true"><Icon n={TYPE_ICON[d.type]} /></span>
                 <span className="canvas-tab-title">{d.title}</span>
               </button>
@@ -627,7 +781,23 @@ export function CanvasPanel() {
                   Edit
                 </button>
               </div>
-              <span className={`save-state s-${save}`}>{save === 'saving' ? 'Saving…' : save === 'dirty' ? 'Unsaved' : save === 'saved' ? 'Saved' : save === 'conflict' ? 'Conflict' : save === 'error' ? 'Not saved' : doc ? `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermux' : doc.by === 'user' ? ' · You' : ''}` : ''}</span>
+              <span className={`save-state s-${save}`}>
+                {save === 'saving' ? (
+                  'Saving…'
+                ) : save === 'dirty' ? (
+                  'Unsaved'
+                ) : save === 'saved' ? (
+                  <>Saved<span style={{ marginLeft: '0.25em' }}><Icon n="check" /></span></>
+                ) : save === 'conflict' ? (
+                  'Conflict'
+                ) : save === 'error' ? (
+                  'Not saved'
+                ) : doc ? (
+                  `${ago(doc.updated)}${doc.by === 'agent' ? ' · Hermux' : doc.by === 'user' ? ' · You' : ''}`
+                ) : (
+                  ''
+                )}
+              </span>
               {meta.type === 'html' && mode === 'view' && (
                 <button className={`canvas-tool${net[meta.id] ? ' on' : ''}`} title="Allow the page to use the network" onClick={() => setNet(n => ({ ...n, [meta.id]: !n[meta.id] }))}>
                   {net[meta.id] ? <><Icon n="globe" /> Online</> : <><Icon n="off" /> Offline</>}

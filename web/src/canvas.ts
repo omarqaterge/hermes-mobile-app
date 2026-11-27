@@ -77,8 +77,11 @@ const call = <T,>(method: string, path: string, body?: unknown) => api<T>(method
 
 let dirtyText: { id: string; text: string } | null = null // unsaved edit in the editor
 let saveTimer: ReturnType<typeof setTimeout> | null = null
-/** "Saved ✓" shows for a moment, then the label goes back to "<when> · <who>". */
+/** "Saved" (with check icon) shows for a moment, then the label goes back to "<when> · <who>". */
 let savedTimer: ReturnType<typeof setTimeout> | null = null
+let flushing: Promise<void> | null = null
+let flushAgain = false
+let flushingDirty: { id: string; text: string } | null = null
 
 /** The chat the canvas belongs to: the one on screen, or the one still opening (its documents are stored under its
  * stored id, so they can load before Hermes has resumed it, e.g. right after a cold start). */
@@ -96,16 +99,22 @@ function syncSession(): void {
   }
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = null
+  if (savedTimer) clearTimeout(savedTimer)
+  savedTimer = null
   // An edit typed just before switching chats is still waiting for its autosave: save it to the chat it
   // belongs to instead of dropping it.
   const d = dirtyText
   const have = d && state.loaded[d.id]
-  if (d && have && state.session && d.text !== have.content) {
+  const alreadySending = Boolean(d && flushingDirty && flushingDirty.id === d.id && flushingDirty.text === d.text)
+  if (d && have && state.session && d.text !== have.content && !alreadySending) {
     call('PUT', `${P}/doc`, { session: state.session, id: d.id, content: d.text, base_rev: have.rev }).catch(e =>
       toast(`Canvas edit in “${have.title}” not saved: ${e instanceof Error ? e.message : String(e)}`, 'error', 6000)
     )
   }
   dirtyText = null
+  flushing = null
+  flushAgain = false
+  flushingDirty = null
   // Opened on a chat that was still loading, the panel stays open once it is on screen: same id, so no reset.
   set({ session: id, open: false, docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null, loading: Boolean(id) })
   if (id) void refreshDocs()
@@ -145,9 +154,12 @@ export async function loadDoc(id: string, force = false): Promise<Doc | null> {
   try {
     const d = await call<Doc>('GET', `${P}/doc?${q({ session, id })}`)
     if (session !== state.session) return null
+    const cur = state.loaded[id]
+    if (cur && d.rev < cur.rev) return cur
     set({ loaded: { ...state.loaded, [id]: d }, docs: state.docs.map(m => (m.id === id ? { ...m, ...d } : m)) })
     return d
   } catch (e) {
+    if (session !== state.session) return null
     toast(e instanceof Error ? e.message : String(e), 'error')
     return null
   }
@@ -183,36 +195,102 @@ export function editDoc(id: string, text: string): void {
   saveTimer = setTimeout(() => void flushSave(), 800)
 }
 
-export async function flushSave(): Promise<void> {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = null
+async function flushOnce(): Promise<boolean> {
+  const session = state.session
   const d = dirtyText
-  if (!d) return
+  if (!session || !d) return false
   const have = state.loaded[d.id]
-  if (!have) return
+  if (!have) return false
   if (d.text === have.content) {
-    dirtyText = null
+    if (dirtyText?.id === d.id && dirtyText.text === d.text) dirtyText = null
     set({ save: 'idle' })
-    return
+    return false
   }
   set({ save: 'saving' })
+  flushingDirty = d
   try {
-    const r = await call<Doc>('PUT', `${P}/doc`, { session: state.session, id: d.id, content: d.text, base_rev: have.rev })
-    if (dirtyText?.text === d.text) dirtyText = null
-    set({ loaded: { ...state.loaded, [d.id]: { ...have, ...r, content: d.text } }, docs: state.docs.map(m => (m.id === d.id ? { ...m, ...r } : m)), save: dirtyText ? 'dirty' : 'saved', remote: null })
+    const r = await call<Doc>('PUT', `${P}/doc`, { session, id: d.id, content: d.text, base_rev: have.rev })
+    if (session !== state.session) return true
+    if (dirtyText?.id === d.id && dirtyText.text === d.text) dirtyText = null
+    // Read the live entry after await: loadDoc may have loaded a newer revision or filled in `versions` meanwhile.
+    const cur = state.loaded[d.id] ?? have
+    if (r.rev < cur.rev) {
+      if (dirtyText) set({ save: 'dirty' })
+      else if (state.save === 'saving') set({ save: 'idle' })
+      return true
+    }
+    // PUT /canvas/doc returns the updated doc without its version list: merge from the live entry's versions so
+    // Version history immediately includes the new revision as current and never wipes versions loaded in flight.
+    const nextVersions =
+      r.versions ??
+      (cur.versions
+        ? cur.versions.some(v => v.rev === r.rev)
+          ? cur.versions
+          : [...cur.versions, { rev: r.rev, at: r.updated, by: (r.by === 'agent' ? 'agent' : 'user') as 'agent' | 'user', note: '' }].slice(-40)
+        : undefined)
+    const nextDoc: Doc = { ...cur, ...r, content: d.text, ...(nextVersions ? { versions: nextVersions } : {}) }
+    set({
+      loaded: { ...state.loaded, [d.id]: nextDoc },
+      docs: state.docs.map(m => (m.id === d.id ? { ...m, ...r } : m)),
+      save: dirtyText ? 'dirty' : 'saved',
+      remote: state.remote === d.id ? null : state.remote
+    })
     if (savedTimer) clearTimeout(savedTimer)
-    savedTimer = setTimeout(() => {
-      savedTimer = null
-      if (state.save === 'saved') set({ save: 'idle' })
-    }, 2000)
+    savedTimer = null
+    if (!dirtyText) {
+      savedTimer = setTimeout(() => {
+        savedTimer = null
+        if (state.save === 'saved') set({ save: 'idle' })
+      }, 2000)
+    }
   } catch (e) {
+    if (session !== state.session) return true
     const msg = e instanceof Error ? e.message : String(e)
     if (/conflict|changed/i.test(msg)) set({ save: 'conflict', remote: d.id })
     else {
       set({ save: 'error' })
       toast(msg, 'error')
     }
+  } finally {
+    if (flushingDirty === d) flushingDirty = null
   }
+  return true
+}
+
+export function flushSave(): Promise<void> {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = null
+  if (flushing) {
+    flushAgain = true
+    return flushing
+  }
+  const session = state.session
+  let run: Promise<void> | null = null
+  run = (async () => {
+    try {
+      while (true) {
+        flushAgain = false
+        if (saveTimer) {
+          clearTimeout(saveTimer)
+          saveTimer = null
+        }
+        const sent = await flushOnce()
+        if (!sent) break
+        if (session !== state.session) break
+        if (!dirtyText) break
+        if (state.save === 'conflict' || state.save === 'error') break
+        // If the user started another debounced edit while the PUT ran and nobody asked for an immediate flush, let the timer handle it.
+        if (!flushAgain && saveTimer) break
+      }
+    } finally {
+      if (flushing === run) {
+        flushing = null
+        flushAgain = false
+      }
+    }
+  })()
+  flushing = run
+  return run
 }
 
 /** The text being edited but not yet saved, for the panel to keep showing. */
@@ -221,6 +299,7 @@ export const unsavedFor = (id: string): string | null => (dirtyText?.id === id ?
 /** Conflict: take Hermes's version (drops your unsaved edit) … */
 export async function takeTheirs(id: string): Promise<void> {
   dirtyText = null
+  flushAgain = false
   set({ remote: null, save: 'idle' })
   await loadDoc(id, true)
 }
@@ -274,6 +353,7 @@ export async function renameDoc(id: string, title: string): Promise<void> {
 
 export async function restoreVersion(id: string, rev: number): Promise<void> {
   dirtyText = null
+  flushAgain = false
   try {
     await call('POST', `${P}/restore`, { session: state.session, id, rev })
     set({ save: 'idle', remote: null, writing: null })

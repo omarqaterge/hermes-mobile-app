@@ -59,7 +59,7 @@ function DocBody({ type, lang, title, text, network, held }: { type: DocType; la
     case 'html':
       return <HtmlFrame html={text} network={network && !held} />
     case 'code':
-      return <Markdown text={fenced(text, lang || '')} guard={held} />
+      return <Markdown text={fenced(text, lang || '')} guard={held} canvasButton={false} />
     case 'json': {
       let pretty = text
       try {
@@ -67,7 +67,7 @@ function DocBody({ type, lang, title, text, network, held }: { type: DocType; la
       } catch {
         /* show as written */
       }
-      return <Markdown text={fenced(pretty, 'json')} guard={held} />
+      return <Markdown text={fenced(pretty, 'json')} guard={held} canvasButton={false} />
     }
     case 'mermaid':
       return <Markdown text={fenced(text, 'mermaid')} guard={held} />
