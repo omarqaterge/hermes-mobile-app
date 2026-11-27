@@ -257,5 +257,138 @@ module.exports = async t => {
       await p.close()
     }
     await mock({ empty: false })
+
+    // ── Scheduled jobs: validate schedule, catch server mismatch, verify deletes stick (F3) ──
+    {
+      const p = await fresh(375, 812)
+      try {
+        const since = Date.now()
+        const cronPosts = () => calls().filter(c => c.t >= since && c.http === 'POST' && c.path === '/api/cron/jobs')
+        const cronDels = () => calls().filter(c => c.t >= since && c.http === 'DELETE' && c.path?.startsWith('/api/cron/jobs/'))
+        const cronPauses = () => calls().filter(c => c.t >= since && c.http === 'POST' && /^\/api\/cron\/jobs\/[^/]+\/pause$/.test(c.path || ''))
+
+        // 1. Nonsense schedule "whenever" and unsupported "tomorrow 9am" are rejected before sending; Schedule stays disabled.
+        await mock({ cronMode: { jobs: [] } })
+        await panelRow(p, /^Scheduled/)
+        await p.getByRole('button', { name: 'New scheduled job' }).click()
+        const dlg = p.getByRole('dialog')
+        await dlg.getByLabel('Name').fill('Bad job')
+        await dlg.getByLabel('Schedule').fill('whenever')
+        await dlg.getByLabel('What should Hermux do?').fill('Reply hi')
+        await dlg.getByRole('alert').waitFor({ timeout: 3000 })
+        const disWhenever = await dlg.getByRole('button', { name: 'Schedule', exact: true }).isDisabled()
+        await dlg.getByLabel('Schedule').fill('tomorrow 9am')
+        await dlg.getByRole('alert').waitFor({ timeout: 3000 })
+        const disTomorrow = await dlg.getByRole('button', { name: 'Schedule', exact: true }).isDisabled()
+        check(disWhenever && disTomorrow && cronPosts().length === 0, 'cron validation: "whenever" and "tomorrow 9am" show an error, disable Schedule and send nothing')
+
+        // 2. Valid yearly cron "0 3 1 1 *" shows a Jan 1 preview and enables Schedule; if the server returns a mismatched
+        // interval (every 30m), the app cancels/deletes it immediately and shows an error instead of "Scheduled".
+        const badInterval = { schedule: { kind: 'interval', minutes: 30, display: 'every 30m' }, next_run_at: new Date(Date.now() + 30 * 60_000).toISOString() }
+        await mock({ cronMode: { jobs: [], postOverride: badInterval } })
+        await dlg.getByLabel('Schedule').fill('0 3 1 1 *')
+        const preview = await dlg.getByRole('status').textContent()
+        const enabledJan1 = !(await dlg.getByRole('button', { name: 'Schedule', exact: true }).isDisabled())
+        check(enabledJan1 && /Will run:.*Jan.*03:00/i.test(preview || ''), `cron validation: "0 3 1 1 *" shows a Jan 1 03:00 preview (${preview})`)
+        await dlg.getByRole('button', { name: 'Schedule', exact: true }).click()
+        await p.locator('.toast', { hasText: /Job was not kept/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron mismatch: server returning every 30m for 0 3 1 1 * is rejected with an error'),
+          () => check(false, 'cron mismatch: server returning every 30m for 0 3 1 1 * is rejected with an error')
+        )
+        check(cronDels().some(c => c.path === '/api/cron/jobs/cj-1'), 'cron mismatch: the mis-scheduled job is deleted immediately')
+
+        // 2b. When rollback itself fails (job stays in store or POST returned no id), the form closes and warns loudly
+        // instead of claiming "Job was not kept".
+        await mock({ cronMode: { jobs: [], postOverride: badInterval, deleteSticks: true } })
+        await dlg.getByRole('button', { name: 'Schedule', exact: true }).click()
+        await p.locator('.toast', { hasText: /automatic removal failed/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron mismatch rollback failure: warns clearly and reveals the stuck job'),
+          () => check(false, 'cron mismatch rollback failure: warns clearly and reveals the stuck job')
+        )
+        check((await p.getByText('Bad job', { exact: true }).count()) === 1, 'cron mismatch rollback failure: stuck job card is visible for manual deletion')
+
+        await mock({ cronMode: { jobs: [], postOverride: badInterval, postNoId: true } })
+        await p.getByRole('button', { name: 'New job' }).click()
+        const dlgNoId = p.getByRole('dialog')
+        await dlgNoId.getByLabel('Name').fill('No-id job')
+        await dlgNoId.getByLabel('Schedule').fill('0 3 1 1 *')
+        await dlgNoId.getByLabel('What should Hermux do?').fill('Reply hi')
+        await dlgNoId.getByRole('button', { name: 'Schedule', exact: true }).click()
+        await p.locator('.toast', { hasText: /returned no id/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron mismatch rollback without id: warns clearly instead of claiming cancelled'),
+          () => check(false, 'cron mismatch rollback without id: warns clearly instead of claiming cancelled')
+        )
+        check((await p.getByText('No-id job', { exact: true }).count()) === 1, 'cron mismatch rollback without id: job card is visible for manual deletion')
+
+        // 2c. Editing a one-shot job whose schedule.display is human prose ("once in 30m") pre-fills schedule.run_at
+        // so Save stays enabled; if PUT returns a mismatched next_run_at (even with prior last_run_at), the app pauses it.
+        const oneShot = {
+          id: 'j-once',
+          name: 'One-shot job',
+          schedule: { kind: 'once', display: 'once in 30m', run_at: '2027-01-01T09:00:00Z' },
+          prompt: 'Remind me',
+          last_run_at: new Date(Date.now() - 3600_000).toISOString(),
+          next_run_at: '2027-01-01T09:00:00Z'
+        }
+        await mock({
+          cronMode: {
+            jobs: [oneShot],
+            putOverride: { schedule: { kind: 'cron', expr: '0 3 1 1 *' }, next_run_at: new Date(Date.now() + 30 * 60_000).toISOString() }
+          }
+        })
+        await back(p)
+        await panelRow(p, /^Scheduled/)
+        await p.getByText('One-shot job', { exact: true }).waitFor({ timeout: 5000 })
+        await p.getByRole('button', { name: 'Edit', exact: true }).click()
+        const editDlg = p.getByRole('dialog')
+        const prefilled = await editDlg.getByLabel('Schedule').inputValue()
+        const saveReady = !(await editDlg.getByRole('button', { name: 'Save', exact: true }).isDisabled())
+        check(prefilled === '2027-01-01T09:00:00Z' && saveReady, `cron edit: one-shot job pre-fills run_at and keeps Save enabled (${prefilled})`)
+        await editDlg.getByLabel('Schedule').fill('0 3 1 1 *')
+        await editDlg.getByRole('button', { name: 'Save', exact: true }).click()
+        await p.locator('.toast', { hasText: /paused so it won’t run at the wrong time/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron edit mismatch: pauses the job when PUT returns a wrong next_run_at'),
+          () => check(false, 'cron edit mismatch: pauses the job when PUT returns a wrong next_run_at')
+        )
+        check(cronPauses().some(c => c.path === '/api/cron/jobs/j-once/pause'), 'cron edit mismatch: calls /pause on the mismatched job')
+
+        // 3. Delete that silently fails to remove the job from the store must NOT toast "Deleted" and must keep the job card.
+        const stuckJob = { id: 'j-stuck', name: 'Stuck job', schedule: 'every 30m', prompt: 'Ping', next_run_at: new Date(Date.now() + 1800_000).toISOString() }
+        await mock({ cronMode: { jobs: [stuckJob], deleteSticks: true } })
+        await back(p)
+        await panelRow(p, /^Scheduled/)
+        await p.getByText('Stuck job', { exact: true }).waitFor({ timeout: 5000 })
+        await p.getByRole('button', { name: 'Delete', exact: true }).click()
+        await p.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click()
+        await p.locator('.toast', { hasText: /still active/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron delete: a job that stays in the list shows an error instead of "Deleted"'),
+          () => check(false, 'cron delete: a job that stays in the list shows an error instead of "Deleted"')
+        )
+        check((await p.getByText('Stuck job', { exact: true }).count()) === 1, 'cron delete: the still-active job stays visible on screen')
+
+        // 4. Real delete of a running job confirms removal and notes that the already-started run will finish.
+        const runningJob = { ...stuckJob, fire_claim: 'claim-1' }
+        await mock({ cronMode: { jobs: [runningJob], deleteSticks: false } })
+        await back(p)
+        await panelRow(p, /^Scheduled/)
+        await p.getByText('Stuck job', { exact: true }).waitFor({ timeout: 5000 })
+        await p.getByRole('button', { name: 'Delete', exact: true }).click()
+        await p.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click()
+        await p.locator('.toast', { hasText: /Deleted\. A run that had already started will finish\./ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron delete: deleting a running job notes that the started run will finish'),
+          () => check(false, 'cron delete: deleting a running job notes that the started run will finish')
+        )
+        await p.getByText('Nothing scheduled yet', { exact: true }).waitFor({ timeout: 5000 })
+        await back(p)
+        await p.getByRole('button', { name: /^Sessions/ }).click()
+        await p.getByRole('button', { name: /^Scheduled.*None yet/ }).waitFor({ timeout: 5000 }).then(
+          () => check(true, 'cron delete: side panel updates to "None yet" right away'),
+          () => check(false, 'cron delete: side panel updates to "None yet" right away')
+        )
+      } finally {
+        await mock({ cronMode: null })
+        await p.close()
+      }
+    }
   }
 }

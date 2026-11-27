@@ -177,6 +177,8 @@ let codexPolls = 0
 // (its status reads ~/.hermes/.anthropic_oauth.json and env vars only), /api/credentials/pool lists the entry.
 let extraBots = false
 let emptyLists = false // true: Skills, Scheduled, Projects, Memory, the gallery and the MCP servers answer with nothing (empty states)
+let cronMode = null // { jobs, postOverride, deleteSticks, deleteFail } for Scheduled validation/delete checks
+let deleteMode = null // { fail, activeOnce, hidden } for chat delete reliability checks
 let claudePool = []
 let claudeLoginMissing = false // true = an older plugin without /claude-login (404)
 const claudeEntry = () => ({ index: claudePool.length + 1, id: 'c0ffee', label: 'anthropic-oauth-1', auth_type: 'oauth', source: 'manual:hermes_pkce', priority: 0, last_status: null, request_count: 0, token_preview: 'sk-a...abcd', has_refresh: true })
@@ -310,6 +312,8 @@ const server = http.createServer((req, res) => {
       if (b.phone) phoneAccess = { ...phoneAccess, ...b.phone }
       if (b.bots !== undefined) extraBots = b.bots // a second bot in the profile list (the side panel's bot sheet)
       if (b.empty !== undefined) emptyLists = b.empty
+      if (b.cronMode !== undefined) cronMode = b.cronMode ? { jobs: [], ...b.cronMode } : null
+      if (b.deleteMode !== undefined) deleteMode = b.deleteMode ? { hidden: [], closed: [], ...b.deleteMode } : null
       if (b.bump) {
         // Like Hermes: session.list is sorted by last activity, so a chat that got a message moves to the front of the list.
         const i = allSessions.findIndex(x => x.id === b.bump)
@@ -388,6 +392,45 @@ const server = http.createServer((req, res) => {
       return send({ data_url: 'data:text/plain;base64,' + Buffer.from(FILE_TEXT[name] ?? 'hello').toString('base64'), size: (FILE_TEXT[name] ?? 'hello').length })
     }
     if (p === '/api/cron/jobs' && req.method === 'GET' && emptyLists) return send([])
+    if (cronMode && p === '/api/cron/jobs' && req.method === 'GET') return send(cronMode.jobs)
+    if (cronMode && p === '/api/cron/jobs' && req.method === 'POST') {
+      const b = JSON.parse(body || '{}')
+      const realId = `cj-${cronMode.jobs.length + 1}`
+      const job = cronMode.postOverride
+        ? { id: realId, name: b.name || 'Job', prompt: b.prompt || '', ...cronMode.postOverride }
+        : { id: realId, name: b.name || 'Job', schedule: b.schedule, prompt: b.prompt || '', next_run_at: new Date(Date.now() + 3600_000).toISOString() }
+      cronMode.jobs.push(job)
+      if (cronMode.postNoId) {
+        const { id: _drop, ...withoutId } = job
+        return send(withoutId)
+      }
+      return send(job)
+    }
+    if (cronMode && /^\/api\/cron\/jobs\/[^/]+$/.test(p) && req.method === 'PUT') {
+      const id = decodeURIComponent(p.split('/').pop())
+      if (cronMode.putStatus) return send({ detail: 'Method Not Allowed' }, cronMode.putStatus)
+      const b = JSON.parse(body || '{}')
+      const upd = b.updates || b
+      const idx = cronMode.jobs.findIndex(j => j.id === id)
+      if (idx < 0) return send({ detail: 'Not Found' }, 404)
+      const updated = { ...cronMode.jobs[idx], ...upd, ...(cronMode.putOverride || {}) }
+      cronMode.jobs[idx] = updated
+      return send(updated)
+    }
+    if (cronMode && /^\/api\/cron\/jobs\/[^/]+\/pause$/.test(p) && req.method === 'POST') {
+      const id = decodeURIComponent(p.split('/').slice(-2, -1)[0])
+      if (cronMode.pauseFail) return send({ ok: false })
+      const job = cronMode.jobs.find(j => j.id === id)
+      if (!job) return send({ detail: 'Not Found' }, 404)
+      if (!cronMode.pauseSticks) job.paused = true
+      return send({ ok: true, job })
+    }
+    if (cronMode && /^\/api\/cron\/jobs\/[^/]+$/.test(p) && req.method === 'DELETE') {
+      const id = decodeURIComponent(p.split('/').pop())
+      if (cronMode.deleteFail) return send({ ok: false })
+      if (!cronMode.deleteSticks) cronMode.jobs = cronMode.jobs.filter(j => j.id !== id)
+      return send({ ok: true })
+    }
     if (p === '/api/cron/jobs' && req.method === 'GET') return send([{ id: 'j1', name: 'Morning brief', schedule: '0 9 * * *', prompt: 'Brief me', next_run_at: null }])
     if (p === '/api/cron/jobs/j1' && req.method === 'PUT') return send({ detail: 'Method Not Allowed' }, 405)
     if (p === '/api/cron/jobs/j1/runs') return send([{ title: 'ok', started_at: Date.now() / 1000 - 60, session_id: 's-6', preview: 'chat run' }, { title: 'saved output', output: '# Result\n\nAll good' }])
@@ -944,9 +987,12 @@ wss.on('connection', ws => {
       }
       ws.send(JSON.stringify({ jsonrpc: '2.0', id, result }))
     }
+    const errReply = (code, message) => ws.send(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }))
     switch (method) {
-      case 'session.list':
-        return reply({ sessions: allSessions.slice(0, params.limit || 50) })
+      case 'session.list': {
+        const list = deleteMode?.hidden?.length ? allSessions.filter(s => !deleteMode.hidden.includes(s.id)) : allSessions
+        return reply({ sessions: list.slice(0, params.limit || 50) })
+      }
       case 'profiles.list':
         return reply({ profiles: [{ name: 'default', model: 'mock-model' }, ...(extraBots ? [{ name: 'work', display_name: 'Work', model: 'other-model' }] : [])] })
       case 'session.create': {
@@ -1550,6 +1596,7 @@ wss.on('connection', ws => {
       case 'gateway.ping':
         return reply({ ok: true })
       case 'session.close':
+        if (deleteMode && params.session_id) deleteMode.closed.push(String(params.session_id))
         return reply({ closed: true })
       case 'session.branch': {
         // As the pinned Hermes answers (tools/hermes-contract): a new live and stored chat, its parent named.
@@ -1569,8 +1616,22 @@ wss.on('connection', ws => {
           later(60, () => event('subagent.complete', params.session_id, { goal: '', task_count: 1, task_index: 0, subagent_id: params.subagent_id, status: 'interrupted', duration_seconds: 2 }))
         }
         return reply({ found: nested.found, subagent_id: params.subagent_id })
-      case 'session.delete':
-        return reply({ deleted: params.session_id })
+      case 'session.active_list': {
+        const list = []
+        if (deleteMode?.activeOnce && !deleteMode.closed.includes(`rt-detached-${deleteMode.activeOnce}`)) {
+          list.push({ id: `rt-detached-${deleteMode.activeOnce}`, session_key: deleteMode.activeOnce })
+        }
+        return reply({ sessions: list })
+      }
+      case 'session.delete': {
+        const sid = String(params.session_id || '')
+        if (deleteMode?.fail) return errReply(5036, 'delete failed')
+        if (deleteMode?.activeOnce === sid && !deleteMode.closed.includes(`rt-detached-${sid}`)) {
+          return errReply(4023, 'cannot delete an active session')
+        }
+        if (deleteMode && !deleteMode.hidden.includes(sid)) deleteMode.hidden.push(sid)
+        return reply({ deleted: sid })
+      }
       case 'session.title':
         return reply({ pending: false, title: params.title })
       case 'session.set_hidden':

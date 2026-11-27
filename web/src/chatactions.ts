@@ -33,13 +33,14 @@ export function archiveChat(profile: string, id: string, on: boolean): Promise<b
 /** Asks first, then deletes the chat (its live sessions are closed first, gateway `deleteSession`) and takes it out of
  *  the pins and the custom order. `label` names it in the question. Resolves true when it was deleted. */
 export async function deleteChat(profile: string, id: string, label: string): Promise<boolean> {
+  if (!id) return false
   const ok = await confirmDialog({
     title: `Delete “${label || 'this chat'}”?`,
     message: 'The whole conversation is removed. This cannot be undone.',
     danger: true
   })
   if (!ok) return false
-  return deleteSession(id)
+  return deleteSession(id, profile)
     .then(() => {
       updateOrder(profile, o => ({ ...o, pinned: o.pinned.filter(x => x !== id), manual: o.manual && o.manual.filter(x => x !== id) }))
       chatListChanged()

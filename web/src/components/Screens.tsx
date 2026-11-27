@@ -18,7 +18,9 @@ import { LOAD_LIMIT_MS, timeLimit, TimeLimitError } from '../timelimit'
 import { Icon, iconOf, type IconName } from './icons'
 import { EmptyState } from './ui'
 import { BotTag } from './BotTag'
-import { jobPaused, lastFailed, lastRunWords, nextRunWords, type Job } from '../jobwords'
+import { jobPaused, jobRunning, lastFailed, lastRunWords, nextRunWords, type Job } from '../jobwords'
+import { refreshPanelValues } from '../panelvalues'
+import { jobEditSchedule, parseSchedule, scheduleMismatch, type ValidSchedule } from '../schedule'
 
 // ── shared building blocks ──────────────────────────────────
 
@@ -423,32 +425,105 @@ function jobSchedule(j: Job): string {
   return String(s ?? j.schedule_display ?? '')
 }
 
-const SCHEDULE_EXAMPLES = ['every 30m', 'every 2h', '0 9 * * *', '0 8 * * 1-5', 'tomorrow 9am']
+const SCHEDULE_EXAMPLES = ['every 30m', 'every 2h', '0 9 * * *', '0 8 * * 1-5', 'in 30m']
+
+async function fetchCronJobs(): Promise<Job[]> {
+  const r = await api<Job[] | { jobs?: Job[] }>('GET', '/api/cron/jobs')
+  return Array.isArray(r) ? r : r.jobs || []
+}
+
+function responseFailed(r: unknown): boolean {
+  if (!r || typeof r !== 'object') return false
+  const o = r as Record<string, unknown>
+  return o.ok === false || o.deleted === false || o.removed === false
+}
+
+function schedulesMatch(a: ValidSchedule, b: ValidSchedule): boolean {
+  if (a.kind !== b.kind) return false
+  if (a.kind === 'interval') return a.minutes === b.minutes
+  if (a.kind === 'cron') {
+    const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
+    return Boolean(a.expr && b.expr && norm(a.expr) === norm(b.expr))
+  }
+  if (a.kind === 'once') {
+    return Boolean(a.nextRun && b.nextRun && Math.abs(a.nextRun.getTime() - b.nextRun.getTime()) <= 60_000)
+  }
+  return false
+}
+
+/** Deletes a scheduled job and reloads the store to confirm it is actually gone. */
+async function verifiedDeleteCronJob(id: string): Promise<{ ok: boolean; jobs?: Job[]; reason?: string }> {
+  if (!id) return { ok: false, reason: 'Hermux returned no id for the job.' }
+  let res: unknown
+  try {
+    res = await api<unknown>('DELETE', `/api/cron/jobs/${encodeURIComponent(id)}`)
+  } catch (e) {
+    return { ok: false, reason: errText(e) }
+  }
+  if (responseFailed(res)) return { ok: false, reason: 'Hermux did not delete the scheduled job.' }
+  let fresh: Job[]
+  try {
+    fresh = await fetchCronJobs()
+  } catch {
+    return { ok: false, reason: 'Could not reload the job list to confirm removal.' }
+  }
+  if (fresh.some(x => jobId(x) === id)) {
+    return { ok: false, jobs: fresh, reason: 'The scheduled job is still active.' }
+  }
+  return { ok: true, jobs: fresh }
+}
 
 export function CronScreen() {
   const profile = useStore(s => s.profile)
-  const { data, error, loading, reload } = useLoader(async () => {
-    const r = await api<Job[] | { jobs?: Job[] }>('GET', '/api/cron/jobs')
-    return Array.isArray(r) ? r : r.jobs || []
-  }, [profile])
+  const { data, error, loading, reload, setData } = useLoader(fetchCronJobs, [profile])
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Job | null>(null)
   const [form, setForm] = useState({ name: '', schedule: '', prompt: '' })
+  const [saving, setSaving] = useState(false)
+  const [busyId, setBusyId] = useState('')
   const [runsFor, setRunsFor] = useState<Job | null>(null)
   const [runs, setRuns] = useState<Record<string, unknown>[] | null>(null)
   const [output, setOutput] = useState<{ title: string; text: string | null } | null>(null)
 
+  const scheduleCheck = useMemo(() => (form.schedule.trim() ? parseSchedule(form.schedule) : null), [form.schedule])
+
   const act = async (j: Job, what: 'pause' | 'resume' | 'trigger' | 'delete') => {
+    const id = jobId(j)
+    if (!id) {
+      toast('This job has no id and cannot be changed here.', 'error')
+      return
+    }
+    if (busyId) return
     haptic()
     try {
       if (what === 'delete') {
-        if (!(await confirmDialog({ title: `Delete “${String(j.name || jobId(j))}”?`, message: 'The scheduled job is removed.', danger: true }))) return
-        await api('DELETE', `/api/cron/jobs/${encodeURIComponent(jobId(j))}`)
-      } else await api('POST', `/api/cron/jobs/${encodeURIComponent(jobId(j))}/${what}`)
-      toast(what === 'trigger' ? 'Started' : what === 'delete' ? 'Deleted' : what === 'pause' ? 'Paused' : 'Resumed')
+        if (!(await confirmDialog({ title: `Delete “${String(j.name || id)}”?`, message: 'The scheduled job is removed.', danger: true }))) return
+        setBusyId(id)
+        const del = await verifiedDeleteCronJob(id)
+        if (del.jobs) setData(del.jobs)
+        else reload()
+        refreshPanelValues(true)
+        if (!del.ok) {
+          toast(
+            del.jobs ? 'Could not delete the scheduled job — it is still active.' : `Delete was not confirmed: ${del.reason} Check the list.`,
+            'error',
+            6000
+          )
+          return
+        }
+        if (jobRunning(j)) toast('Deleted. A run that had already started will finish.', 'info', 6000)
+        else toast('Deleted')
+        return
+      }
+      setBusyId(id)
+      await api('POST', `/api/cron/jobs/${encodeURIComponent(id)}/${what}`)
+      toast(what === 'trigger' ? 'Started' : what === 'pause' ? 'Paused' : 'Resumed')
       reload()
+      refreshPanelValues(true)
     } catch (e) {
       toast(errText(e), 'error')
+    } finally {
+      setBusyId('')
     }
   }
 
@@ -464,37 +539,123 @@ export function CronScreen() {
     }
   }
 
+  const closeForm = () => {
+    setCreating(false)
+    setEditing(null)
+    setForm({ name: '', schedule: '', prompt: '' })
+  }
+
+  const rollbackMismatchedJob = async (saved: unknown, bad: string, label: string) => {
+    const newId = saved && typeof saved === 'object' ? jobId(saved as Job) : ''
+    const rb = await verifiedDeleteCronJob(newId)
+    if (rb.jobs) setData(rb.jobs)
+    else reload()
+    refreshPanelValues(true)
+    if (rb.ok) {
+      toast(`${label}: ${bad}`, 'error', 8000)
+    } else {
+      closeForm()
+      toast(
+        `Wrong schedule (${bad}), and automatic removal failed (${rb.reason}). Delete the job from Scheduled now.`,
+        'error',
+        10000
+      )
+    }
+  }
+
   const create = async () => {
-    const body = { name: form.name.trim(), schedule: form.schedule.trim(), prompt: form.prompt.trim(), deliver: 'local' }
+    if (saving) return
+    const parsed = parseSchedule(form.schedule)
+    if (!parsed.ok) {
+      toast(parsed.error, 'error', 6000)
+      return
+    }
+    const body = { name: form.name.trim(), schedule: parsed.raw, prompt: form.prompt.trim(), deliver: 'local' }
+    setSaving(true)
     try {
+      let saved: unknown = null
+      let isNew = !editing
       if (editing) {
-        const id = encodeURIComponent(jobId(editing))
+        const rawId = jobId(editing)
+        const id = encodeURIComponent(rawId)
+        const prevParsed = parseSchedule(jobEditSchedule(editing))
+        const scheduleChanged = !prevParsed.ok || !schedulesMatch(prevParsed, parsed)
         try {
-          await api('PUT', `/api/cron/jobs/${id}`, { updates: body }) // the dashboard's shape: {updates: {…}}
+          saved = await api('PUT', `/api/cron/jobs/${id}`, { updates: body }) // the dashboard's shape: {updates: {…}}
+          const bad = scheduleMismatch(parsed, saved, { checkNextRun: scheduleChanged })
+          if (bad) {
+            // Fail closed on edit mismatch: pause the job so it cannot fire at the wrong time, and verify it is paused.
+            let pausedOk = jobPaused(saved && typeof saved === 'object' ? (saved as Job) : editing)
+            if (!pausedOk && rawId) {
+              try {
+                const pauseRes = await api<unknown>('POST', `/api/cron/jobs/${id}/pause`)
+                if (!responseFailed(pauseRes)) {
+                  const fresh = await fetchCronJobs()
+                  setData(fresh)
+                  const found = fresh.find(x => jobId(x) === rawId)
+                  pausedOk = Boolean(found && jobPaused(found))
+                }
+              } catch {
+                pausedOk = false
+              }
+            }
+            if (!pausedOk) reload()
+            refreshPanelValues(true)
+            closeForm()
+            toast(
+              pausedOk
+                ? `Schedule did not match (${bad}). The job was paused so it won’t run at the wrong time.`
+                : `Schedule did not match (${bad}), and Hermux could not confirm the job is paused. Pause or delete it from Scheduled now.`,
+              'error',
+              10000
+            )
+            return
+          }
           toast('Saved')
         } catch (e) {
           // A dashboard without job editing: replace the job (new id, its run history stays with the old one).
           if (!(e instanceof ApiError) || (e.status !== 404 && e.status !== 405)) throw e
-          await api('POST', '/api/cron/jobs', body)
-          await api('DELETE', `/api/cron/jobs/${id}`)
+          isNew = true
+          saved = await api('POST', '/api/cron/jobs', body)
+          const bad = scheduleMismatch(parsed, saved, { isNew: true })
+          if (bad) {
+            await rollbackMismatchedJob(saved, bad, 'Cancelled')
+            return
+          }
+          const oldDel = await verifiedDeleteCronJob(rawId)
+          if (oldDel.jobs) setData(oldDel.jobs)
+          else reload()
+          refreshPanelValues(true)
+          if (!oldDel.ok) {
+            closeForm()
+            toast(`New job saved, but the old job could not be deleted (${oldDel.reason}). Delete the old one from the list.`, 'error', 8000)
+            return
+          }
           toast('Saved as a new job')
         }
       } else {
-        await api('POST', '/api/cron/jobs', body)
+        saved = await api('POST', '/api/cron/jobs', body)
+        const bad = scheduleMismatch(parsed, saved, { isNew })
+        if (bad) {
+          // Fail closed: never leave an unattended job running on a time the person did not ask for.
+          await rollbackMismatchedJob(saved, bad, 'Job was not kept')
+          return
+        }
         toast('Scheduled')
       }
-      setCreating(false)
-      setEditing(null)
-      setForm({ name: '', schedule: '', prompt: '' })
+      closeForm()
       reload()
+      refreshPanelValues(true)
     } catch (e) {
       toast(errText(e), 'error', 6000)
+    } finally {
+      setSaving(false)
     }
   }
 
   const edit = (j: Job) => {
     haptic()
-    setForm({ name: String(j.name || ''), schedule: jobSchedule(j), prompt: String(j.prompt || '') })
+    setForm({ name: String(j.name || ''), schedule: jobEditSchedule(j), prompt: String(j.prompt || '') })
     setEditing(j)
     setCreating(true)
   }
@@ -562,18 +723,18 @@ export function CronScreen() {
           <div className="mono small dim">{jobSchedule(j)}</div>
           {j.prompt ? <div className="card-text"><Linked text={String(j.prompt).slice(0, 240)} /></div> : null}
           <div className="card-actions">
-            <button onClick={() => void act(j, 'trigger')}><Icon n="play" /> Run now</button>
-            <button onClick={() => void act(j, jobPaused(j) ? 'resume' : 'pause')}>{jobPaused(j) ? 'Resume' : 'Pause'}</button>
+            <button disabled={busyId === jobId(j)} onClick={() => void act(j, 'trigger')}><Icon n="play" /> Run now</button>
+            <button disabled={busyId === jobId(j)} onClick={() => void act(j, jobPaused(j) ? 'resume' : 'pause')}>{jobPaused(j) ? 'Resume' : 'Pause'}</button>
             <button onClick={() => void showRuns(j)}>Runs</button>
-            <button onClick={() => edit(j)}>Edit</button>
-            <button className="danger" onClick={() => void act(j, 'delete')}>
+            <button disabled={busyId === jobId(j)} onClick={() => edit(j)}>Edit</button>
+            <button className="danger" disabled={busyId === jobId(j)} onClick={() => void act(j, 'delete')}>
               Delete
             </button>
           </div>
         </div>
       ))}
       {creating && (
-        <Sheet title={editing ? 'Edit job' : 'New scheduled job'} onClose={() => { setCreating(false); setEditing(null); setForm({ name: '', schedule: '', prompt: '' }) }}>
+        <Sheet title={editing ? 'Edit job' : 'New scheduled job'} onClose={closeForm}>
           <div className="sheet-scroll">
             <label className="field">
               <span>Name</span>
@@ -581,11 +742,11 @@ export function CronScreen() {
             </label>
             <label className="field">
               <span>Schedule</span>
-              <input value={form.schedule} onChange={e => setForm({ ...form, schedule: e.target.value })} placeholder="every 2h  ·  0 9 * * *" />
+              <input value={form.schedule} onChange={e => setForm({ ...form, schedule: e.target.value })} placeholder="e.g. 0 9 * * * or every 2h" />
             </label>
             <div className="effort-row">
               {SCHEDULE_EXAMPLES.map(x => (
-                <button key={x} className="pill" onClick={() => setForm({ ...form, schedule: x })}>
+                <button key={x} type="button" className={`pill${form.schedule.trim() === x ? ' on' : ''}`} onClick={() => setForm({ ...form, schedule: x })}>
                   {x}
                 </button>
               ))}
@@ -596,11 +757,16 @@ export function CronScreen() {
             </label>
             <div className="dim small">Runs on the phone. Results are saved locally and you get a notification.</div>
           </div>
+          {scheduleCheck && (
+            <div className={`job-schedule-check${scheduleCheck.ok ? '' : ' bad'}`} role={scheduleCheck.ok ? 'status' : 'alert'}>
+              {scheduleCheck.ok ? `Will run: ${scheduleCheck.summary}` : scheduleCheck.error}
+            </div>
+          )}
           <div className="sheet-actions">
-            <button className="btn" onClick={() => { setCreating(false); setEditing(null); setForm({ name: '', schedule: '', prompt: '' }) }}>
+            <button className="btn" onClick={closeForm}>
               Cancel
             </button>
-            <button className="btn primary" disabled={!form.schedule.trim() || !form.prompt.trim()} onClick={() => void create()}>
+            <button className="btn primary" disabled={saving || !scheduleCheck?.ok || !form.prompt.trim()} onClick={() => void create()}>
               {editing ? 'Save' : 'Schedule'}
             </button>
           </div>

@@ -577,6 +577,8 @@ export function SessionList({ query }: { query: string }) {
     if (await deleteChat(profile, s.id, plainTitle(s.title) || s.preview || '')) {
       forgetChat(s.id) // its nested rows go with it
       setArchivedRows(a => a && a.filter(x => x.id !== s.id))
+      setHits(h => h && h.filter(x => x.id !== s.id))
+      setAgentHits(a => a.filter(x => x.chat !== s.id))
     }
   }
 
