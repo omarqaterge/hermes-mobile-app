@@ -82,6 +82,8 @@ let savedTimer: ReturnType<typeof setTimeout> | null = null
 let flushing: Promise<void> | null = null
 let flushAgain = false
 let flushingDirty: { id: string; text: string } | null = null
+/** Bumped on every chat switch, so a save started on an earlier visit to the same chat (A → B → A) is still stale. */
+let sessionGen = 0
 
 /** The chat the canvas belongs to: the one on screen, or the one still opening (its documents are stored under its
  * stored id, so they can load before Hermes has resumed it, e.g. right after a cold start). */
@@ -115,6 +117,7 @@ function syncSession(): void {
   flushing = null
   flushAgain = false
   flushingDirty = null
+  sessionGen++
   // Opened on a chat that was still loading, the panel stays open once it is on screen: same id, so no reset.
   set({ session: id, open: false, docs: [], active: null, loaded: {}, mode: {}, save: 'idle', remote: null, writing: null, loading: Boolean(id) })
   if (id) void refreshDocs()
@@ -195,29 +198,31 @@ export function editDoc(id: string, text: string): void {
   saveTimer = setTimeout(() => void flushSave(), 800)
 }
 
-async function flushOnce(): Promise<boolean> {
+/** Sends the pending edit once. Returns the id of the document it sent, or null when there was nothing to send. */
+async function flushOnce(): Promise<string | null> {
   const session = state.session
+  const gen = sessionGen
   const d = dirtyText
-  if (!session || !d) return false
+  if (!session || !d) return null
   const have = state.loaded[d.id]
-  if (!have) return false
+  if (!have) return null
   if (d.text === have.content) {
     if (dirtyText?.id === d.id && dirtyText.text === d.text) dirtyText = null
     set({ save: 'idle' })
-    return false
+    return null
   }
   set({ save: 'saving' })
   flushingDirty = d
   try {
     const r = await call<Doc>('PUT', `${P}/doc`, { session, id: d.id, content: d.text, base_rev: have.rev })
-    if (session !== state.session) return true
+    if (gen !== sessionGen) return d.id
     if (dirtyText?.id === d.id && dirtyText.text === d.text) dirtyText = null
     // Read the live entry after await: loadDoc may have loaded a newer revision or filled in `versions` meanwhile.
     const cur = state.loaded[d.id] ?? have
     if (r.rev < cur.rev) {
       if (dirtyText) set({ save: 'dirty' })
       else if (state.save === 'saving') set({ save: 'idle' })
-      return true
+      return d.id
     }
     // PUT /canvas/doc returns the updated doc without its version list: merge from the live entry's versions so
     // Version history immediately includes the new revision as current and never wipes versions loaded in flight.
@@ -244,17 +249,20 @@ async function flushOnce(): Promise<boolean> {
       }, 2000)
     }
   } catch (e) {
-    if (session !== state.session) return true
+    if (gen !== sessionGen) return d.id
     const msg = e instanceof Error ? e.message : String(e)
-    if (/conflict|changed/i.test(msg)) set({ save: 'conflict', remote: d.id })
-    else {
+    if (/conflict|changed/i.test(msg)) {
+      set({ save: 'conflict', remote: d.id })
+      // The conflict choice shows only on the open document: say so when the edit was in another tab.
+      if (state.active !== d.id) toast(`Canvas edit in “${have.title}” not saved: it changed meanwhile.`, 'error', 6000)
+    } else {
       set({ save: 'error' })
       toast(msg, 'error')
     }
   } finally {
     if (flushingDirty === d) flushingDirty = null
   }
-  return true
+  return d.id
 }
 
 export function flushSave(): Promise<void> {
@@ -264,7 +272,7 @@ export function flushSave(): Promise<void> {
     flushAgain = true
     return flushing
   }
-  const session = state.session
+  const gen = sessionGen
   let run: Promise<void> | null = null
   run = (async () => {
     try {
@@ -274,11 +282,12 @@ export function flushSave(): Promise<void> {
           clearTimeout(saveTimer)
           saveTimer = null
         }
-        const sent = await flushOnce()
-        if (!sent) break
-        if (session !== state.session) break
+        const sentId = await flushOnce()
+        if (!sentId) break
+        if (gen !== sessionGen) break
         if (!dirtyText) break
-        if (state.save === 'conflict' || state.save === 'error') break
+        // A conflict or error stops only that document's saves: an edit queued meanwhile in another tab still goes out.
+        if ((state.save === 'conflict' || state.save === 'error') && dirtyText.id === sentId) break
         // If the user started another debounced edit while the PUT ran and nobody asked for an immediate flush, let the timer handle it.
         if (!flushAgain && saveTimer) break
       }

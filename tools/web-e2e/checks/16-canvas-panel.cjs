@@ -716,7 +716,16 @@ module.exports = async t => {
     check(savedAgain && leftAfterSave === 0, `canvas tab strip: autosave does not yank a user-scrolled strip back (${JSON.stringify({ savedAgain, leftAfterSave })})`)
 
     // Reduced motion still scrolls a newly created off-screen tab into view.
-    await fp.evaluate(() => { document.documentElement.dataset.motion = 'reduced' })
+    await fp.evaluate(() => {
+      document.documentElement.dataset.motion = 'reduced'
+      // Record how the tab strip is scrolled, so the check fails if reduced motion still asks for a smooth scroll.
+      const orig = Element.prototype.scrollTo
+      window.__tabScrolls = []
+      Element.prototype.scrollTo = function (...a) {
+        if (this.classList && this.classList.contains('canvas-tabs')) window.__tabScrolls.push(a[0] && typeof a[0] === 'object' ? a[0].behavior || 'auto' : 'auto')
+        return orig.apply(this, a)
+      }
+    })
     await panel.getByRole('button', { name: 'New document', exact: true }).click()
     await fp.getByRole('dialog').getByRole('button', { name: /Notes \/ document/ }).click()
     const redDlg = fp.getByRole('alertdialog')
@@ -741,6 +750,8 @@ module.exports = async t => {
       return { scrollLeft: strip.scrollLeft, leftOk: ar.left >= sr.left - 1, rightOk: ar.right <= sr.right + 1, title: active.textContent?.trim() }
     })
     check(!!redVis && redVis.scrollLeft > 0 && redVis.leftOk && redVis.rightOk && redVis.title === 'Far tab 10', `canvas tab strip: reduced motion still scrolls a newly created off-screen tab into view (${JSON.stringify(redVis)})`)
+    const redScrolls = await fp.evaluate(() => window.__tabScrolls || [])
+    check(redScrolls.length > 0 && redScrolls.every(b => b !== 'smooth'), `canvas tab strip: reduced motion scrolls the strip without smooth motion (${JSON.stringify(redScrolls)})`)
     await fp.close()
   }
 }
