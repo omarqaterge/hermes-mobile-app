@@ -518,7 +518,35 @@ describe('canvas loadDoc and flushSave races', () => {
     await p
     expect(canvasState().session).toBe(home?.storedId)
     expect(canvasState().save).toBe('idle')
-    expect(getState().toasts).toEqual([])
+    // Only the "not saved" note (the edit's one save failed after the switch): no error state in the chat on screen.
+    expect(getState().toasts.map(t => t.text)).toEqual(['Canvas edit in “Notes” not saved: network boom'])
+  })
+
+  it('a conflict on a tab that is not open leaves the open tab’s save state alone and keeps the edit', async () => {
+    const docA = mkDoc({ id: 'doc-a', title: 'A', rev: 1, content: 'orig-a' })
+    const docB = mkDoc({ id: 'doc-b', title: 'B', rev: 1, content: 'orig-b' })
+    const putA = deferred<Doc>()
+    mocks.api.mockImplementation(async (method: string, path: string, body?: { id: string }) => {
+      if (method === 'GET' && path.includes('/canvas?')) return { docs: [docA, docB] }
+      if (method === 'GET' && path.includes('id=doc-a')) return docA
+      if (method === 'GET' && path.includes('id=doc-b')) return docB
+      if (method === 'PUT' && path.includes('/canvas/doc') && body?.id === 'doc-a') return putA.promise
+      return {}
+    })
+
+    openCanvas('doc-a')
+    await loadDoc('doc-a', true)
+    await loadDoc('doc-b', true)
+    editDoc('doc-a', 'edit-a')
+    selectDoc('doc-b') // saves doc A's edit; doc B has none
+    const p = flushSave()
+    putA.reject(new Error('conflict: the document changed'))
+    await p
+
+    expect(canvasState().active).toBe('doc-b')
+    expect(canvasState().save).toBe('idle')
+    expect(unsavedFor('doc-a')).toBe('edit-a')
+    expect(getState().toasts.some(t => /“A” not saved: it changed meanwhile/.test(t.text))).toBe(true)
   })
 
   it('aborts flushSave cleanly on chat switch in both resolve and reject paths', async () => {
@@ -562,7 +590,8 @@ describe('canvas loadDoc and flushSave races', () => {
     expect(canvasState().session).toBe('s-other-2')
     expect(canvasState().save).toBe('idle')
     expect(canvasState().remote).toBeNull()
-    expect(getState().toasts).toEqual([])
+    // No error state in the new chat; only the note that the old chat's edit was not saved.
+    expect(getState().toasts.map(t => t.text)).toEqual(['Canvas edit in “Notes” not saved: network boom'])
   })
 })
 
