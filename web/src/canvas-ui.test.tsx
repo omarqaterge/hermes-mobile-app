@@ -460,6 +460,95 @@ describe('canvas loadDoc and flushSave races', () => {
     expect(unsavedFor('doc-b')).toBeNull()
   })
 
+  it('a conflict on doc A still lets the edit queued meanwhile in doc B go out, and names doc A', async () => {
+    const docA = mkDoc({ id: 'doc-a', title: 'A', rev: 1, content: 'orig-a' })
+    const docB = mkDoc({ id: 'doc-b', title: 'B', rev: 1, content: 'orig-b' })
+    const putA = deferred<Doc>()
+    const puts: Array<{ id: string; content: string }> = []
+    mocks.api.mockImplementation(async (method: string, path: string, body?: { id: string; content: string }) => {
+      if (method === 'GET' && path.includes('/canvas?')) return { docs: [docA, docB] }
+      if (method === 'GET' && path.includes('id=doc-a')) return docA
+      if (method === 'GET' && path.includes('id=doc-b')) return docB
+      if (method === 'PUT' && path.includes('/canvas/doc') && body) {
+        puts.push({ id: body.id, content: body.content })
+        if (body.id === 'doc-a') return putA.promise
+        return { ...docB, rev: 2, updated: 1020, by: 'user', content: body.content }
+      }
+      return {}
+    })
+
+    openCanvas('doc-a')
+    await loadDoc('doc-a', true)
+    await loadDoc('doc-b', true)
+
+    editDoc('doc-a', 'edit-a')
+    selectDoc('doc-b') // flushes doc A's edit
+    const pA = flushSave()
+    editDoc('doc-b', 'edit-b')
+    const pB = flushSave() // queued behind doc A's PUT
+    putA.reject(new Error('conflict: the document changed'))
+    await Promise.all([pA, pB])
+
+    expect(puts).toEqual([
+      { id: 'doc-a', content: 'edit-a' },
+      { id: 'doc-b', content: 'edit-b' }
+    ])
+    expect(unsavedFor('doc-b')).toBeNull()
+    expect(getState().toasts.some(t => /“A” not saved/.test(t.text))).toBe(true)
+  })
+
+  it('ignores a save started on an earlier visit to the same chat (A → B → A)', async () => {
+    const doc1 = mkDoc({ id: 'doc-1', rev: 1, content: 'old' })
+    const put = deferred<Doc>()
+    mocks.api.mockImplementation(async (method: string, path: string) => {
+      if (method === 'GET' && path.includes('/canvas?')) return { docs: [doc1] }
+      if (method === 'GET' && path.includes('/canvas/doc')) return doc1
+      if (method === 'PUT' && path.includes('/canvas/doc')) return put.promise
+      return {}
+    })
+
+    const home = getState().active
+    openCanvas('doc-1')
+    await loadDoc('doc-1', true)
+    editDoc('doc-1', 'edited')
+    const p = flushSave()
+    setState({ active: chat('s-away'), toasts: [] })
+    setState({ active: home, toasts: [] })
+    put.reject(new Error('network boom'))
+    await p
+    expect(canvasState().session).toBe(home?.storedId)
+    expect(canvasState().save).toBe('idle')
+    // Only the "not saved" note (the edit's one save failed after the switch): no error state in the chat on screen.
+    expect(getState().toasts.map(t => t.text)).toEqual(['Canvas edit in “Notes” not saved: network boom'])
+  })
+
+  it('a conflict on a tab that is not open leaves the open tab’s save state alone and keeps the edit', async () => {
+    const docA = mkDoc({ id: 'doc-a', title: 'A', rev: 1, content: 'orig-a' })
+    const docB = mkDoc({ id: 'doc-b', title: 'B', rev: 1, content: 'orig-b' })
+    const putA = deferred<Doc>()
+    mocks.api.mockImplementation(async (method: string, path: string, body?: { id: string }) => {
+      if (method === 'GET' && path.includes('/canvas?')) return { docs: [docA, docB] }
+      if (method === 'GET' && path.includes('id=doc-a')) return docA
+      if (method === 'GET' && path.includes('id=doc-b')) return docB
+      if (method === 'PUT' && path.includes('/canvas/doc') && body?.id === 'doc-a') return putA.promise
+      return {}
+    })
+
+    openCanvas('doc-a')
+    await loadDoc('doc-a', true)
+    await loadDoc('doc-b', true)
+    editDoc('doc-a', 'edit-a')
+    selectDoc('doc-b') // saves doc A's edit; doc B has none
+    const p = flushSave()
+    putA.reject(new Error('conflict: the document changed'))
+    await p
+
+    expect(canvasState().active).toBe('doc-b')
+    expect(canvasState().save).toBe('idle')
+    expect(unsavedFor('doc-a')).toBe('edit-a')
+    expect(getState().toasts.some(t => /“A” not saved: it changed meanwhile/.test(t.text))).toBe(true)
+  })
+
   it('aborts flushSave cleanly on chat switch in both resolve and reject paths', async () => {
     const doc1 = mkDoc({ id: 'doc-1', rev: 1, content: 'old' })
     const putResolve = deferred<Doc>()
@@ -501,7 +590,8 @@ describe('canvas loadDoc and flushSave races', () => {
     expect(canvasState().session).toBe('s-other-2')
     expect(canvasState().save).toBe('idle')
     expect(canvasState().remote).toBeNull()
-    expect(getState().toasts).toEqual([])
+    // No error state in the new chat; only the note that the old chat's edit was not saved.
+    expect(getState().toasts.map(t => t.text)).toEqual(['Canvas edit in “Notes” not saved: network boom'])
   })
 })
 
